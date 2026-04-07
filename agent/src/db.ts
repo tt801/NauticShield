@@ -76,12 +76,47 @@ db.exec(`
     notes        TEXT NOT NULL DEFAULT '',
     createdAt    TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS perf_samples (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    sampledAt   TEXT NOT NULL,
+    date        TEXT NOT NULL,
+    hour        INTEGER NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'down',
+    provider    TEXT NOT NULL DEFAULT 'None',
+    downloadMbps REAL NOT NULL DEFAULT 0,
+    latencyMs   REAL NOT NULL DEFAULT 0
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_perf_date ON perf_samples (date);
 `);
 
 // Safe migration: add fingerprint column to existing DBs that predate this schema version
 try {
   db.exec(`ALTER TABLE alerts ADD COLUMN fingerprint TEXT`);
 } catch { /* column already exists — safe to ignore */ }
+
+// Safe migration: add country column to voyage_log
+try {
+  db.exec(`ALTER TABLE voyage_log ADD COLUMN country TEXT NOT NULL DEFAULT ''`);
+} catch { /* column already exists — safe to ignore */ }
+
+// Safe migrations: lifecycle and destination fields
+for (const [col, def] of [
+  ['locationTo',        "TEXT NOT NULL DEFAULT ''"],
+  ['locationToCountry', "TEXT NOT NULL DEFAULT ''"],
+  ['locationToRegion',  "TEXT NOT NULL DEFAULT ''"],
+  ['eta',               "TEXT NOT NULL DEFAULT ''"],
+  ['status',            "TEXT NOT NULL DEFAULT 'completed'"],
+] as [string, string][]) {
+  try { db.exec(`ALTER TABLE voyage_log ADD COLUMN ${col} ${def}`); } catch { /* exists */ }
+}
+
+// Keep perf_samples lean — drop anything older than 90 days on startup
+try {
+  const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  db.exec(`DELETE FROM perf_samples WHERE date < '${cutoff}'`);
+} catch { /* ignore */ }
 
 // ── Devices ───────────────────────────────────────────────────────
 
@@ -237,18 +272,24 @@ export function recomputeNetworkHealth(): NetworkHealth {
 // ── Voyage Log ────────────────────────────────────────────────────
 
 export interface VoyageEntry {
-  id:           string;
-  date:         string;
-  location:     string;
-  region:       string;
-  avgDownMbps:  number;
-  avgLatencyMs: number;
-  uptimePct:    number;
-  provider:     string;
-  incidents:    number;
-  blocks:       string; // JSON string of ConnStatus[]
-  notes:        string;
-  createdAt:    string;
+  id:                string;
+  date:              string;
+  location:          string;
+  region:            string;
+  country:           string;
+  locationTo:        string;
+  locationToCountry: string;
+  locationToRegion:  string;
+  eta:               string;
+  status:            string; // 'in_port' | 'underway' | 'completed'
+  avgDownMbps:       number;
+  avgLatencyMs:      number;
+  uptimePct:         number;
+  provider:          string;
+  incidents:         number;
+  blocks:            string;
+  notes:             string;
+  createdAt:         string;
 }
 
 export function getVoyageLog(): VoyageEntry[] {
@@ -258,8 +299,8 @@ export function getVoyageLog(): VoyageEntry[] {
 export function addVoyageEntry(entry: Omit<VoyageEntry, 'createdAt'>): VoyageEntry {
   const createdAt = new Date().toISOString();
   db.prepare(`
-    INSERT INTO voyage_log (id, date, location, region, avgDownMbps, avgLatencyMs, uptimePct, provider, incidents, blocks, notes, createdAt)
-    VALUES (@id, @date, @location, @region, @avgDownMbps, @avgLatencyMs, @uptimePct, @provider, @incidents, @blocks, @notes, @createdAt)
+    INSERT INTO voyage_log (id, date, location, region, country, locationTo, locationToCountry, locationToRegion, eta, status, avgDownMbps, avgLatencyMs, uptimePct, provider, incidents, blocks, notes, createdAt)
+    VALUES (@id, @date, @location, @region, @country, @locationTo, @locationToCountry, @locationToRegion, @eta, @status, @avgDownMbps, @avgLatencyMs, @uptimePct, @provider, @incidents, @blocks, @notes, @createdAt)
   `).run({ ...entry, createdAt });
   return { ...entry, createdAt };
 }
@@ -269,9 +310,11 @@ export function updateVoyageEntry(id: string, patch: Partial<Omit<VoyageEntry, '
   if (!existing) return undefined;
   const merged = { ...existing, ...patch };
   db.prepare(`
-    UPDATE voyage_log SET date=@date, location=@location, region=@region, avgDownMbps=@avgDownMbps,
-      avgLatencyMs=@avgLatencyMs, uptimePct=@uptimePct, provider=@provider, incidents=@incidents,
-      blocks=@blocks, notes=@notes WHERE id=@id
+    UPDATE voyage_log SET date=@date, location=@location, region=@region, country=@country,
+      locationTo=@locationTo, locationToCountry=@locationToCountry, locationToRegion=@locationToRegion,
+      eta=@eta, status=@status,
+      avgDownMbps=@avgDownMbps, avgLatencyMs=@avgLatencyMs, uptimePct=@uptimePct, provider=@provider,
+      incidents=@incidents, blocks=@blocks, notes=@notes WHERE id=@id
   `).run({ ...merged });
   return merged;
 }
@@ -279,4 +322,79 @@ export function updateVoyageEntry(id: string, patch: Partial<Omit<VoyageEntry, '
 export function deleteVoyageEntry(id: string): boolean {
   const result = db.prepare('DELETE FROM voyage_log WHERE id = ?').run(id);
   return (result as any).changes > 0;
+}
+
+// ── Perf samples ─────────────────────────────────────────────────
+
+export interface PerfSample {
+  downloadMbps: number;
+  latencyMs:    number;
+  status:       string;
+  provider:     string;
+}
+
+export function insertPerfSample(sample: PerfSample): void {
+  const now  = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const hour = now.getUTCHours();
+  db.prepare(`
+    INSERT INTO perf_samples (sampledAt, date, hour, status, provider, downloadMbps, latencyMs)
+    VALUES (@sampledAt, @date, @hour, @status, @provider, @downloadMbps, @latencyMs)
+  `).run({ sampledAt: now.toISOString(), date, hour, ...sample });
+}
+
+export interface AutofillResult {
+  avgDownMbps:  number;
+  avgLatencyMs: number;
+  uptimePct:    number;
+  provider:     string;
+  incidents:    number;
+  blocks:       string; // JSON ConnStatus[]
+  hasData:      boolean;
+}
+
+export function getAutofillForDate(date: string): AutofillResult {
+  type SampleRow = { status: string; provider: string; downloadMbps: number; latencyMs: number; hour: number };
+  const rows = db.prepare(
+    'SELECT status, provider, downloadMbps, latencyMs, hour FROM perf_samples WHERE date = ? ORDER BY hour'
+  ).all(date) as unknown as SampleRow[];
+
+  if (rows.length === 0) {
+    return { avgDownMbps: 0, avgLatencyMs: 0, uptimePct: 100, provider: 'Starlink', incidents: 0, blocks: '[]', hasData: false };
+  }
+
+  const upRows  = rows.filter(r => r.status !== 'down');
+  const avgDown = upRows.length ? upRows.reduce((s, r) => s + r.downloadMbps, 0) / upRows.length : 0;
+  const avgLat  = upRows.length ? upRows.reduce((s, r) => s + r.latencyMs,    0) / upRows.length : 0;
+  const uptimePct = +(rows.filter(r => r.status !== 'down').length / rows.length * 100).toFixed(1);
+
+  // Most common provider
+  const providerCounts: Record<string, number> = {};
+  for (const r of rows) providerCounts[r.provider] = (providerCounts[r.provider] ?? 0) + 1;
+  const provider = Object.entries(providerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Starlink';
+
+  // Incidents = distinct down→up transitions
+  let incidents = 0;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i - 1].status === 'down' && rows[i].status !== 'down') incidents++;
+  }
+  if (rows[0].status === 'down') incidents++;
+
+  // 24-hour block array (index = hour 0-23)
+  const blockMap: Record<number, 'good' | 'slow' | 'down'> = {};
+  for (const r of rows) {
+    const s = r.status === 'down' ? 'down' : r.downloadMbps < 5 || r.latencyMs > 300 ? 'slow' : 'good';
+    blockMap[r.hour] = s;
+  }
+  const blocks = Array.from({ length: 24 }, (_, h) => blockMap[h] ?? 'good');
+
+  return {
+    avgDownMbps:  Math.round(avgDown * 10) / 10,
+    avgLatencyMs: Math.round(avgLat),
+    uptimePct,
+    provider,
+    incidents,
+    blocks: JSON.stringify(blocks),
+    hasData: true,
+  };
 }

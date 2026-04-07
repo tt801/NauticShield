@@ -117,105 +117,188 @@ function SummaryKpis({ log }: { log: VoyageEntry[] }) {
 
 // ── Voyage day row ────────────────────────────────────────────────
 
-function VoyageRow({ entry, downHistory, onDelete }: {
+type VoyageStatus = 'in_port' | 'underway' | 'completed';
+
+const STATUS_CONFIG: Record<VoyageStatus, { label: string; color: string; bg: string; border: string }> = {
+  in_port:   { label: 'IN PORT',   color: '#0ea5e9', bg: 'rgba(14,165,233,0.12)',  border: 'rgba(14,165,233,0.3)'  },
+  underway:  { label: 'UNDERWAY',  color: '#a78bfa', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.3)' },
+  completed: { label: 'COMPLETED', color: '#4a5a6a', bg: 'rgba(74,90,106,0.12)',  border: 'rgba(74,90,106,0.3)'  },
+};
+
+function LocationBlock({ name, country, region, label }: { name: string; country: string; region: string; label?: string }) {
+  const meta = [country, region].filter(Boolean).join(', ');
+  return (
+    <div>
+      {label && <div style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 600, letterSpacing: 0.8, marginBottom: 2 }}>{label}</div>}
+      <div style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 600, lineHeight: 1.3 }}>{name || '—'}</div>
+      {meta && <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 1 }}>{meta}</div>}
+    </div>
+  );
+}
+
+function VoyageRow({ entry, downHistory, onDelete, onUpdate }: {
   entry:       VoyageEntry;
   downHistory: number[];
   onDelete:    (id: string) => void;
+  onUpdate:    (id: string, patch: Partial<Omit<VoyageEntry, 'id' | 'createdAt'>>) => void;
 }) {
   const blocks        = parseBlocks(entry.blocks);
   const dateFormatted = new Date(entry.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   const uptimeColor   = entry.uptimePct >= 99 ? '#22c55e' : entry.uptimePct >= 95 ? '#f59e0b' : '#ef4444';
+  const status        = (entry.status as VoyageStatus) ?? 'completed';
+  const statusCfg     = STATUS_CONFIG[status] ?? STATUS_CONFIG.completed;
+  const isUnderway    = !!entry.locationTo;
+  const isActive      = status === 'in_port' || status === 'underway';
+  const etaFormatted  = entry.eta
+    ? new Date(entry.eta + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    : null;
 
   return (
     <div style={{
       background: '#0a0f18',
-      border: `1px solid ${entry.incidents > 3 ? 'rgba(239,68,68,0.2)' : '#1a2535'}`,
-      borderRadius: 12, padding: '14px 18px',
+      border: `1px solid ${isActive ? statusCfg.border : entry.incidents > 3 ? 'rgba(239,68,68,0.2)' : '#1a2535'}`,
+      borderRadius: 12, overflow: 'hidden',
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: blocks.length > 0 ? 12 : 0 }}>
-        {/* Date + location */}
-        <div style={{ width: 180, flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-            <Clock size={11} color="#4a5a6a" />
-            <span style={{ color: '#4a5a6a', fontSize: 11 }}>{dateFormatted}</span>
+      {/* Active status banner */}
+      {isActive && (
+        <div style={{ background: statusCfg.bg, borderBottom: `1px solid ${statusCfg.border}`, padding: '6px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: statusCfg.color, boxShadow: `0 0 6px ${statusCfg.color}` }} />
+            <span style={{ color: statusCfg.color, fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>{statusCfg.label}</span>
+            {status === 'underway' && etaFormatted && (
+              <span style={{ color: '#6b7f92', fontSize: 11 }}>· ETA {etaFormatted}</span>
+            )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-            <MapPin size={11} color="#6b7f92" />
-            <span style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 600 }}>{entry.location}</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            {entry.provider === 'Starlink'
-              ? <Wifi size={11} color="#0ea5e9" />
-              : entry.provider === 'LTE'
-              ? <Activity size={11} color="#8b5cf6" />
-              : <WifiOff size={11} color="#ef4444" />
-            }
-            <span style={{ color: '#6b7f92', fontSize: 11 }}>{entry.provider}</span>
-          </div>
-          {entry.notes && (
-            <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 4, fontStyle: 'italic' }}>{entry.notes}</div>
+          {status === 'in_port' && (
+            <button
+              onClick={() => onUpdate(entry.id, { status: 'completed' })}
+              style={{ background: 'rgba(14,165,233,0.1)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.3)', borderRadius: 7, padding: '4px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+            >
+              End Port Stay
+            </button>
+          )}
+          {status === 'underway' && (
+            <button
+              onClick={() => onUpdate(entry.id, { status: 'completed' })}
+              style={{ background: 'rgba(139,92,246,0.1)', color: '#c4b5fd', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 7, padding: '4px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+            >
+              Mark as Arrived ✓
+            </button>
           )}
         </div>
+      )}
 
-        {/* Metrics */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 90px)', gap: 10 }}>
-          {[
-            { label: 'Uptime',   value: `${entry.uptimePct}%`,      color: uptimeColor },
-            { label: 'Download', value: `${entry.avgDownMbps} Mbps`, color: '#0ea5e9' },
-            { label: 'Latency',  value: `${entry.avgLatencyMs} ms`,  color: '#22c55e' },
-          ].map(({ label, value, color }) => (
-            <div key={label} style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 10px' }}>
-              <div style={{ color: '#4a5a6a', fontSize: 10, marginBottom: 3 }}>{label}</div>
-              <div style={{ color, fontSize: 14, fontWeight: 700 }}>{value}</div>
+      <div style={{ padding: '14px 18px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: blocks.length > 0 ? 12 : 0 }}>
+
+          {/* Date + location block */}
+          <div style={{ minWidth: 210, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <Clock size={11} color="#4a5a6a" />
+              <span style={{ color: '#4a5a6a', fontSize: 11 }}>{dateFormatted}</span>
+              {!isActive && (
+                <span style={{ background: statusCfg.bg, color: statusCfg.color, border: `1px solid ${statusCfg.border}`, borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 700 }}>
+                  {isUnderway ? 'TRANSIT' : 'PORT STAY'}
+                </span>
+              )}
             </div>
-          ))}
-        </div>
 
-        {/* Incidents */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {entry.incidents === 0 ? (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 600 }}>
-              <CheckCircle2 size={11} /> No incidents
-            </span>
-          ) : (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, background: entry.incidents > 3 ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', color: entry.incidents > 3 ? '#ef4444' : '#f59e0b', border: `1px solid ${entry.incidents > 3 ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`, borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 600 }}>
-              <AlertTriangle size={11} /> {entry.incidents} incident{entry.incidents > 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
+            {isUnderway ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                  <MapPin size={11} color="#6b7f92" style={{ marginTop: 3, flexShrink: 0 }} />
+                  <LocationBlock name={entry.location} country={entry.country} region={entry.region} label="FROM" />
+                </div>
+                <div style={{ paddingLeft: 17, color: '#4a5a6a', fontSize: 18, lineHeight: 1 }}>↓</div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                  <MapPin size={11} color="#a78bfa" style={{ marginTop: 3, flexShrink: 0 }} />
+                  <LocationBlock name={entry.locationTo} country={entry.locationToCountry} region={entry.locationToRegion} label="TO" />
+                </div>
+                {etaFormatted && status === 'completed' && (
+                  <div style={{ color: '#4a5a6a', fontSize: 11, paddingLeft: 17 }}>Arrived {etaFormatted}</div>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                <MapPin size={11} color="#6b7f92" style={{ marginTop: 3, flexShrink: 0 }} />
+                <LocationBlock name={entry.location} country={entry.country} region={entry.region} />
+              </div>
+            )}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Sparkline data={downHistory} color="#0ea5e9" />
-          <button
-            onClick={() => onDelete(entry.id)}
-            title="Delete entry"
-            style={{ background: 'transparent', border: '1px solid #1a2535', borderRadius: 7, padding: '5px 7px', cursor: 'pointer', color: '#4a5a6a', display: 'flex', alignItems: 'center' }}
-            onMouseEnter={e => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = '#4a5a6a'; e.currentTarget.style.borderColor = '#1a2535'; }}
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
-      </div>
-
-      {/* 24h timeline */}
-      {blocks.length > 0 && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ color: '#4a5a6a', fontSize: 10 }}>Connection quality — {blocks.length}h</span>
-            <span style={{ color: '#4a5a6a', fontSize: 10 }}>Midnight → Midnight</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 8 }}>
+              {entry.provider === 'Starlink'
+                ? <Wifi size={11} color="#0ea5e9" />
+                : entry.provider === 'LTE'
+                ? <Activity size={11} color="#8b5cf6" />
+                : <WifiOff size={11} color="#ef4444" />
+              }
+              <span style={{ color: '#6b7f92', fontSize: 11 }}>{entry.provider}</span>
+            </div>
+            {entry.notes && (
+              <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 4, fontStyle: 'italic' }}>{entry.notes}</div>
+            )}
           </div>
-          <BlockTimeline blocks={blocks} />
-          <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
-            {[['good', 'Good'], ['slow', 'Slow'], ['down', 'Down']].map(([k, l]) => (
-              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 2, background: connColors[k as ConnStatus] }} />
-                <span style={{ color: '#4a5a6a', fontSize: 10 }}>{l}</span>
+
+          {/* Metrics */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 84px)', gap: 8 }}>
+            {[
+              { label: 'Uptime',   value: `${entry.uptimePct}%`,      color: uptimeColor },
+              { label: 'Download', value: `${entry.avgDownMbps} Mbps`, color: '#0ea5e9'  },
+              { label: 'Latency',  value: `${entry.avgLatencyMs} ms`,  color: '#22c55e'  },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 10px' }}>
+                <div style={{ color: '#4a5a6a', fontSize: 10, marginBottom: 3 }}>{label}</div>
+                <div style={{ color, fontSize: 13, fontWeight: 700 }}>{value}</div>
               </div>
             ))}
           </div>
+
+          {/* Incidents */}
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {entry.incidents === 0 ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 600 }}>
+                <CheckCircle2 size={11} /> No incidents
+              </span>
+            ) : (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, background: entry.incidents > 3 ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', color: entry.incidents > 3 ? '#ef4444' : '#f59e0b', border: `1px solid ${entry.incidents > 3 ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`, borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 600 }}>
+                <AlertTriangle size={11} /> {entry.incidents} incident{entry.incidents > 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Sparkline data={downHistory} color="#0ea5e9" />
+            <button
+              onClick={() => onDelete(entry.id)}
+              title="Delete entry"
+              style={{ background: 'transparent', border: '1px solid #1a2535', borderRadius: 7, padding: '5px 7px', cursor: 'pointer', color: '#4a5a6a', display: 'flex', alignItems: 'center' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#4a5a6a'; e.currentTarget.style.borderColor = '#1a2535'; }}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
         </div>
-      )}
+
+        {/* 24h block timeline */}
+        {blocks.length > 0 && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ color: '#4a5a6a', fontSize: 10 }}>Connection quality — {blocks.length}h</span>
+              <span style={{ color: '#4a5a6a', fontSize: 10 }}>Midnight → Midnight</span>
+            </div>
+            <BlockTimeline blocks={blocks} />
+            <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+              {[['good', 'Good'], ['slow', 'Slow'], ['down', 'Down']].map(([k, l]) => (
+                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 2, background: connColors[k as ConnStatus] }} />
+                  <span style={{ color: '#4a5a6a', fontSize: 10 }}>{l}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -225,8 +308,8 @@ function VoyageRow({ entry, downHistory, onDelete }: {
 function IncidentFeed({ alerts }: { alerts: Alert[] }) {
   const incident = alerts.filter(a => a.severity !== 'info').slice(0, 5);
   return (
-    <Card>
-      <CardLabel>Recent Incidents</CardLabel>
+    <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 14, padding: 20 }}>
+      <div style={{ color: '#4a5a6a', fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Recent Incidents</div>
       {incident.length === 0 ? (
         <div style={{ color: '#4a5a6a', fontSize: 12 }}>No incidents recorded.</div>
       ) : (
@@ -234,11 +317,7 @@ function IncidentFeed({ alerts }: { alerts: Alert[] }) {
           {incident.map(a => {
             const color = a.severity === 'critical' ? '#ef4444' : '#f59e0b';
             return (
-              <div key={a.id} style={{
-                display: 'flex', alignItems: 'flex-start', gap: 10,
-                background: '#0a0f18', borderRadius: 10, padding: '10px 14px',
-                borderLeft: `3px solid ${color}`,
-              }}>
+              <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#0a0f18', borderRadius: 10, padding: '10px 14px', borderLeft: `3px solid ${color}` }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ color: a.resolved ? '#6b7f92' : '#f0f4f8', fontSize: 13, fontWeight: 500 }}>{a.title}</div>
                   <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 2 }}>
@@ -254,115 +333,235 @@ function IncidentFeed({ alerts }: { alerts: Alert[] }) {
           })}
         </div>
       )}
-    </Card>
+    </div>
   );
+}
+
+// ── Geocoding ────────────────────────────────────────────────────
+
+async function geocodeLocation(query: string): Promise<{ country: string; region: string } | null> {
+  if (!query.trim()) return null;
+  try {
+    const url  = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`;
+    const r    = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    const data = await r.json() as Array<{ address?: Record<string, string> }>;
+    if (!data[0]?.address) return null;
+    const addr    = data[0].address;
+    const country = addr.country ?? '';
+    const region  = addr.state ?? addr.county ?? addr.region ?? addr.territory ?? '';
+    return { country, region };
+  } catch { return null; }
 }
 
 // ── Add Entry Modal ───────────────────────────────────────────────
 
-const PROVIDERS = ['Starlink', 'LTE', 'VSAT', 'None'] as const;
+function GeoField({ label, loading, placeholder, value, onChange }: {
+  label: string; loading: boolean; placeholder: string;
+  value: string; onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, marginBottom: 5 }}>{loading ? `${label} (detecting…)` : label}</div>
+      <input
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        style={{ background: '#080b10', color: loading ? '#4a5a6a' : '#f0f4f8', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 12px', fontSize: 13, width: '100%', outline: 'none', boxSizing: 'border-box' as const }}
+      />
+    </div>
+  );
+}
 
 function AddEntryModal({ onSave, onClose }: {
   onSave:  (entry: Omit<VoyageEntry, 'id' | 'createdAt'>) => void;
   onClose: () => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [form, setForm] = useState({
-    date:         today,
-    location:     '',
-    region:       '',
-    avgDownMbps:  '0',
-    avgLatencyMs: '0',
-    uptimePct:    '100',
-    provider:     'Starlink' as typeof PROVIDERS[number],
-    incidents:    '0',
-    notes:        '',
-  });
+  const inputStyle: React.CSSProperties = {
+    background: '#080b10', color: '#f0f4f8', border: '1px solid #1a2535',
+    borderRadius: 8, padding: '8px 12px', fontSize: 13, width: '100%', outline: 'none', boxSizing: 'border-box',
+  };
+  const lbl = (t: string) => <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, marginBottom: 5 }}>{t}</div>;
 
-  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const [entryType,         setEntryType]         = useState<'in_port' | 'underway'>('in_port');
+  const [date,              setDate]              = useState(today);
+  const [locFrom,           setLocFrom]           = useState('');
+  const [country,           setCountry]           = useState('');
+  const [region,            setRegion]            = useState('');
+  const [geoFromLoading,    setGeoFromLoading]    = useState(false);
+  const [locTo,             setLocTo]             = useState('');
+  const [locationToCountry, setLocationToCountry] = useState('');
+  const [locationToRegion,  setLocationToRegion]  = useState('');
+  const [eta,               setEta]               = useState('');
+  const [geoToLoading,      setGeoToLoading]      = useState(false);
+  const [notes,             setNotes]             = useState('');
+  const [autoFilling,       setAutoFilling]       = useState(false);
+  const [autoFilled,        setAutoFilled]        = useState(false);
+  const [autoData,          setAutoData]          = useState<{ avgDownMbps: number; avgLatencyMs: number; uptimePct: number; provider: string; incidents: number; blocks: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAutoFilling(true);
+    setAutoFilled(false);
+    setAutoData(null);
+    agentApi.voyage.autofill(date).then(data => {
+      if (cancelled) return;
+      if (data.hasData) { setAutoData(data); setAutoFilled(true); }
+    }).catch(() => {}).finally(() => { if (!cancelled) setAutoFilling(false); });
+    return () => { cancelled = true; };
+  }, [date]);
+
+  async function geocodeFrom(query: string) {
+    if (!query.trim()) return;
+    setGeoFromLoading(true);
+    const r = await geocodeLocation(query);
+    setGeoFromLoading(false);
+    if (r) {
+      if (!country) setCountry(r.country);
+      if (!region)  setRegion(r.region);
+    }
+  }
+
+  async function geocodeTo(query: string) {
+    if (!query.trim()) return;
+    setGeoToLoading(true);
+    const r = await geocodeLocation(query);
+    setGeoToLoading(false);
+    if (r) {
+      if (!locationToCountry) setLocationToCountry(r.country);
+      if (!locationToRegion)  setLocationToRegion(r.region);
+    }
+  }
+
+  const isUnderway = entryType === 'underway';
+  const canSave    = locFrom.trim().length > 0;
 
   function handleSave() {
-    if (!form.location.trim()) return;
+    if (!canSave) return;
     onSave({
-      date:         form.date,
-      location:     form.location.trim(),
-      region:       form.region.trim(),
-      avgDownMbps:  parseFloat(form.avgDownMbps)  || 0,
-      avgLatencyMs: parseFloat(form.avgLatencyMs) || 0,
-      uptimePct:    parseFloat(form.uptimePct)     || 100,
-      provider:     form.provider,
-      incidents:    parseInt(form.incidents)        || 0,
-      blocks:       '[]',
-      notes:        form.notes.trim(),
+      date,
+      location:          locFrom.trim(),
+      region:            region.trim(),
+      country:           country.trim(),
+      locationTo:        isUnderway ? locTo.trim()             : '',
+      locationToCountry: isUnderway ? locationToCountry.trim() : '',
+      locationToRegion:  isUnderway ? locationToRegion.trim()  : '',
+      eta:               isUnderway ? eta                       : '',
+      status:            entryType,
+      avgDownMbps:       autoData?.avgDownMbps  ?? 0,
+      avgLatencyMs:      autoData?.avgLatencyMs ?? 0,
+      uptimePct:         autoData?.uptimePct    ?? 100,
+      provider:          autoData?.provider     ?? 'Starlink',
+      incidents:         autoData?.incidents    ?? 0,
+      blocks:            autoData?.blocks       ?? '[]',
+      notes:             notes.trim(),
     });
   }
 
-  const inputStyle: React.CSSProperties = {
-    background: '#080b10', color: '#f0f4f8', border: '1px solid #1a2535',
-    borderRadius: 8, padding: '8px 12px', fontSize: 13, width: '100%',
-    outline: 'none', boxSizing: 'border-box',
-  };
-  const lbl = (text: string) => (
-    <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, marginBottom: 5 }}>{text}</div>
-  );
-
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 16, padding: 28, width: 480, maxWidth: '95vw' }}>
+      <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 16, padding: 28, width: 540, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div style={{ color: '#f0f4f8', fontSize: 16, fontWeight: 700 }}>Add Voyage Entry</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#6b7f92' }}><X size={18} /></button>
         </div>
 
+        {/* Agent data banner */}
+        <div style={{ marginBottom: 16, borderRadius: 8, padding: '7px 12px', fontSize: 12,
+          ...(autoFilling
+            ? { background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.2)', color: '#7dd3fc' }
+            : autoFilled
+            ? { background: 'rgba(34,197,94,0.08)',   border: '1px solid rgba(34,197,94,0.2)',  color: '#4ade80' }
+            : { background: 'rgba(107,127,146,0.06)', border: '1px solid #1a2535', color: '#4a5a6a' })
+        }}>
+          {autoFilling
+            ? 'Fetching performance data for this date\u2026'
+            : autoFilled
+            ? '\u2713 Speed, latency, uptime & incidents auto-filled from agent data.'
+            : 'No agent data for this date \u2014 performance metrics will default to zero.'}
+        </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              {lbl('Date')}
-              <input type="date" value={form.date} onChange={e => set('date', e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              {lbl('Provider')}
-              <select value={form.provider} onChange={e => set('provider', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-          </div>
 
+          {/* Date */}
           <div>
-            {lbl('Location')}
-            <input placeholder="Monaco, France" value={form.location} onChange={e => set('location', e.target.value)} style={inputStyle} />
+            {lbl('Date')}
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
           </div>
 
+          {/* Entry type toggle */}
           <div>
-            {lbl('Region (optional)')}
-            <input placeholder="Mediterranean" value={form.region} onChange={e => set('region', e.target.value)} style={inputStyle} />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-            <div>
-              {lbl('Down (Mbps)')}
-              <input type="number" min="0" value={form.avgDownMbps} onChange={e => set('avgDownMbps', e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              {lbl('Latency (ms)')}
-              <input type="number" min="0" value={form.avgLatencyMs} onChange={e => set('avgLatencyMs', e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              {lbl('Uptime %')}
-              <input type="number" min="0" max="100" step="0.1" value={form.uptimePct} onChange={e => set('uptimePct', e.target.value)} style={inputStyle} />
+            {lbl('Entry Type')}
+            <div style={{ display: 'flex', background: '#080b10', border: '1px solid #1a2535', borderRadius: 8, padding: 3 }}>
+              {([['in_port', '\u2693\ufe0f  In Port / At Anchor'], ['underway', '\u26f5\ufe0f  Underway / Transit']] as const).map(([t, label]) => (
+                <button key={t} onClick={() => setEntryType(t)} style={{
+                  flex: 1, padding: '7px 0', border: 'none', borderRadius: 6, cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600, transition: 'background 0.15s',
+                  background: entryType === t ? '#1a2535' : 'transparent',
+                  color:      entryType === t ? '#f0f4f8'  : '#4a5a6a',
+                }}>{label}</button>
+              ))}
             </div>
           </div>
 
-          <div>
-            {lbl('Incidents')}
-            <input type="number" min="0" value={form.incidents} onChange={e => set('incidents', e.target.value)} style={inputStyle} />
+          {/* From / static location */}
+          <div style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 700, letterSpacing: 0.8 }}>
+              {isUnderway ? '\u2693\ufe0f  DEPARTED FROM' : '\u2693\ufe0f  LOCATION'}
+            </div>
+            <div>
+              {lbl('Port / Place name')}
+              <input
+                placeholder="e.g. Monaco"
+                value={locFrom}
+                onChange={e => setLocFrom(e.target.value)}
+                onBlur={() => geocodeFrom(locFrom)}
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <GeoField label="Country" loading={geoFromLoading} placeholder="France" value={country} onChange={setCountry} />
+              <GeoField label="Region"  loading={geoFromLoading} placeholder="Provence" value={region}  onChange={setRegion} />
+            </div>
           </div>
 
+          {/* Destination (underway only) */}
+          {isUnderway && (
+            <div style={{ background: '#080b10', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ color: '#a78bfa', fontSize: 11, fontWeight: 700, letterSpacing: 0.8 }}>\u26f5\ufe0f  DESTINATION</div>
+              <div>
+                {lbl('Destination port / place')}
+                <input
+                  placeholder="e.g. Nice, France"
+                  value={locTo}
+                  onChange={e => setLocTo(e.target.value)}
+                  onBlur={() => geocodeTo(locTo)}
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <GeoField label="Country"       loading={geoToLoading} placeholder="France"       value={locationToCountry} onChange={setLocationToCountry} />
+                <GeoField label="Region"        loading={geoToLoading} placeholder="C\u00f4te d'Azur" value={locationToRegion}  onChange={setLocationToRegion} />
+              </div>
+              <div>
+                {lbl('ETA (estimated arrival date)')}
+                <input type="date" value={eta} min={date} onChange={e => setEta(e.target.value)} style={inputStyle} />
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
           <div>
             {lbl('Notes (optional)')}
-            <input placeholder="e.g. Outage during bridge transit" value={form.notes} onChange={e => set('notes', e.target.value)} style={inputStyle} />
+            <input
+              placeholder="e.g. Choppy seas, Starlink degraded near coast"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              style={inputStyle}
+            />
           </div>
         </div>
 
@@ -372,8 +571,8 @@ function AddEntryModal({ onSave, onClose }: {
           </button>
           <button
             onClick={handleSave}
-            disabled={!form.location.trim()}
-            style={{ background: form.location.trim() ? 'rgba(14,165,233,0.15)' : '#0d1421', color: form.location.trim() ? '#7dd3fc' : '#4a5a6a', border: `1px solid ${form.location.trim() ? 'rgba(14,165,233,0.35)' : '#1a2535'}`, borderRadius: 9, padding: '9px 22px', fontSize: 13, fontWeight: 600, cursor: form.location.trim() ? 'pointer' : 'default' }}
+            disabled={!canSave}
+            style={{ background: canSave ? 'rgba(14,165,233,0.15)' : '#0d1421', color: canSave ? '#7dd3fc' : '#4a5a6a', border: `1px solid ${canSave ? 'rgba(14,165,233,0.35)' : '#1a2535'}`, borderRadius: 9, padding: '9px 22px', fontSize: 13, fontWeight: 600, cursor: canSave ? 'pointer' : 'default' }}
           >
             Save Entry
           </button>
@@ -396,7 +595,7 @@ export default function Voyage() {
       const entries = await agentApi.voyage.list();
       setLog(entries);
     } catch {
-      // agent offline — keep empty
+      // agent offline
     } finally {
       setLoading(false);
     }
@@ -423,18 +622,32 @@ export default function Voyage() {
     }
   }
 
-  const downHistory = [...log].reverse().map(e => e.avgDownMbps);
+  async function handleUpdate(id: string, patch: Partial<Omit<VoyageEntry, 'id' | 'createdAt'>>) {
+    try {
+      const updated = await agentApi.voyage.update(id, patch);
+      setLog(l => l.map(e => e.id === id ? updated : e));
+    } catch (err) {
+      console.error('Failed to update voyage entry', err);
+    }
+  }
+
+  // Active entries (in_port / underway) float to top, then date desc
+  const sorted = [...log].sort((a, b) => {
+    const aA = a.status === 'in_port' || a.status === 'underway' ? 0 : 1;
+    const bA = b.status === 'in_port' || b.status === 'underway' ? 0 : 1;
+    if (aA !== bA) return aA - bA;
+    return b.date.localeCompare(a.date);
+  });
+
+  const downHistory = [...log].sort((a, b) => a.date.localeCompare(b.date)).map(e => e.avgDownMbps);
 
   return (
-    <div style={{ padding: 28, maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ padding: 28, maxWidth: 1150, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
           <div style={{ color: '#f0f4f8', fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>Voyage Log</div>
-          <div style={{ color: '#6b7f92', fontSize: 13, marginTop: 4 }}>
-            Connectivity history and performance across this voyage
-          </div>
+          <div style={{ color: '#6b7f92', fontSize: 13, marginTop: 4 }}>Connectivity history and performance across this voyage</div>
         </div>
         <button
           onClick={() => setShowModal(true)}
@@ -447,32 +660,30 @@ export default function Voyage() {
       <SummaryKpis log={log} />
 
       {loading ? (
-        <Card>
-          <div style={{ color: '#4a5a6a', fontSize: 13, textAlign: 'center', padding: 20 }}>Loading voyage log…</div>
-        </Card>
+        <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 14, padding: 40, textAlign: 'center', color: '#4a5a6a', fontSize: 13 }}>
+          Loading voyage log\u2026
+        </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, alignItems: 'start' }}>
-          <Card>
-            <CardLabel>Day-by-Day Connectivity ({log.length} entries)</CardLabel>
-            {log.length === 0 ? (
-              <div style={{ color: '#4a5a6a', fontSize: 13, padding: '10px 0' }}>
-                No entries yet — add your first voyage entry above.
-              </div>
+          <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 14, padding: 20 }}>
+            <div style={{ color: '#4a5a6a', fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 14 }}>
+              Voyage Entries ({sorted.length})
+            </div>
+            {sorted.length === 0 ? (
+              <div style={{ color: '#4a5a6a', fontSize: 13, padding: '10px 0' }}>No entries yet \u2014 add your first voyage entry above.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {log.map(s => (
-                  <VoyageRow key={s.id} entry={s} downHistory={downHistory} onDelete={handleDelete} />
+                {sorted.map(s => (
+                  <VoyageRow key={s.id} entry={s} downHistory={downHistory} onDelete={handleDelete} onUpdate={handleUpdate} />
                 ))}
               </div>
             )}
-          </Card>
-
+          </div>
           <IncidentFeed alerts={alerts} />
         </div>
       )}
 
       {showModal && <AddEntryModal onSave={handleAdd} onClose={() => setShowModal(false)} />}
-
     </div>
   );
 }

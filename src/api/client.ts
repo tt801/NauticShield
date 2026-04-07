@@ -6,18 +6,24 @@ export type { Device, Alert, InternetStatus, NetworkHealth };
 // ── Voyage entry (mirrors agent db.VoyageEntry) ───────────────────
 
 export interface VoyageEntry {
-  id:           string;
-  date:         string;
-  location:     string;
-  region:       string;
-  avgDownMbps:  number;
-  avgLatencyMs: number;
-  uptimePct:    number;
-  provider:     string;
-  incidents:    number;
-  blocks:       string; // JSON string of ('good'|'slow'|'down')[]
-  notes:        string;
-  createdAt:    string;
+  id:                string;
+  date:              string;
+  location:          string;
+  region:            string;
+  country:           string;
+  locationTo:        string;
+  locationToCountry: string;
+  locationToRegion:  string;
+  eta:               string;
+  status:            string; // 'in_port' | 'underway' | 'completed'
+  avgDownMbps:       number;
+  avgLatencyMs:      number;
+  uptimePct:         number;
+  provider:          string;
+  incidents:         number;
+  blocks:            string;
+  notes:             string;
+  createdAt:         string;
 }
 
 export interface VesselSnapshot {
@@ -82,6 +88,9 @@ export const agentApi = {
   voyage: {
     list: () =>
       fetchJSON<VoyageEntry[]>(`${AGENT_URL}/api/voyage`),
+
+    autofill: (date: string) =>
+      fetchJSON<{ avgDownMbps: number; avgLatencyMs: number; uptimePct: number; provider: string; incidents: number; blocks: string; hasData: boolean }>(`${AGENT_URL}/api/voyage/autofill?date=${date}`),
 
     add: (entry: Omit<VoyageEntry, 'id' | 'createdAt'>) =>
       fetchJSON<VoyageEntry>(`${AGENT_URL}/api/voyage`, {

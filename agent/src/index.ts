@@ -96,6 +96,14 @@ async function runCycle(): Promise<void> {
     const { reachable, latencyMs } = await checkInternetConnectivity();
     const internetStatus = updateInternetStatus(reachable, latencyMs);
 
+    // Log a perf sample for voyage auto-fill
+    db.insertPerfSample({
+      status:       internetStatus.status,
+      provider:     internetStatus.provider,
+      downloadMbps: internetStatus.downloadMbps,
+      latencyMs:    latencyMs ?? 0,
+    });
+
     // 2. Network scan — returns changed devices
     const { newDevices, updatedDevices } = await scanNetwork(SUBNET);
 

@@ -206,7 +206,8 @@ function ThreatRing({ score }: { score: number }) {
   const offset = circumference * (1 - danger / 100);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
       <svg width={124} height={124}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1a2535" strokeWidth={10} />
         <circle
@@ -223,6 +224,7 @@ function ThreatRing({ score }: { score: number }) {
         <text x={cx} y={cy - 6} textAnchor="middle" fill={color} fontSize={22} fontWeight={800}>{danger}</text>
         <text x={cx} y={cy + 14} textAnchor="middle" fill="#6b7f92" fontSize={11}>{label}</text>
       </svg>
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ fontSize: 12, color: '#8899aa' }}>Threat exposure score</div>
         <div style={{ fontSize: 11, color: '#4a5a6a' }}>Updated every 30s</div>
