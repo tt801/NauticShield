@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Agent — never commit secrets or the live SQLite database
+agent/.env
+agent/data/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -21,8 +21,9 @@ import {
   Camera,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { internetStatus, networkHealth, alerts, devices } from '@/data/mock';
 import type { ConnectionStatus, AlertSeverity } from '@/data/mock';
+import { useVesselData } from '@/context/VesselDataProvider';
+import type { AgentStatus } from '@/context/VesselDataProvider';
 
 // ── colour maps ──────────────────────────────────────────────────
 
@@ -199,6 +200,7 @@ const dlHistory = [110,125,132,141,138,130,135,140,142,139,145,142];
 const ulHistory = [22,25,28,30,31,29,28,32,31,33,31,31];
 
 function InternetCard() {
+  const { internetStatus } = useVesselData();
   const s = internetStatus;
   const c = connColors[s.status];
 
@@ -254,6 +256,7 @@ function InternetCard() {
 // ── Network health card ───────────────────────────────────────────
 
 function NetworkHealthCard() {
+  const { networkHealth } = useVesselData();
   const n = networkHealth;
   return (
     <Card>
@@ -288,6 +291,7 @@ function NetworkHealthCard() {
 // ── Alert feed ────────────────────────────────────────────────────
 
 function AlertFeed() {
+  const { alerts } = useVesselData();
   const feed = [...alerts.filter(a => !a.resolved), ...alerts.filter(a => a.resolved)].slice(0, 5);
   const active = alerts.filter(a => !a.resolved);
   const counts = {
@@ -361,6 +365,7 @@ function AlertFeed() {
 // ── Device overview ───────────────────────────────────────────────
 
 function DeviceOverviewCard() {
+  const { devices } = useVesselData();
   const online  = devices.filter(d => d.status === 'online').length;
   const offline = devices.filter(d => d.status === 'offline').length;
   const unknown = devices.filter(d => d.type === 'unknown').length;
@@ -563,15 +568,44 @@ function QuickActionsCard() {
   );
 }
 
+// ── Agent status banner ──────────────────────────────────────────
+
+function AgentStatusBanner({ status, lastSync }: { status: AgentStatus; lastSync: Date | null }) {
+  if (status === 'online') return null;
+  const isConnecting = status === 'connecting';
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      background: isConnecting ? 'rgba(245,158,11,0.08)' : 'rgba(239,68,68,0.08)',
+      border: `1px solid ${isConnecting ? 'rgba(245,158,11,0.25)' : 'rgba(239,68,68,0.25)'}`,
+      borderRadius: 10, padding: '10px 16px', marginBottom: 14, fontSize: 13,
+    }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+        background: isConnecting ? '#f59e0b' : '#ef4444', display: 'inline-block' }} />
+      <span style={{ color: isConnecting ? '#f59e0b' : '#ef4444', fontWeight: 600 }}>
+        {isConnecting ? 'Connecting to vessel agent…' : 'Agent offline — showing cached data'}
+      </span>
+      {lastSync && (
+        <span style={{ color: '#6b7f92', fontSize: 12, marginLeft: 'auto' }}>
+          Last sync: {lastSync.toLocaleTimeString()}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const { devices, alerts, internetStatus, agentStatus, lastSync } = useVesselData();
   const online       = devices.filter(d => d.status === 'online').length;
   const activeAlerts = alerts.filter(a => !a.resolved).length;
   const date = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   return (
     <div style={{ padding: '24px 28px', minHeight: '100%', background: '#080b10' }}>
+
+      <AgentStatusBanner status={agentStatus} lastSync={lastSync} />
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -600,7 +634,7 @@ export default function Dashboard() {
 
       {/* KPI row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 14 }}>
-        <KpiCard label="Download Speed" value={`${internetStatus.downloadMbps} Mbps`} sub="Starlink primary" icon={Globe} iconColor="#0ea5e9" trend="up" trendLabel="+12% vs yesterday" sparkData={dlHistory} />
+        <KpiCard label="Download Speed" value={`${internetStatus.downloadMbps} Mbps`} sub={`${internetStatus.provider} primary`} icon={Globe} iconColor="#0ea5e9" trend="up" trendLabel="+12% vs yesterday" sparkData={dlHistory} />
         <KpiCard label="Latency" value={`${internetStatus.latencyMs} ms`} sub="Avg over last hour" icon={Zap} iconColor="#22c55e" trend="up" trendLabel="8ms better than avg" sparkData={[32,30,28,29,31,28,27,28,30,28,29,28]} />
         <KpiCard label="Devices Online" value={online} sub={`of ${devices.length} total`} icon={MonitorSmartphone} iconColor="#8b5cf6" trend="neutral" trendLabel="3 offline right now" sparkData={[20,22,21,23,22,23,22,24,23,22,23,online]} />
         <KpiCard

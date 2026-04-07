@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { VesselDataProvider } from '@/context/VesselDataProvider'
 import Layout from '@/components/Layout'
 import Dashboard    from '@/pages/Dashboard'
 import Devices      from '@/pages/Devices'
@@ -10,6 +11,7 @@ import Voyage       from '@/pages/Voyage'
 
 export default function App() {
   return (
+    <VesselDataProvider>
     <BrowserRouter>
       <Layout>
         <Routes>
@@ -23,5 +25,6 @@ export default function App() {
         </Routes>
       </Layout>
     </BrowserRouter>
+    </VesselDataProvider>
   )
 }
