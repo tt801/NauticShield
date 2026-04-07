@@ -1895,6 +1895,162 @@ function DeviceRiskPanel({
   );
 }
 
+// ── Risk Alert Toast ────────────────────────────────────────────
+
+function RiskToast({
+  device,
+  cve,
+  onView,
+  onDismiss,
+}: {
+  device:    Device;
+  cve:       MaritimeCVE;
+  onView:    () => void;
+  onDismiss: () => void;
+}) {
+  const sc = cve.severity === 'Critical' ? '#ef4444' : cve.severity === 'High' ? '#f97316' : '#f59e0b';
+
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 8000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  return (
+    <div style={{
+      background: '#0d1421',
+      border: `1px solid ${sc}`,
+      borderRadius: 12,
+      padding: '14px 18px',
+      minWidth: 320,
+      maxWidth: 380,
+      boxShadow: `0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px ${sc}33`,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      animation: 'slideInRight 0.25s ease',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ShieldAlert size={16} color={sc} />
+          <span style={{ color: sc, fontWeight: 800, fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+            {cve.severity} Risk Detected
+          </span>
+        </div>
+        <button
+          onClick={onDismiss}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a5a6a', padding: 0, lineHeight: 1 }}
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      <div>
+        <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 13, marginBottom: 3 }}>{device.name}</div>
+        <div style={{ color: '#94a3b8', fontSize: 11, lineHeight: 1.4 }}>{cve.title}</div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{
+            background: `${sc}22`, color: sc, border: `1px solid ${sc}44`,
+            borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 800,
+          }}>
+            CVSS {cve.cvss.toFixed(1)}
+          </span>
+          <span style={{ color: '#4a5a6a', fontSize: 10 }}>{cve.bimcoRef}</span>
+        </div>
+        <button
+          onClick={onView}
+          style={{
+            background: sc, border: 'none', borderRadius: 7,
+            padding: '5px 14px', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+          }}
+        >
+          View Risk →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Risk Alert Toast ────────────────────────────────────────────
+
+function RiskToast({
+  device,
+  cve,
+  onView,
+  onDismiss,
+}: {
+  device:    Device;
+  cve:       MaritimeCVE;
+  onView:    () => void;
+  onDismiss: () => void;
+}) {
+  const sc = cve.severity === 'Critical' ? '#ef4444' : cve.severity === 'High' ? '#f97316' : '#f59e0b';
+
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 8000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  return (
+    <div style={{
+      background: '#0d1421',
+      border: `1px solid ${sc}`,
+      borderRadius: 12,
+      padding: '14px 18px',
+      minWidth: 320,
+      maxWidth: 380,
+      boxShadow: `0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px ${sc}33`,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      animation: 'slideInRight 0.25s ease',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ShieldAlert size={16} color={sc} />
+          <span style={{ color: sc, fontWeight: 800, fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+            {cve.severity} Risk Detected
+          </span>
+        </div>
+        <button
+          onClick={onDismiss}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a5a6a', padding: 0, lineHeight: 1 }}
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      <div>
+        <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 13, marginBottom: 3 }}>{device.name}</div>
+        <div style={{ color: '#94a3b8', fontSize: 11, lineHeight: 1.4 }}>{cve.title}</div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{
+            background: `${sc}22`, color: sc, border: `1px solid ${sc}44`,
+            borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 800,
+          }}>
+            CVSS {cve.cvss.toFixed(1)}
+          </span>
+          <span style={{ color: '#4a5a6a', fontSize: 10 }}>{cve.bimcoRef}</span>
+        </div>
+        <button
+          onClick={onView}
+          style={{
+            background: sc, border: 'none', borderRadius: 7,
+            padding: '5px 14px', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+          }}
+        >
+          View Risk →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Live Threat Pulse strip ───────────────────────────────────────
 
 function LiveThreatPulse({
@@ -2012,6 +2168,36 @@ export default function Cyber() {
   const [scanOpen,     setScanOpen]     = useState(false);
   const [selectedDev,  setSelectedDev]  = useState<Device | null>(null);
   const [isolatedIps,  setIsolatedIps]  = useState<Set<string>>(new Set());
+  const [riskAlerts,   setRiskAlerts]   = useState<{id: string; device: Device; cve: MaritimeCVE}[]>([]);
+
+  // Fire risk alerts on mount for all Critical/High CVSS devices
+  useEffect(() => {
+    const alerts = devices
+      .filter(d => !isolatedIps.has(d.ip))
+      .map(d => { const cves = matchCVEs(d); return { device: d, cve: cves[0] }; })
+      .filter(x => x.cve && x.cve.cvss >= 7.0)
+      .slice(0, 4)
+      .map(x => ({ id: `${x.device.id}-${x.cve!.id}`, device: x.device, cve: x.cve! }));
+    if (alerts.length > 0) setRiskAlerts(alerts);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const dismissAlert = (id: string) => setRiskAlerts(prev => prev.filter(a => a.id !== id));
+  const [riskAlerts,   setRiskAlerts]   = useState<{id: string; device: Device; cve: MaritimeCVE}[]>([]);
+
+  // Fire risk alerts on mount for all Critical/High CVSS devices
+  useEffect(() => {
+    const alerts = devices
+      .filter(d => !isolatedIps.has(d.ip))
+      .map(d => { const cves = matchCVEs(d); return { device: d, cve: cves[0] }; })
+      .filter(x => x.cve && x.cve.cvss >= 7.0)
+      .slice(0, 4)
+      .map(x => ({ id: `${x.device.id}-${x.cve!.id}`, device: x.device, cve: x.cve! }));
+    if (alerts.length > 0) setRiskAlerts(alerts);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const dismissAlert = (id: string) => setRiskAlerts(prev => prev.filter(a => a.id !== id));
 
   const scanResults   = buildScanResults(devices);
   const coverage      = buildProtection(devices);
@@ -2189,6 +2375,27 @@ export default function Cyber() {
           onIsolate={isolateDevice}
           isolated={isolatedIps.has(selectedDev.ip)}
         />
+      )}
+
+      {/* Risk alert toasts — bottom-right stack */}
+      {riskAlerts.length > 0 && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24,
+          display: 'flex', flexDirection: 'column', gap: 10,
+          zIndex: 9999, pointerEvents: 'none',
+        }}>
+          <style>{`@keyframes slideInRight { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }`}</style>
+          {riskAlerts.map(a => (
+            <div key={a.id} style={{ pointerEvents: 'all' }}>
+              <RiskToast
+                device={a.device}
+                cve={a.cve}
+                onView={() => { setSelectedDev(a.device); dismissAlert(a.id); }}
+                onDismiss={() => dismissAlert(a.id)}
+              />
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
