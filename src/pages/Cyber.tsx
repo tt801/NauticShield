@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -31,6 +31,8 @@ import { useVesselData } from '@/context/VesselDataProvider';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Device } from '@/data/mock';
+import { agentApi } from '@/api/client';
+import type { CyberFinding } from '@/api/client';
 
 // ── Design tokens ────────────────────────────────────────────────
 
@@ -588,6 +590,8 @@ type PenCheckResult = {
   status:   CheckStatus;
   detail:   string;
   weight:   number; // 1-3, higher = more impact on score
+  bimcoRef: string;  // e.g. 'BIMCO §7.3'
+  imoRef:   string;  // e.g. 'MSC-FAL.1 Elm.1'
 };
 
 function scoreScanResults(
@@ -607,6 +611,8 @@ function scoreScanResults(
     status:   riskDevices.length === 0 ? 'pass' : riskDevices.length <= 1 ? 'warn' : 'fail',
     detail:   riskDevices.length === 0 ? 'No high-risk ports exposed on any device.' : `${riskDevices.length} device(s) with risky ports: ${riskDevices.map(d => d.deviceName).join(', ')}.`,
     weight:   3,
+    bimcoRef: 'BIMCO §7.3',
+    imoRef:   'MSC-FAL.1 Elm.1',
   });
   const openPortDevices = scanResults.filter(r => r.openPorts.length > 3);
   checks.push({
@@ -615,6 +621,8 @@ function scoreScanResults(
     status:   openPortDevices.length === 0 ? 'pass' : openPortDevices.length <= 2 ? 'warn' : 'fail',
     detail:   openPortDevices.length === 0 ? 'Devices have minimal port exposure.' : `${openPortDevices.length} device(s) have >3 open ports.`,
     weight:   2,
+    bimcoRef: 'BIMCO §7.3',
+    imoRef:   'MSC-FAL.1 Elm.1',
   });
 
   // Threat posture
@@ -625,6 +633,8 @@ function scoreScanResults(
     status:   activeThreats.length === 0 ? 'pass' : activeThreats.length <= 1 ? 'warn' : 'fail',
     detail:   activeThreats.length === 0 ? 'All high-severity threats mitigated.' : `${activeThreats.length} unmitigated threat(s): ${activeThreats.map(t => t.type).join(', ')}.`,
     weight:   3,
+    bimcoRef: 'BIMCO §6.1',
+    imoRef:   'MSC-FAL.1 Elm.3',
   });
   const openIncidents = incidents.filter(i => i.status === 'open' || i.status === 'investigating');
   checks.push({
@@ -633,6 +643,8 @@ function scoreScanResults(
     status:   openIncidents.length === 0 ? 'pass' : openIncidents.length <= 1 ? 'warn' : 'fail',
     detail:   openIncidents.length === 0 ? 'No open incidents.' : `${openIncidents.length} incident(s) still open or under investigation.`,
     weight:   2,
+    bimcoRef: 'BIMCO §6.2',
+    imoRef:   'MSC-FAL.1 Elm.4',
   });
 
   // Firewall hygiene
@@ -644,6 +656,8 @@ function scoreScanResults(
     status:   blockRules.length >= 2 ? 'pass' : blockRules.length === 1 ? 'warn' : 'fail',
     detail:   `${blockRules.length} active block rule(s) configured.`,
     weight:   2,
+    bimcoRef: 'BIMCO §3.2',
+    imoRef:   'MSC-FAL.1 Elm.2',
   });
   checks.push({
     category: 'Firewall & Access Control',
@@ -651,6 +665,8 @@ function scoreScanResults(
     status:   disabledRules.length === 0 ? 'pass' : disabledRules.length <= 1 ? 'warn' : 'fail',
     detail:   disabledRules.length === 0 ? 'All rules enabled.' : `${disabledRules.length} rule(s) currently disabled — review intent.`,
     weight:   1,
+    bimcoRef: 'BIMCO §3.2',
+    imoRef:   'MSC-FAL.1 Elm.2',
   });
 
   // Device hygiene
@@ -661,6 +677,8 @@ function scoreScanResults(
     status:   flagged.length === 0 ? 'pass' : 'fail',
     detail:   flagged.length === 0 ? 'No unrecognised devices on network.' : `${flagged.length} flagged device(s) detected.`,
     weight:   3,
+    bimcoRef: 'BIMCO §7.1',
+    imoRef:   'MSC-FAL.1 Elm.1',
   });
   checks.push({
     category: 'Device Hygiene',
@@ -668,6 +686,8 @@ function scoreScanResults(
     status:   devices.length >= 5 ? 'pass' : 'warn',
     detail:   `${devices.length} device(s) registered in inventory.`,
     weight:   1,
+    bimcoRef: 'BIMCO §7.1',
+    imoRef:   'MSC-FAL.1 Elm.1',
   });
 
   // Connectivity resilience
@@ -677,6 +697,8 @@ function scoreScanResults(
     status:   devices.some(d => d.provider !== devices[0]?.provider) ? 'pass' : 'warn',
     detail:   'Verify dual-provider (Starlink + LTE) failover is tested regularly.',
     weight:   1,
+    bimcoRef: 'BIMCO §3.3',
+    imoRef:   'MSC-FAL.1 Elm.5',
   });
   checks.push({
     category: 'Connectivity Resilience',
@@ -684,6 +706,8 @@ function scoreScanResults(
     status:   'warn',
     detail:   'Encrypted DNS not verifiable from current telemetry — confirm in router settings.',
     weight:   1,
+    bimcoRef: 'BIMCO §3.2',
+    imoRef:   'MSC-FAL.1 Elm.2',
   });
 
   // Compute weighted score
@@ -772,16 +796,18 @@ function exportPenTestPDF(score: number, checks: PenCheckResult[], scanResults: 
   autoTable(doc, {
     startY:  96,
     margin:  { left: 14, right: 14 },
-    head:    [['Category', 'Check', 'Result', 'Detail']],
-    body:    checks.map(c => [c.category, c.check, c.status.toUpperCase(), c.detail]),
+    head:    [['Category', 'Check', 'Result', 'Detail', 'BIMCO', 'IMO Ref']],
+    body:    checks.map(c => [c.category, c.check, c.status.toUpperCase(), c.detail, c.bimcoRef, c.imoRef]),
     styles:  { font: 'helvetica', fontSize: 8, cellPadding: 3, textColor: WHITE, fillColor: PANEL },
     headStyles:     { fillColor: [22, 33, 52] as [number,number,number], textColor: GOLD_C, fontStyle: 'bold', fontSize: 8 },
     alternateRowStyles: { fillColor: [10, 15, 24] as [number,number,number] },
     columnStyles: {
-      0: { cellWidth: 38 },
-      1: { cellWidth: 60 },
-      2: { cellWidth: 18 },
+      0: { cellWidth: 32 },
+      1: { cellWidth: 52 },
+      2: { cellWidth: 14 },
       3: { cellWidth: 'auto' },
+      4: { cellWidth: 20 },
+      5: { cellWidth: 22 },
     },
     didParseCell(data) {
       if (data.column.index === 2 && data.section === 'body') {
@@ -827,6 +853,250 @@ function exportPenTestPDF(score: number, checks: PenCheckResult[], scanResults: 
   doc.save(`NauticShield-Security-Assessment-${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
+
+function exportEngagementBrief(
+  pastScores: { runAt: string; score: number }[],
+  dbFindings: CyberFinding[],
+  penTests:   PenTest[],
+) {
+  const doc    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const DARK   = [8,  11, 16]  as [number,number,number];
+  const PANEL  = [13, 20, 33]  as [number,number,number];
+  const GOLD_C = [212,168,71]  as [number,number,number];
+  const WHITE  = [240,244,248] as [number,number,number];
+  const GREY   = [74,  90,106] as [number,number,number];
+  const GREEN  = [34, 197, 94] as [number,number,number];
+  const RED    = [239, 68, 68] as [number,number,number];
+  const BLUE   = [14, 165,233] as [number,number,number];
+  const pageW  = 210;
+  const today  = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  // ── Cover page ──────────────────────────────────────────────
+  doc.setFillColor(...DARK);
+  doc.rect(0, 0, pageW, 297, 'F');
+  doc.setFillColor(...GOLD_C);
+  doc.rect(0, 0, 4, 297, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(28);
+  doc.setTextColor(...WHITE);
+  doc.text('NauticShield', 18, 60);
+  doc.setFontSize(13);
+  doc.setTextColor(...GOLD_C);
+  doc.text('Pre-Engagement Security Brief', 18, 72);
+  doc.setFillColor(...GOLD_C);
+  doc.rect(18, 77, pageW - 36, 0.8, 'F');
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...GREY);
+  doc.text('Prepared for: External Penetration Testing Firm', 18, 88);
+  doc.text(`Date: ${today}`, 18, 95);
+  doc.text('Classification: CONFIDENTIAL', 18, 102);
+
+  // Purpose block
+  doc.setFillColor(...PANEL);
+  doc.roundedRect(18, 115, pageW - 36, 50, 3, 3, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...GOLD_C);
+  doc.text('PURPOSE OF THIS BRIEF', 26, 126);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...WHITE);
+  const purposeLines = doc.splitTextToSize(
+    'This document provides essential context for an upcoming external penetration test of the vessel's onboard network and systems. ' +
+    'It summarises the current security posture, historical assessment scores, open remediation items, and proposed engagement scope in line with ' +
+    'BIMCO Cyber Security Guidelines (2nd Ed.) and IMO MSC-FAL.1/Circ.3 functional elements.',
+    pageW - 52
+  );
+  doc.setFontSize(9);
+  doc.text(purposeLines, 26, 134);
+
+  // IMO / BIMCO reference
+  doc.setFillColor(0, 0, 0, 0);
+  doc.setDrawColor(...GOLD_C);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(18, 175, pageW - 36, 28, 3, 3, 'S');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...GOLD_C);
+  doc.text('REGULATORY FRAMEWORK', 26, 184);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...GREY);
+  doc.text('IMO MSC-FAL.1/Circ.3 — Guidelines on Maritime Cyber Risk Management', 26, 191);
+  doc.text('BIMCO Cyber Security Guidelines for Ships (2nd Edition, 2021)', 26, 197);
+  doc.text('IACS UR E26/E27 — Cyber Resilience for New Builds and Existing Ships', 26, 203);
+
+  // Footer
+  doc.setFillColor(...DARK);
+  doc.rect(0, 283, pageW, 14, 'F');
+  doc.setFillColor(...GOLD_C);
+  doc.rect(0, 281, pageW, 2, 'F');
+  doc.setFontSize(7);
+  doc.setTextColor(...GREY);
+  doc.text('NauticShield — Pre-Engagement Brief — CONFIDENTIAL', pageW / 2, 291, { align: 'center' });
+
+  // ── Page 2: Current posture ─────────────────────────────────
+  doc.addPage();
+  doc.setFillColor(...DARK);
+  doc.rect(0, 0, pageW, 18, 'F');
+  doc.setFillColor(...GOLD_C);
+  doc.rect(0, 18, pageW, 1, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...WHITE);
+  doc.text('Section 1 — Current Security Posture', 14, 13);
+
+  let y = 28;
+
+  // Score history
+  if (pastScores.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...GOLD_C);
+    doc.text('Quick Assessment Score History', 14, y);
+    y += 6;
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: 14, right: 14 },
+      head:   [['Date', 'Score', 'Rating']],
+      body:   pastScores.slice().reverse().map(s => [
+        new Date(s.runAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+        `${s.score}%`,
+        s.score >= 80 ? 'Good' : s.score >= 60 ? 'Fair' : 'Poor',
+      ]),
+      styles:     { font: 'helvetica', fontSize: 8, cellPadding: 3, textColor: WHITE, fillColor: PANEL },
+      headStyles: { fillColor: [22, 33, 52] as [number,number,number], textColor: GOLD_C, fontStyle: 'bold', fontSize: 8 },
+      alternateRowStyles: { fillColor: [10, 15, 24] as [number,number,number] },
+      columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 30 }, 2: { cellWidth: 'auto' } },
+      didParseCell(data) {
+        if (data.column.index === 2 && data.section === 'body') {
+          const v = data.cell.raw as string;
+          (data.cell.styles as any).textColor = v === 'Good' ? GREEN : v === 'Fair' ? [245,158,11] as [number,number,number] : RED;
+        }
+      },
+    });
+    y = ((doc as any).lastAutoTable?.finalY ?? y + 20) + 10;
+  }
+
+  // Open DB findings
+  const openFindings = dbFindings.filter(f => f.findingStatus === 'open');
+  if (openFindings.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...GOLD_C);
+    doc.text(`Open Automated Findings (${openFindings.length})`, 14, y);
+    y += 6;
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: 14, right: 14 },
+      head:   [['Category', 'Check', 'Status', 'Detail', 'BIMCO', 'IMO']],
+      body:   openFindings.map(f => [f.category, f.check_name, f.status.toUpperCase(), f.detail, '', f.imoRef ?? '']),
+      styles:     { font: 'helvetica', fontSize: 7, cellPadding: 2.5, textColor: WHITE, fillColor: PANEL },
+      headStyles: { fillColor: [22, 33, 52] as [number,number,number], textColor: GOLD_C, fontStyle: 'bold', fontSize: 7 },
+      alternateRowStyles: { fillColor: [10, 15, 24] as [number,number,number] },
+      columnStyles: { 0: { cellWidth: 28 }, 1: { cellWidth: 44 }, 2: { cellWidth: 14 }, 3: { cellWidth: 'auto' }, 4: { cellWidth: 18 }, 5: { cellWidth: 20 } },
+      didParseCell(data) {
+        if (data.column.index === 2 && data.section === 'body') {
+          const v = data.cell.raw as string;
+          (data.cell.styles as any).textColor = v === 'FAIL' ? RED : v === 'WARN' ? [245,158,11] as [number,number,number] : GREEN;
+          (data.cell.styles as any).fontStyle = 'bold';
+        }
+      },
+    });
+    y = ((doc as any).lastAutoTable?.finalY ?? y + 30) + 10;
+  }
+
+  // ── Page 3: Pen test history + scope ───────────────────────
+  doc.addPage();
+  doc.setFillColor(...DARK);
+  doc.rect(0, 0, pageW, 18, 'F');
+  doc.setFillColor(...GOLD_C);
+  doc.rect(0, 18, pageW, 1, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...WHITE);
+  doc.text('Section 2 — Professional Pen Test History', 14, 13);
+
+  y = 28;
+  const completedTests = penTests.filter(t => t.result !== 'scheduled');
+  if (completedTests.length > 0) {
+    autoTable(doc, {
+      startY: y,
+      margin: { left: 14, right: 14 },
+      head:   [['Test', 'Firm', 'Date', 'Score', 'Result', 'Findings', 'Open']],
+      body:   completedTests.map(t => [
+        t.label,
+        t.firm,
+        new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+        `${t.score}%`,
+        t.result.toUpperCase(),
+        t.findings.length,
+        t.findings.filter(f => !f.remediated).length,
+      ]),
+      styles:     { font: 'helvetica', fontSize: 8, cellPadding: 3, textColor: WHITE, fillColor: PANEL },
+      headStyles: { fillColor: [22, 33, 52] as [number,number,number], textColor: GOLD_C, fontStyle: 'bold', fontSize: 8 },
+      alternateRowStyles: { fillColor: [10, 15, 24] as [number,number,number] },
+      columnStyles: { 0: { cellWidth: 46 }, 1: { cellWidth: 26 }, 2: { cellWidth: 24 }, 3: { cellWidth: 16 }, 4: { cellWidth: 16 }, 5: { cellWidth: 16 }, 6: { cellWidth: 'auto' } },
+      didParseCell(data) {
+        if (data.column.index === 4 && data.section === 'body') {
+          const v = data.cell.raw as string;
+          (data.cell.styles as any).textColor = v === 'PASS' ? GREEN : RED;
+          (data.cell.styles as any).fontStyle = 'bold';
+        }
+        if (data.column.index === 6 && data.section === 'body') {
+          const v = Number(data.cell.raw);
+          if (v > 0) (data.cell.styles as any).textColor = RED;
+        }
+      },
+    });
+    y = ((doc as any).lastAutoTable?.finalY ?? y + 30) + 12;
+  }
+
+  // Suggested scope
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...GOLD_C);
+  doc.text('Section 3 — Proposed Engagement Scope', 14, y);
+  y += 6;
+
+  const scopeItems = [
+    ['External Network', 'BIMCO §8', 'MSC-FAL.1 Elm.1', 'External perimeter test of Starlink gateway and satellite modem interface. Assess exposed ports and services visible from the internet.'],
+    ['Wi-Fi VLAN Segmentation', 'BIMCO §7', 'MSC-FAL.1 Elm.2', 'Validate guest VLAN isolation from crew and OT networks. Test for cross-VLAN access using common pivot techniques.'],
+    ['OT/Navigation Systems', 'BIMCO §7.2', 'MSC-FAL.1 Elm.1', 'Passive review of NMEA 0183/2000 data bus exposure. Confirm chartplotter/AIS is isolated from guest-accessible networks.'],
+    ['Device Credential Audit', 'BIMCO §3.2', 'MSC-FAL.1 Elm.2', 'Test for default credentials on IP cameras, Starlink admin interface, managed switches and IoT endpoints.'],
+    ['Phishing Simulation', 'BIMCO §6', 'MSC-FAL.1 Elm.3', 'Optional: spear-phishing exercise targeting crew devices to assess email security controls and user awareness.'],
+    ['Physical Access', 'BIMCO §9', 'MSC-FAL.1 Elm.2', 'Inspect physical access to network switch ports and server room. Verify USB boot-lock on shore-side workstations.'],
+  ];
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 14, right: 14 },
+    head:   [['Area', 'BIMCO', 'IMO', 'Description']],
+    body:   scopeItems,
+    styles:     { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: WHITE, fillColor: PANEL },
+    headStyles: { fillColor: [22, 33, 52] as [number,number,number], textColor: GOLD_C, fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: [10, 15, 24] as [number,number,number] },
+    columnStyles: { 0: { cellWidth: 36 }, 1: { cellWidth: 20 }, 2: { cellWidth: 22 }, 3: { cellWidth: 'auto' } },
+  });
+
+  // Footer all pages
+  const pgH   = doc.internal.pageSize.getHeight();
+  const pgCt  = doc.getNumberOfPages();
+  for (let p = 1; p <= pgCt; p++) {
+    doc.setPage(p);
+    doc.setFillColor(...DARK);
+    doc.rect(0, pgH - 14, pageW, 14, 'F');
+    doc.setFontSize(7);
+    doc.setTextColor(...GREY);
+    doc.text(`NauticShield Pre-Engagement Brief — CONFIDENTIAL — Page ${p} of ${pgCt}`, pageW / 2, pgH - 5, { align: 'center' });
+  }
+
+  doc.save(`NauticShield-Engagement-Brief-${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
 function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents }: {
   tests:       PenTest[];
   devices:     Device[];
@@ -839,11 +1109,33 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
   const daysUntil  = next ? Math.ceil((new Date(next.date).getTime() - Date.now()) / (1000*60*60*24)) : null;
 
   type ScanPhase = 'idle' | 'scanning' | 'done';
-  const [phase,    setPhase]    = useState<ScanPhase>('idle');
-  const [progress, setProgress] = useState(0);
-  const [label,    setLabel]    = useState('');
-  const [result,   setResult]   = useState<{ score: number; checks: PenCheckResult[] } | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [phase,         setPhase]         = useState<ScanPhase>('idle');
+  const [progress,      setProgress]      = useState(0);
+  const [label,         setLabel]         = useState('');
+  const [result,        setResult]        = useState<{ score: number; checks: PenCheckResult[] } | null>(null);
+  const [expanded,      setExpanded]      = useState<string | null>(null);
+  const [pastScores,    setPastScores]    = useState<{ runAt: string; score: number }[]>([]);
+  const [dbFindings,    setDbFindings]    = useState<CyberFinding[]>([]);
+  const [remediatingId, setRemediatingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    agentApi.cyber.listAssessments()
+      .then(list => setPastScores(list.map(a => ({ runAt: a.runAt, score: a.score })).reverse()))
+      .catch(() => {});
+    agentApi.cyber.listFindings()
+      .then(setDbFindings)
+      .catch(() => {});
+  }, []);
+
+  async function markRemediated(id: string) {
+    setRemediatingId(id);
+    try {
+      await agentApi.cyber.updateFinding(id, { findingStatus: 'remediated', remediatedAt: new Date().toISOString() });
+      setDbFindings(prev => prev.map(f => f.id === id ? { ...f, findingStatus: 'remediated', remediatedAt: new Date().toISOString() } : f));
+    } catch { /* ignore */ } finally {
+      setRemediatingId(null);
+    }
+  }
 
   function runScan() {
     setPhase('scanning');
@@ -865,6 +1157,11 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
         const final = scoreScanResults(devices, scanResults, threats, fwRules, incidents);
         setResult(final);
         setPhase('done');
+        // Persist to DB (non-blocking)
+        agentApi.cyber.saveAssessment(final.score, JSON.stringify(final.checks)).then(saved => {
+          setPastScores(prev => [...prev, { runAt: saved.runAt, score: saved.score }]);
+          agentApi.cyber.listFindings().then(setDbFindings).catch(() => {});
+        }).catch(() => {});
         return;
       }
       setLabel(steps[i]);
@@ -898,6 +1195,12 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
               Annual pen test in {daysUntil}d
             </span>
           )}
+          <button
+            onClick={() => exportEngagementBrief(pastScores, dbFindings, tests)}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(14,165,233,0.08)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.25)', borderRadius: 9, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+          >
+            <ClipboardList size={14} /> Engagement Brief
+          </button>
           {result && (
             <button
               onClick={() => exportPenTestPDF(result.score, result.checks, scanResults)}
@@ -921,6 +1224,33 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
           </button>
         </div>
       </div>
+
+      {/* Score trend sparkline */}
+      {pastScores.length > 0 && (
+        <div style={{ marginBottom: 18, background: '#080b10', borderRadius: 10, padding: '12px 16px', border: '1px solid #1a2535' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>
+              Assessment History — {pastScores.length} saved scan{pastScores.length !== 1 ? 's' : ''}
+            </span>
+            <span style={{ color: pastScores[pastScores.length - 1].score >= 80 ? '#22c55e' : pastScores[pastScores.length - 1].score >= 60 ? '#f59e0b' : '#ef4444', fontSize: 12, fontWeight: 700 }}>
+              Latest: {pastScores[pastScores.length - 1].score}%
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 40 }}>
+            {pastScores.map((s, i) => {
+              const h = Math.max(4, Math.round((s.score / 100) * 38));
+              const c = s.score >= 80 ? '#22c55e' : s.score >= 60 ? '#f59e0b' : '#ef4444';
+              return (
+                <div
+                  key={i}
+                  title={`${new Date(s.runAt).toLocaleDateString('en-GB')} — ${s.score}%`}
+                  style={{ flex: 1, height: h, borderRadius: 3, background: c, opacity: i === pastScores.length - 1 ? 1 : 0.5, transition: 'height 0.4s' }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Scanning progress */}
       {phase === 'scanning' && (
@@ -1005,9 +1335,13 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
                       {catChecks.map(c => (
                         <div key={c.check} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                           <span style={{ color: statusColor(c.status), fontWeight: 700, fontSize: 14, flexShrink: 0, marginTop: 1 }}>{statusIcon(c.status)}</span>
-                          <div>
+                          <div style={{ flex: 1 }}>
                             <div style={{ color: '#cbd5e1', fontSize: 12, fontWeight: 600 }}>{c.check}</div>
                             <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 2 }}>{c.detail}</div>
+                            <div style={{ display: 'flex', gap: 5, marginTop: 5 }}>
+                              <span style={{ background: 'rgba(212,168,71,0.08)', color: '#d4a847', border: '1px solid rgba(212,168,71,0.2)', borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 600 }}>{c.bimcoRef}</span>
+                              <span style={{ background: 'rgba(14,165,233,0.08)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)', borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 600 }}>{c.imoRef}</span>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1027,6 +1361,45 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
           <div style={{ color: '#4a5a6a', fontSize: 13, textAlign: 'center' }}>
             Click <strong style={{ color: '#7dd3fc' }}>Run Quick Scan</strong> to assess your vessel network &mdash; no technical knowledge required.<br />
             <span style={{ fontSize: 11 }}>The scan typically completes in under 5 seconds and checks {10} security controls.</span>
+          </div>
+        </div>
+      )}
+
+      {/* Open findings tracker */}
+      {dbFindings.filter(f => f.findingStatus === 'open').length > 0 && (
+        <div style={{ marginTop: 20, borderTop: '1px solid #1a2535', paddingTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' as const }}>
+              Open Findings Tracker
+            </div>
+            <span style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 20, padding: '2px 10px', fontSize: 10, fontWeight: 700 }}>
+              {dbFindings.filter(f => f.findingStatus === 'open').length} open
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {dbFindings.filter(f => f.findingStatus === 'open').map(f => {
+              const statColor = f.status === 'fail' ? '#ef4444' : '#f59e0b';
+              return (
+                <div key={f.id} style={{ background: '#080b10', border: `1px solid ${statColor}25`, borderLeft: `3px solid ${statColor}`, borderRadius: 10, padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' as const }}>
+                      <span style={{ background: `${statColor}15`, color: statColor, border: `1px solid ${statColor}40`, borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const }}>{f.status}</span>
+                      <span style={{ background: 'rgba(212,168,71,0.08)', color: '#d4a847', border: '1px solid rgba(212,168,71,0.2)', borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 600 }}>{f.category}</span>
+                      <span style={{ color: '#4a5a6a', fontSize: 10 }}>{new Date(f.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </div>
+                    <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{f.check_name}</div>
+                    <div style={{ color: '#6b7f92', fontSize: 11, lineHeight: 1.5 }}>{f.detail}</div>
+                  </div>
+                  <button
+                    onClick={() => markRemediated(f.id)}
+                    disabled={remediatingId === f.id}
+                    style={{ flexShrink: 0, background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '6px 14px', fontSize: 11, fontWeight: 700, cursor: remediatingId === f.id ? 'default' : 'pointer', opacity: remediatingId === f.id ? 0.5 : 1 }}
+                  >
+                    {remediatingId === f.id ? 'Saving…' : '✓ Remediated'}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
