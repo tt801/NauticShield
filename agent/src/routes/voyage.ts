@@ -9,6 +9,16 @@ router.get('/', (_req, res) => {
   res.json(db.getVoyageLog());
 });
 
+// GET /api/voyage/autofill-range?from=YYYY-MM-DD&to=YYYY-MM-DD
+router.get('/autofill-range', (req, res) => {
+  const { from, to } = req.query as { from?: string; to?: string };
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (!from || !to || !dateRe.test(from) || !dateRe.test(to)) {
+    return res.status(400).json({ error: 'from and to query params required (YYYY-MM-DD)' });
+  }
+  res.json(db.getAutofillForRange(from, to));
+});
+
 // GET /api/voyage/autofill?date=YYYY-MM-DD
 router.get('/autofill', (req, res) => {
   const { date } = req.query as { date?: string };

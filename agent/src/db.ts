@@ -353,6 +353,43 @@ export interface AutofillResult {
   hasData:      boolean;
 }
 
+export function getAutofillForRange(from: string, to: string): AutofillResult {
+  type SampleRow = { status: string; provider: string; downloadMbps: number; latencyMs: number; hour: number };
+  const rows = db.prepare(
+    'SELECT status, provider, downloadMbps, latencyMs, hour FROM perf_samples WHERE date >= ? AND date <= ? ORDER BY date, hour'
+  ).all(from, to) as unknown as SampleRow[];
+
+  if (rows.length === 0) {
+    return { avgDownMbps: 0, avgLatencyMs: 0, uptimePct: 100, provider: 'Starlink', incidents: 0, blocks: '[]', hasData: false };
+  }
+
+  const upRows    = rows.filter(r => r.status !== 'down');
+  const avgDown   = upRows.length ? upRows.reduce((s, r) => s + r.downloadMbps, 0) / upRows.length : 0;
+  const avgLat    = upRows.length ? upRows.reduce((s, r) => s + r.latencyMs,    0) / upRows.length : 0;
+  const uptimePct = +(rows.filter(r => r.status !== 'down').length / rows.length * 100).toFixed(1);
+
+  const providerCounts: Record<string, number> = {};
+  for (const r of rows) providerCounts[r.provider] = (providerCounts[r.provider] ?? 0) + 1;
+  const provider = Object.entries(providerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Starlink';
+
+  // Count down→up transitions across the whole range as incidents
+  let incidents = 0;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i - 1].status === 'down' && rows[i].status !== 'down') incidents++;
+  }
+  if (rows[0].status === 'down') incidents++;
+
+  return {
+    avgDownMbps:  Math.round(avgDown * 10) / 10,
+    avgLatencyMs: Math.round(avgLat),
+    uptimePct,
+    provider,
+    incidents,
+    blocks:  '[]',
+    hasData: true,
+  };
+}
+
 export function getAutofillForDate(date: string): AutofillResult {
   type SampleRow = { status: string; provider: string; downloadMbps: number; latencyMs: number; hour: number };
   const rows = db.prepare(

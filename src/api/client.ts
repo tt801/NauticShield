@@ -92,6 +92,9 @@ export const agentApi = {
     autofill: (date: string) =>
       fetchJSON<{ avgDownMbps: number; avgLatencyMs: number; uptimePct: number; provider: string; incidents: number; blocks: string; hasData: boolean }>(`${AGENT_URL}/api/voyage/autofill?date=${date}`),
 
+    autofillRange: (from: string, to: string) =>
+      fetchJSON<{ avgDownMbps: number; avgLatencyMs: number; uptimePct: number; provider: string; incidents: number; blocks: string; hasData: boolean }>(`${AGENT_URL}/api/voyage/autofill-range?from=${from}&to=${to}`),
+
     add: (entry: Omit<VoyageEntry, 'id' | 'createdAt'>) =>
       fetchJSON<VoyageEntry>(`${AGENT_URL}/api/voyage`, {
         method:  'POST',

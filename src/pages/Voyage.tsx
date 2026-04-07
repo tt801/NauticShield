@@ -180,7 +180,19 @@ function VoyageRow({ entry, downHistory, onDelete, onUpdate }: {
           )}
           {status === 'underway' && (
             <button
-              onClick={() => onUpdate(entry.id, { status: 'completed' })}
+              onClick={async () => {
+                const today = new Date().toISOString().slice(0, 10);
+                const perf  = await agentApi.voyage.autofillRange(entry.date, today).catch(() => null);
+                const patch: Partial<Omit<VoyageEntry, 'id' | 'createdAt'>> = { status: 'completed' };
+                if (perf?.hasData) {
+                  patch.avgDownMbps  = perf.avgDownMbps;
+                  patch.avgLatencyMs = perf.avgLatencyMs;
+                  patch.uptimePct    = perf.uptimePct;
+                  patch.provider     = perf.provider;
+                  patch.incidents    = perf.incidents;
+                }
+                onUpdate(entry.id, patch);
+              }}
               style={{ background: 'rgba(139,92,246,0.1)', color: '#c4b5fd', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 7, padding: '4px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
             >
               Mark as Arrived ✓
