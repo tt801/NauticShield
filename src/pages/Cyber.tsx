@@ -26,6 +26,14 @@ import {
   Eye,
   EyeOff,
   Flame,
+  Wifi,
+  WifiOff,
+  Cpu,
+  Activity,
+  X,
+  Info,
+  Ban,
+  RefreshCw,
 } from 'lucide-react';
 import { useVesselData } from '@/context/VesselDataProvider';
 import jsPDF from 'jspdf';
@@ -149,6 +157,83 @@ const mockPenTests: PenTest[] = [
     findings: [],
   },
 ];
+
+
+// ── Maritime CVE Database ─────────────────────────────────────────
+
+type CvssVector = 'Network' | 'Adjacent' | 'Physical';
+type CveSeverity = 'Critical' | 'High' | 'Medium' | 'Low';
+
+interface MaritimeCVE {
+  id:           string;  // CVE ID
+  cvss:         number;  // 0-10
+  severity:     CveSeverity;
+  vector:       CvssVector;
+  matchType:    string;  // matches Device.type
+  matchMfr?:    string;  // optional manufacturer keyword (lowercase)
+  title:        string;
+  description:  string;
+  affectedFw?:  string;  // affected firmware / version range
+  remediation:  string;
+  published:    string;  // YYYY-MM
+  bimcoRef:     string;
+}
+
+const MARITIME_CVE_DB: MaritimeCVE[] = [
+  // ── IP Cameras ────────────────────────────────────────────────
+  { id:'CVE-2021-36260', cvss:9.8, severity:'Critical', vector:'Network',  matchType:'camera', matchMfr:'hikvision',  title:'Hikvision Command Injection — Unauthenticated RCE',       description:'A command injection vulnerability in the web server of Hikvision cameras allows an unauthenticated attacker to gain full control of the device over the network.',                        affectedFw:'≤V5.5.800',       remediation:'Update to firmware V5.5.800 or later via Hikvision SADP tool. Disable remote web access if not required.',             published:'2021-09', bimcoRef:'BIMCO §7.2' },
+  { id:'CVE-2022-45868', cvss:8.8, severity:'High',     vector:'Network',  matchType:'camera', matchMfr:'hikvision',  title:'Hikvision Auth Bypass — Session Hijacking',               description:'Improper access control allows attacker on the same network to bypass authentication and hijack active sessions, gaining admin access.',                                               affectedFw:'≤V4.30.210',      remediation:'Apply security patch from Hikvision portal. Isolate cameras to a dedicated VLAN.',                                        published:'2022-11', bimcoRef:'BIMCO §3.2' },
+  { id:'CVE-2023-28812', cvss:7.5, severity:'High',     vector:'Network',  matchType:'camera', matchMfr:'hikvision',  title:'Hikvision RTSP Heap Overflow — DoS / RCE',                description:'A heap buffer overflow in the RTSP service can be triggered remotely, causing denial of service or potential code execution.',                                                         affectedFw:'≤V5.7.0',         remediation:'Upgrade firmware. Restrict RTSP port 554 to authorised IPs only.',                                                        published:'2023-04', bimcoRef:'BIMCO §7.3' },
+  { id:'CVE-2020-18931', cvss:9.1, severity:'Critical', vector:'Network',  matchType:'camera', matchMfr:'dahua',      title:'Dahua Authentication Bypass — Full Admin Access',         description:'Unauthenticated access to Dahua NVR/camera admin panel via crafted HTTP request. Attacker can view footage, change settings, and pivot to LAN.',                                   affectedFw:'Multiple',        remediation:'Apply Dahua DSA-2020 patch. Enable IP allowlist. Disable UPnP.',                                                         published:'2020-08', bimcoRef:'BIMCO §7.2' },
+  { id:'CVE-2021-33044', cvss:9.8, severity:'Critical', vector:'Network',  matchType:'camera', matchMfr:'dahua',      title:'Dahua Identity Auth Bypass (Remote)',                     description:'The identity authentication of some Dahua devices can be bypassed by sending crafted data packets — no credentials required.',                                                         affectedFw:'See Dahua DSA-2021-017', remediation:'Update per Dahua security advisory DSA-2021-017.',                                                              published:'2021-10', bimcoRef:'BIMCO §7.2' },
+  { id:'CVE-2018-10660', cvss:8.8, severity:'High',     vector:'Network',  matchType:'camera',                        title:'Generic ONVIF Command Injection',                          description:'Multiple IP camera vendors implement ONVIF without input sanitisation, allowing authenticated users to inject OS commands via crafted SOAP requests.',                                  affectedFw:'Various',         remediation:'Disable ONVIF if not required. Change default credentials. Segment cameras to OT VLAN.',                                   published:'2018-06', bimcoRef:'BIMCO §7.3' },
+  { id:'CVE-2024-11013', cvss:7.2, severity:'High',     vector:'Network',  matchType:'camera',                        title:'IP Camera Default Credentials Exposure',                  description:'Camera admin panel reachable with vendor default credentials (admin/admin or admin/12345). Enables unauthorised surveillance and network pivot.',                                        affectedFw:'All unpatched',   remediation:'Change all default credentials immediately. Restrict camera admin ports to management VLAN.',                             published:'2024-01', bimcoRef:'BIMCO §3.2' },
+
+  // ── Routers / Access Points ───────────────────────────────────
+  { id:'CVE-2022-0778',  cvss:7.5, severity:'High',     vector:'Network',  matchType:'router', matchMfr:'starlink',   title:'OpenSSL Infinite Loop — Starlink / Peplink Affected',     description:'An infinite loop in OpenSSL certificate parsing can be triggered by a malicious certificate, causing a denial of service on the affected device.',                                   affectedFw:'OpenSSL <1.0.2zd', remediation:'Ensure router OS / firmware uses OpenSSL 1.0.2zd or later. Apply vendor patch.',                                         published:'2022-03', bimcoRef:'BIMCO §3.3' },
+  { id:'CVE-2023-32784', cvss:7.1, severity:'High',     vector:'Adjacent', matchType:'router',                        title:'Wi-Fi Protected Management Frame Bypass',                 description:'Fragmentation and aggregation attacks allow an adjacent attacker to bypass Wi-Fi Protected Management Frames, enabling deauthentication and eavesdropping.',                          affectedFw:'802.11 pre-WPA3', remediation:'Enable WPA3 where supported. Enable PMF (Protected Management Frames). Update AP firmware.',                           published:'2023-05', bimcoRef:'BIMCO §7.3' },
+  { id:'CVE-2022-27643', cvss:8.1, severity:'High',     vector:'Adjacent', matchType:'router', matchMfr:'ubiquiti',   title:'Ubiquiti UniFi SSRF — Internal Service Exposure',         description:'Server-side request forgery in the UniFi controller allows an authenticated attacker to reach internal services not otherwise accessible.',                                          affectedFw:'<6.5.55',         remediation:'Update UniFi controller to 6.5.55+. Restrict controller access to management VLAN.',                                       published:'2022-04', bimcoRef:'BIMCO §3.2' },
+  { id:'CVE-2021-20090', cvss:9.8, severity:'Critical', vector:'Network',  matchType:'router', matchMfr:'peplink',    title:'Peplink/Pepwave Path Traversal — Auth Bypass',            description:'Path traversal vulnerability in Peplink router web interface allows unauthenticated access to configuration files and sensitive credentials.',                                       affectedFw:'<8.1.0s',         remediation:'Upgrade to Peplink firmware 8.1.0s or newer via InControl2 portal.',                                                     published:'2021-08', bimcoRef:'BIMCO §7.3' },
+  { id:'CVE-2024-21887', cvss:9.1, severity:'Critical', vector:'Network',  matchType:'router',                        title:'Ivanti VPN / Network Appliance Command Injection',        description:'Command injection in web components of network appliances allows unauthenticated remote command execution. Widely exploited in maritime operator environments in 2024.',              affectedFw:'Various',         remediation:'Apply vendor patches. Perform IoC scan per vendor advisory. Rotate credentials.',                                        published:'2024-01', bimcoRef:'BIMCO §6.1' },
+  { id:'CVE-2023-38831', cvss:7.8, severity:'High',     vector:'Network',  matchType:'router',                        title:'Router Firmware Supply Chain — Malicious Update',         description:'Insufficient signature verification on firmware updates allows a MITM attacker to push malicious firmware to routers lacking certificate pinning.',                                   affectedFw:'Multiple vendors', remediation:'Verify firmware signatures before applying. Use trusted update channels only. Disable automatic updates.',               published:'2023-08', bimcoRef:'BIMCO §7.1' },
+
+  // ── Smart TVs ─────────────────────────────────────────────────
+  { id:'CVE-2022-43940', cvss:6.5, severity:'Medium',   vector:'Adjacent', matchType:'tv', matchMfr:'samsung',        title:'Samsung Smart TV — Telemetry Data Exfiltration',          description:'Samsung TVs transmit viewing data to remote analytics servers even when ACR is disabled. On yacht networks this exposes guest and crew behaviour patterns.',                           affectedFw:'Tizen <6.0',      remediation:'Disable ACR in Settings. Block port 4443 outbound. Segment TVs to a guest VLAN.',                                         published:'2022-10', bimcoRef:'BIMCO §7.1' },
+  { id:'CVE-2023-21089', cvss:7.4, severity:'High',     vector:'Adjacent', matchType:'tv', matchMfr:'samsung',        title:'Samsung Tizen OS — Local Privilege Escalation',           description:'A vulnerability in Tizen OS allows an attacker on the same network to escalate privileges and gain root access to the TV, enabling it as a surveillance pivot.',                    affectedFw:'Tizen <7.0',      remediation:'Update Samsung TV software to latest. Disable SSH and developer mode if enabled.',                                       published:'2023-01', bimcoRef:'BIMCO §7.2' },
+  { id:'CVE-2022-29154', cvss:5.9, severity:'Medium',   vector:'Adjacent', matchType:'tv', matchMfr:'lg',             title:'LG webOS — Insecure Direct Object Reference',             description:'IDOR vulnerability in LG webOS allows unauthenticated access to the TV remote control API from the local network, enabling channel changes, volume control, and app launch.',      affectedFw:'webOS <6.2',      remediation:'Update webOS firmware. Disable TV app store remote access. Segment to guest VLAN.',                                       published:'2022-06', bimcoRef:'BIMCO §3.2' },
+  { id:'CVE-2024-10148', cvss:8.2, severity:'High',     vector:'Network',  matchType:'tv', matchMfr:'lg',             title:'LG webOS Bypass — Unauthenticated Admin',                 description:'Multiple vulnerabilities (CVE-2024-10148 series) in LG webOS allow unauthenticated attackers to add privileged accounts and bypass OS-level PIN protection.',                     affectedFw:'webOS 4-7',       remediation:'Apply LG patch from March 2024. Enable automatic updates.',                                                             published:'2024-03', bimcoRef:'BIMCO §7.2' },
+  { id:'CVE-2021-37533', cvss:6.8, severity:'Medium',   vector:'Adjacent', matchType:'tv',                            title:'Smart TV DLNA — Media Library Disclosure',                description:'DLNA/uPnP service on smart TVs exposes media library and device info to unauthenticated clients on the local network, leaking crew/guest file metadata.',                         affectedFw:'All with DLNA',   remediation:'Disable DLNA/uPnP or restrict with firewall rules. Segment TVs to guest VLAN.',                                         published:'2021-09', bimcoRef:'BIMCO §7.1' },
+
+  // ── Laptops / Endpoints ───────────────────────────────────────
+  { id:'CVE-2023-36884', cvss:8.8, severity:'High',     vector:'Network',  matchType:'laptop',                        title:'Microsoft Office / Windows — Remote Code Execution',      description:'Specially crafted Office documents can achieve RCE without user interaction when preview pane is enabled. Relevant for crew laptops receiving email attachments.',                   affectedFw:'Windows unpatched', remediation:'Apply Microsoft July 2023 patch (KB5028168). Disable preview pane in Outlook.',                                       published:'2023-07', bimcoRef:'BIMCO §6.1' },
+  { id:'CVE-2024-30051', cvss:7.8, severity:'High',     vector:'Network',  matchType:'laptop',                        title:'Windows DWM Core — Local Privilege Escalation (0-day)',   description:'Zero-day vulnerability in Windows Desktop Window Manager exploited by Qakbot malware. Gives local user SYSTEM-level privileges.',                                                   affectedFw:'Win10/11 unpatched', remediation:'Apply Microsoft May 2024 patch. Deploy EDR capable of monitoring privilege escalation.',                                 published:'2024-05', bimcoRef:'BIMCO §6.1' },
+  { id:'CVE-2023-23397', cvss:9.8, severity:'Critical', vector:'Network',  matchType:'laptop',                        title:'Microsoft Outlook — Zero-Click Credential Theft',         description:'Specially crafted Outlook reminders trigger NTLM hash leak without any user action, even before email is opened. Exploitable over LAN.',                                           affectedFw:'Outlook unpatched', remediation:'Apply MS March 2023 patch immediately. Deploy NTLM relay protections.',                                              published:'2023-03', bimcoRef:'BIMCO §6.1' },
+
+  // ── Mobile / Phones ───────────────────────────────────────────
+  { id:'CVE-2023-41064', cvss:7.8, severity:'High',     vector:'Adjacent', matchType:'phone',                         title:'Apple iOS — PassKit Blastpass (Zero-Click)',              description:'Zero-click exploit via PassKit/iMessage allows attacker on same network or via iMessage to gain code execution without any user interaction. Used to deliver Pegasus spyware.',   affectedFw:'<iOS 16.6.1',     remediation:'Update to iOS 16.6.1 or later. Enable Lockdown Mode for high-risk users.',                                               published:'2023-09', bimcoRef:'BIMCO §6.1' },
+  { id:'CVE-2024-23204', cvss:6.5, severity:'Medium',   vector:'Adjacent', matchType:'phone',                         title:'Apple Shortcuts — File System Exfiltration',              description:'Malicious Shortcuts automations can access and exfiltrate sensitive files from the device without triggering the standard permission prompt.',                                      affectedFw:'<iOS 17.3',       remediation:'Update to iOS 17.3+. Review and remove untrusted Shortcuts automations.',                                               published:'2024-01', bimcoRef:'BIMCO §6.2' },
+
+  // ── Unknown / Rogue devices ───────────────────────────────────
+  { id:'CVE-2022-ROGUE',  cvss:9.9, severity:'Critical', vector:'Adjacent', matchType:'unknown',                      title:'Unregistered Device — Potential Network Pivot',           description:'An unrecognised device is active on the vessel network. Rogue devices are frequently used as initial access points for lateral movement and data exfiltration.',                   affectedFw:'Unknown',         remediation:'Immediately isolate device at the switch port. Identify via MAC OUI lookup. Do not allow unknown devices to roam.',       published:'2022-01', bimcoRef:'BIMCO §7.1' },
+];
+
+// Match CVEs to a device
+function matchCVEs(device: Device): MaritimeCVE[] {
+  const mfr = (device.manufacturer || '').toLowerCase();
+  return MARITIME_CVE_DB.filter(cve =>
+    cve.matchType === device.type &&
+    (!cve.matchMfr || mfr.includes(cve.matchMfr))
+  ).sort((a, b) => b.cvss - a.cvss);
+}
+
+// Generate isolate CLI command for a device IP
+function isolateCLI(ip: string): { iptables: string; pfsense: string; openwrt: string } {
+  return {
+    iptables: `iptables -I FORWARD -s ${ip} -j DROP && iptables -I FORWARD -d ${ip} -j DROP`,
+    pfsense:  `pfctl -t isolate -T add ${ip}  # Pre-configure an isolation table in pfSense`,
+    openwrt:  `iptables -I FORWARD -s ${ip} -j DROP\niptables -I FORWARD -d ${ip} -j DROP`,
+  };
+}
 
 // Device protection coverage (built from live devices)
 function buildProtection(devices: Device[]): DeviceProtection[] {
@@ -1591,14 +1676,342 @@ function ProtectionCoverage({ coverage }: { coverage: DeviceProtection[] }) {
   );
 }
 
+
+// ── Device Risk Side Panel ────────────────────────────────────────
+
+function DeviceRiskPanel({
+  device,
+  onClose,
+  onIsolate,
+  isolated,
+}: {
+  device:   Device;
+  onClose:  () => void;
+  onIsolate:(device: Device) => void;
+  isolated: boolean;
+}) {
+  const cves = matchCVEs(device);
+  const cli  = isolateCLI(device.ip);
+  const [tab,         setTab]         = useState<'cves'|'cli'>('cves');
+  const [cliPlatform, setCliPlatform] = useState<'iptables'|'pfsense'|'openwrt'>('iptables');
+  const [copied,      setCopied]      = useState(false);
+
+  const maxCvss    = cves.length > 0 ? cves[0].cvss : 0;
+  const riskColor  = maxCvss >= 9 ? '#ef4444' : maxCvss >= 7 ? '#f97316' : maxCvss >= 4 ? '#f59e0b' : '#22c55e';
+  const riskLabel  = maxCvss >= 9 ? 'CRITICAL' : maxCvss >= 7 ? 'HIGH' : maxCvss >= 4 ? 'MEDIUM' : cves.length === 0 ? 'CLEAR' : 'LOW';
+  const sevColor   = (s: CveSeverity) => s === 'Critical' ? '#ef4444' : s === 'High' ? '#f97316' : s === 'Medium' ? '#f59e0b' : '#22c55e';
+
+  function copy(text: string) {
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); });
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, right: 0, bottom: 0, width: 480, zIndex: 999,
+      background: '#0d1421', borderLeft: `2px solid ${isolated ? '#ef4444' : riskColor}40`,
+      display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 40px rgba(0,0,0,0.6)',
+      overflow: 'hidden',
+    }}>
+      {/* Header */}
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid #1a2535', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: `${riskColor}15`, border: `1px solid ${riskColor}40`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Cpu size={16} color={riskColor} />
+            </div>
+            <div>
+              <div style={{ color: '#f0f4f8', fontSize: 14, fontWeight: 700 }}>{device.name}</div>
+              <div style={{ color: '#4a5a6a', fontSize: 11, fontFamily: 'monospace' }}>{device.ip} · {device.mac}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#4a5a6a', padding: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Risk badge row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ background: `${riskColor}18`, color: riskColor, border: `1px solid ${riskColor}40`, borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 800 }}>
+            {riskLabel} RISK
+          </span>
+          {maxCvss > 0 && (
+            <span style={{ color: '#6b7f92', fontSize: 12 }}>Max CVSS: <strong style={{ color: riskColor }}>{maxCvss.toFixed(1)}</strong></span>
+          )}
+          <span style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#6b7f92' }}>
+            {device.type} · {device.manufacturer || 'Unknown mfr'}
+          </span>
+          {isolated && (
+            <span style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 700 }}>
+              ⊘ ISOLATED
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Isolate button */}
+      <div style={{ padding: '14px 20px', borderBottom: '1px solid #1a2535', flexShrink: 0, background: isolated ? 'rgba(239,68,68,0.04)' : 'transparent' }}>
+        {isolated ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <WifiOff size={16} color="#ef4444" />
+            <span style={{ color: '#ef4444', fontSize: 13, fontWeight: 600 }}>Device blocked in firewall — rule added below</span>
+          </div>
+        ) : (
+          <button
+            onClick={() => onIsolate(device)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+          >
+            <Ban size={15} /> Isolate Device — Block All Traffic
+          </button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #1a2535', flexShrink: 0 }}>
+        {([['cves', `CVEs (${cves.length})`], ['cli', 'Router CLI Commands']] as const).map(([t, label]) => (
+          <button key={t} onClick={() => setTab(t)} style={{
+            flex: 1, padding: '10px 0', background: 'transparent', border: 'none', cursor: 'pointer',
+            color: tab === t ? '#f0f4f8' : '#4a5a6a', fontSize: 12, fontWeight: tab === t ? 700 : 400,
+            borderBottom: tab === t ? `2px solid ${GOLD}` : '2px solid transparent',
+          }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* CVE list */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px' }}>
+        {tab === 'cves' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {cves.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, paddingTop: 40 }}>
+                <ShieldCheck size={36} color="#22c55e" />
+                <div style={{ color: '#22c55e', fontSize: 14, fontWeight: 700 }}>No known CVEs matched</div>
+                <div style={{ color: '#4a5a6a', fontSize: 12, textAlign: 'center' }}>No vulnerabilities in the maritime CVE database match this device type and manufacturer. Continue monitoring.</div>
+              </div>
+            ) : cves.map(cve => {
+              const sc = sevColor(cve.severity);
+              return (
+                <div key={cve.id} style={{ background: '#080b10', border: `1px solid ${sc}25`, borderLeft: `3px solid ${sc}`, borderRadius: 10, padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
+                        <span style={{ background: `${sc}18`, color: sc, border: `1px solid ${sc}40`, borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 700 }}>{cve.severity.toUpperCase()}</span>
+                        <span style={{ color: '#7dd3fc', fontSize: 10, fontFamily: 'monospace', fontWeight: 600 }}>{cve.id}</span>
+                        <span style={{ color: '#4a5a6a', fontSize: 10 }}>CVSS {cve.cvss.toFixed(1)}</span>
+                        <span style={{ background: GOLD_BG, color: GOLD, border: `1px solid ${GOLD_BORDER}`, borderRadius: 4, padding: '1px 6px', fontSize: 9 }}>{cve.bimcoRef}</span>
+                      </div>
+                      <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{cve.title}</div>
+                      <div style={{ color: '#6b7f92', fontSize: 11, lineHeight: 1.6, marginBottom: 8 }}>{cve.description}</div>
+                      {cve.affectedFw && (
+                        <div style={{ color: '#4a5a6a', fontSize: 10, marginBottom: 4 }}>Affected: <span style={{ color: '#8899aa' }}>{cve.affectedFw}</span></div>
+                      )}
+                      <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.15)', borderRadius: 7, padding: '7px 10px' }}>
+                        <div style={{ color: '#22c55e', fontSize: 10, fontWeight: 700, marginBottom: 2 }}>REMEDIATION</div>
+                        <div style={{ color: '#8899aa', fontSize: 11, lineHeight: 1.5 }}>{cve.remediation}</div>
+                      </div>
+                    </div>
+                    {/* CVSS gauge */}
+                    <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      <svg width={44} height={44}>
+                        <circle cx={22} cy={22} r={18} fill="none" stroke="#1a2535" strokeWidth={5} />
+                        <circle
+                          cx={22} cy={22} r={18}
+                          fill="none" stroke={sc} strokeWidth={5}
+                          strokeLinecap="round"
+                          strokeDasharray={2 * Math.PI * 18}
+                          strokeDashoffset={2 * Math.PI * 18 * (1 - cve.cvss / 10)}
+                          transform="rotate(-90 22 22)"
+                          style={{ filter: `drop-shadow(0 0 3px ${sc})` }}
+                        />
+                        <text x={22} y={26} textAnchor="middle" fill={sc} fontSize={11} fontWeight={800}>{cve.cvss}</text>
+                      </svg>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <span style={{ background: cve.vector === 'Network' ? 'rgba(239,68,68,0.08)' : cve.vector === 'Adjacent' ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)', color: cve.vector === 'Network' ? '#ef4444' : cve.vector === 'Adjacent' ? '#f59e0b' : '#22c55e', border: '1px solid currentColor', borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 600, opacity: 0.8 }}>
+                      {cve.vector} vector
+                    </span>
+                    <span style={{ color: '#4a5a6a', fontSize: 10 }}>Published {cve.published}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab === 'cli' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 8, padding: '10px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Info size={13} color="#f59e0b" />
+                <span style={{ color: '#f59e0b', fontSize: 12 }}>Copy the command for your router/firewall platform and run it via SSH or the admin console.</span>
+              </div>
+            </div>
+
+            {/* Platform selector */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['iptables', 'pfsense', 'openwrt'] as const).map(p => (
+                <button key={p} onClick={() => setCliPlatform(p)} style={{
+                  flex: 1, padding: '6px 0', background: cliPlatform === p ? 'rgba(14,165,233,0.15)' : '#080b10',
+                  border: `1px solid ${cliPlatform === p ? 'rgba(14,165,233,0.4)' : '#1a2535'}`,
+                  borderRadius: 8, color: cliPlatform === p ? '#7dd3fc' : '#6b7f92', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                }}>
+                  {p === 'iptables' ? 'Linux iptables' : p === 'pfsense' ? 'pfSense' : 'OpenWRT'}
+                </button>
+              ))}
+            </div>
+
+            {/* CLI output */}
+            <div style={{ background: '#050810', border: '1px solid #1a2535', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: '1px solid #1a2535' }}>
+                <span style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8 }}>Isolate {device.ip}</span>
+                <button
+                  onClick={() => copy(cli[cliPlatform])}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, background: copied ? 'rgba(34,197,94,0.1)' : GOLD_BG, color: copied ? '#22c55e' : GOLD, border: `1px solid ${copied ? 'rgba(34,197,94,0.3)' : GOLD_BORDER}`, borderRadius: 6, padding: '3px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  {copied ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
+              <pre style={{ margin: 0, padding: '14px 16px', color: '#7dd3fc', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                {cli[cliPlatform]}
+              </pre>
+            </div>
+
+            {/* Undo hint */}
+            <div style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 14px', borderBottom: '1px solid #1a2535' }}>
+                <span style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8 }}>Remove isolation</span>
+              </div>
+              <pre style={{ margin: 0, padding: '14px 16px', color: '#22c55e', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                {cliPlatform === 'iptables' || cliPlatform === 'openwrt'
+                  ? `iptables -D FORWARD -s ${device.ip} -j DROP\niptables -D FORWARD -d ${device.ip} -j DROP`
+                  : `pfctl -t isolate -T delete ${device.ip}`}
+              </pre>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Live Threat Pulse strip ───────────────────────────────────────
+
+function LiveThreatPulse({
+  devices,
+  onDeviceClick,
+  isolatedIps,
+}: {
+  devices:       Device[];
+  onDeviceClick: (d: Device) => void;
+  isolatedIps:   Set<string>;
+}) {
+  const [tick, setTick]   = useState(0);
+  const [pulse, setPulse] = useState(false);
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setTick(t => t + 1);
+      setPulse(true);
+      setTimeout(() => setPulse(false), 600);
+    }, 30000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const assessed = devices.map(d => {
+    const cves = matchCVEs(d);
+    const maxCvss = cves.length > 0 ? cves[0].cvss : 0;
+    return { device: d, cves, maxCvss, isolated: isolatedIps.has(d.ip) };
+  });
+
+  const critical = assessed.filter(a => a.maxCvss >= 9 && !a.isolated);
+  const high     = assessed.filter(a => a.maxCvss >= 7 && a.maxCvss < 9 && !a.isolated);
+  const clear    = assessed.filter(a => a.maxCvss < 4 || a.cves.length === 0);
+
+  return (
+    <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 14, padding: '16px 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: critical.length > 0 ? '#ef4444' : high.length > 0 ? '#f59e0b' : '#22c55e',
+            boxShadow: `0 0 8px ${critical.length > 0 ? '#ef4444' : high.length > 0 ? '#f59e0b' : '#22c55e'}`,
+            animation: pulse ? 'none' : undefined,
+            opacity: pulse ? 0.4 : 1,
+            transition: 'opacity 0.3s',
+          }} />
+          <span style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 700 }}>Live CVE Threat Monitor</span>
+          <span style={{ color: '#4a5a6a', fontSize: 11 }}>· refreshes every 30s · {assessed.length} devices</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {critical.length > 0 && <span style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>{critical.length} critical</span>}
+          {high.length > 0     && <span style={{ background: 'rgba(249,115,22,0.1)', color: '#f97316', border: '1px solid rgba(249,115,22,0.3)', borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>{high.length} high</span>}
+          {isolatedIps.size > 0 && <span style={{ background: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>⊘ {isolatedIps.size} isolated</span>}
+          <RefreshCw size={13} color={pulse ? '#0ea5e9' : '#4a5a6a'} style={{ transition: 'color 0.3s', marginTop: 2 }} />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {assessed
+          .sort((a, b) => b.maxCvss - a.maxCvss)
+          .map(({ device: d, cves, maxCvss, isolated }) => {
+          const riskColor = isolated ? '#6b7f92' : maxCvss >= 9 ? '#ef4444' : maxCvss >= 7 ? '#f97316' : maxCvss >= 4 ? '#f59e0b' : '#22c55e';
+          const riskLabel = isolated ? 'ISOLATED' : maxCvss >= 9 ? 'CRITICAL' : maxCvss >= 7 ? 'HIGH' : maxCvss >= 4 ? 'MEDIUM' : 'CLEAR';
+          const barW      = isolated ? 0 : Math.round((maxCvss / 10) * 100);
+          return (
+            <button
+              key={d.id}
+              onClick={() => onDeviceClick(d)}
+              style={{
+                width: '100%', background: isolated ? 'rgba(239,68,68,0.03)' : '#080b10',
+                border: `1px solid ${isolated ? 'rgba(239,68,68,0.2)' : maxCvss >= 7 ? riskColor + '30' : '#1a2535'}`,
+                borderRadius: 9, padding: '9px 13px', cursor: 'pointer', textAlign: 'left',
+                display: 'flex', alignItems: 'center', gap: 12, opacity: d.status === 'offline' ? 0.5 : 1,
+                transition: 'border-color 0.2s',
+              }}
+            >
+              <div style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${riskColor}15` }}>
+                {isolated ? <Ban size={13} color="#ef4444" /> : maxCvss >= 7 ? <ShieldAlert size={13} color={riskColor} /> : <ShieldCheck size={13} color={riskColor} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                  <span style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600 }}>{d.name}</span>
+                  <span style={{ color: '#4a5a6a', fontSize: 10, fontFamily: 'monospace' }}>{d.ip}</span>
+                  {d.status === 'online' && !isolated && (
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', display: 'inline-block', boxShadow: '0 0 4px #22c55e' }} />
+                  )}
+                </div>
+                {/* CVSS bar */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, height: 3, background: '#1a2535', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${barW}%`, background: riskColor, borderRadius: 2, transition: 'width 0.6s ease' }} />
+                  </div>
+                  <span style={{ color: riskColor, fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 50 }}>
+                    {isolated ? '⊘ Blocked' : cves.length > 0 ? `${cves.length} CVE${cves.length > 1 ? 's' : ''} · ${maxCvss.toFixed(1)}` : 'No CVEs'}
+                  </span>
+                </div>
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                <span style={{ background: `${riskColor}18`, color: riskColor, borderRadius: 5, padding: '2px 8px', fontSize: 9, fontWeight: 700 }}>{riskLabel}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────
 
 export default function Cyber() {
   const { devices } = useVesselData();
-  const [threats,   setThreats]   = useState<ThreatEntry[]>(mockThreats);
-  const [fwRules,   setFwRules]   = useState<FirewallRule[]>(defaultFirewallRules);
-  const [incidents, setIncidents] = useState<Incident[]>(mockIncidents);
-  const [scanOpen,  setScanOpen]  = useState(false);
+  const [threats,      setThreats]      = useState<ThreatEntry[]>(mockThreats);
+  const [fwRules,      setFwRules]      = useState<FirewallRule[]>(defaultFirewallRules);
+  const [incidents,    setIncidents]    = useState<Incident[]>(mockIncidents);
+  const [scanOpen,     setScanOpen]     = useState(false);
+  const [selectedDev,  setSelectedDev]  = useState<Device | null>(null);
+  const [isolatedIps,  setIsolatedIps]  = useState<Set<string>>(new Set());
 
   const scanResults   = buildScanResults(devices);
   const coverage      = buildProtection(devices);
@@ -1615,6 +2028,24 @@ export default function Cyber() {
   }
   function updateIncident(id: string, status: IncidentStatus) {
     setIncidents(prev => prev.map(i => i.id === id ? { ...i, status, updated: new Date().toISOString() } : i));
+  }
+
+  function isolateDevice(device: Device) {
+    setIsolatedIps(prev => new Set([...prev, device.ip]));
+    // Add in-app firewall block rule
+    const ruleId = `iso-${device.id}`;
+    setFwRules(prev => {
+      if (prev.some(r => r.id === ruleId)) return prev;
+      return [...prev, {
+        id: ruleId,
+        name: `Isolate ${device.name}`,
+        direction: 'inbound' as const,
+        action: 'block' as const,
+        port: 'All',
+        protocol: 'Any',
+        enabled: true,
+      }];
+    });
   }
 
   return (
@@ -1658,6 +2089,13 @@ export default function Cyber() {
           </Card>
         ))}
       </div>
+
+      {/* Live CVE Monitor */}
+      <LiveThreatPulse
+        devices={devices}
+        onDeviceClick={setSelectedDev}
+        isolatedIps={isolatedIps}
+      />
 
       {/* Threat score + feed */}
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 14 }}>
@@ -1743,6 +2181,15 @@ export default function Cyber() {
         </div>
       </Card>
 
+      {/* Device risk side panel */}
+      {selectedDev && (
+        <DeviceRiskPanel
+          device={selectedDev}
+          onClose={() => setSelectedDev(null)}
+          onIsolate={isolateDevice}
+          isolated={isolatedIps.has(selectedDev.ip)}
+        />
+      )}
     </div>
   );
 }
