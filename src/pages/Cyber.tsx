@@ -28,6 +28,8 @@ import {
   Flame,
 } from 'lucide-react';
 import { useVesselData } from '@/context/VesselDataProvider';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import type { Device } from '@/data/mock';
 
 // ── Design tokens ────────────────────────────────────────────────
@@ -544,63 +546,485 @@ function IncidentLog({ incidents, onUpdateStatus }: { incidents: Incident[]; onU
 
 // ── Pen test schedule ─────────────────────────────────────────────
 
-function PenTestPanel({ tests }: { tests: PenTest[] }) {
-  const next = tests.find(t => t.result === 'scheduled');
-  const daysUntil = next ? Math.ceil((new Date(next.date).getTime() - Date.now()) / (1000*60*60*24)) : null;
+// ── Pen test checks definition ───────────────────────────────────
+
+type CheckStatus = 'pass' | 'warn' | 'fail';
+type PenCheckResult = {
+  category: string;
+  check:    string;
+  status:   CheckStatus;
+  detail:   string;
+  weight:   number; // 1-3, higher = more impact on score
+};
+
+function scoreScanResults(
+  devices: Device[],
+  scanResults: ScanResult[],
+  threats: ThreatEntry[],
+  fwRules: FirewallRule[],
+  incidents: Incident[],
+): { checks: PenCheckResult[]; score: number } {
+  const checks: PenCheckResult[] = [];
+
+  // Network exposure
+  const riskDevices = scanResults.filter(r => r.riskPorts.length > 0);
+  checks.push({
+    category: 'Network Exposure',
+    check:    'High-risk ports (Telnet, RDP, SMB, WinRM)',
+    status:   riskDevices.length === 0 ? 'pass' : riskDevices.length <= 1 ? 'warn' : 'fail',
+    detail:   riskDevices.length === 0 ? 'No high-risk ports exposed on any device.' : `${riskDevices.length} device(s) with risky ports: ${riskDevices.map(d => d.deviceName).join(', ')}.`,
+    weight:   3,
+  });
+  const openPortDevices = scanResults.filter(r => r.openPorts.length > 3);
+  checks.push({
+    category: 'Network Exposure',
+    check:    'Unnecessarily open ports',
+    status:   openPortDevices.length === 0 ? 'pass' : openPortDevices.length <= 2 ? 'warn' : 'fail',
+    detail:   openPortDevices.length === 0 ? 'Devices have minimal port exposure.' : `${openPortDevices.length} device(s) have >3 open ports.`,
+    weight:   2,
+  });
+
+  // Threat posture
+  const activeThreats = threats.filter(t => !t.mitigated && (t.level === 'critical' || t.level === 'high'));
+  checks.push({
+    category: 'Threat Posture',
+    check:    'Unmitigated critical/high threats',
+    status:   activeThreats.length === 0 ? 'pass' : activeThreats.length <= 1 ? 'warn' : 'fail',
+    detail:   activeThreats.length === 0 ? 'All high-severity threats mitigated.' : `${activeThreats.length} unmitigated threat(s): ${activeThreats.map(t => t.type).join(', ')}.`,
+    weight:   3,
+  });
+  const openIncidents = incidents.filter(i => i.status === 'open' || i.status === 'investigating');
+  checks.push({
+    category: 'Threat Posture',
+    check:    'Open security incidents',
+    status:   openIncidents.length === 0 ? 'pass' : openIncidents.length <= 1 ? 'warn' : 'fail',
+    detail:   openIncidents.length === 0 ? 'No open incidents.' : `${openIncidents.length} incident(s) still open or under investigation.`,
+    weight:   2,
+  });
+
+  // Firewall hygiene
+  const blockRules     = fwRules.filter(r => r.action === 'block' && r.enabled);
+  const disabledRules  = fwRules.filter(r => !r.enabled);
+  checks.push({
+    category: 'Firewall & Access Control',
+    check:    'Active block rules',
+    status:   blockRules.length >= 2 ? 'pass' : blockRules.length === 1 ? 'warn' : 'fail',
+    detail:   `${blockRules.length} active block rule(s) configured.`,
+    weight:   2,
+  });
+  checks.push({
+    category: 'Firewall & Access Control',
+    check:    'Disabled firewall rules',
+    status:   disabledRules.length === 0 ? 'pass' : disabledRules.length <= 1 ? 'warn' : 'fail',
+    detail:   disabledRules.length === 0 ? 'All rules enabled.' : `${disabledRules.length} rule(s) currently disabled — review intent.`,
+    weight:   1,
+  });
+
+  // Device hygiene
+  const flagged = scanResults.filter(r => r.flagged);
+  checks.push({
+    category: 'Device Hygiene',
+    check:    'Unrecognised / flagged devices',
+    status:   flagged.length === 0 ? 'pass' : 'fail',
+    detail:   flagged.length === 0 ? 'No unrecognised devices on network.' : `${flagged.length} flagged device(s) detected.`,
+    weight:   3,
+  });
+  checks.push({
+    category: 'Device Hygiene',
+    check:    'Device inventory completeness',
+    status:   devices.length >= 5 ? 'pass' : 'warn',
+    detail:   `${devices.length} device(s) registered in inventory.`,
+    weight:   1,
+  });
+
+  // Connectivity resilience
+  checks.push({
+    category: 'Connectivity Resilience',
+    check:    'Multi-provider failover configured',
+    status:   devices.some(d => d.provider !== devices[0]?.provider) ? 'pass' : 'warn',
+    detail:   'Verify dual-provider (Starlink + LTE) failover is tested regularly.',
+    weight:   1,
+  });
+  checks.push({
+    category: 'Connectivity Resilience',
+    check:    'DNS-over-HTTPS or encrypted DNS',
+    status:   'warn',
+    detail:   'Encrypted DNS not verifiable from current telemetry — confirm in router settings.',
+    weight:   1,
+  });
+
+  // Compute weighted score
+  const total  = checks.reduce((s, c) => s + c.weight * 2, 0); // max = weight*2 (pass=2, warn=1, fail=0)
+  const earned = checks.reduce((s, c) => s + c.weight * (c.status === 'pass' ? 2 : c.status === 'warn' ? 1 : 0), 0);
+  const score  = Math.round((earned / total) * 100);
+
+  return { checks, score };
+}
+
+function exportPenTestPDF(score: number, checks: PenCheckResult[], scanResults: ScanResult[]) {
+  const doc     = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const DARK    = [8,  11, 16]  as [number,number,number];
+  const PANEL   = [13, 20, 33]  as [number,number,number];
+  const GOLD_C  = [212,168,71]  as [number,number,number];
+  const WHITE   = [240,244,248] as [number,number,number];
+  const GREY    = [74,  90,106] as [number,number,number];
+  const GREEN   = [34, 197, 94] as [number,number,number];
+  const AMBER   = [245,158, 11] as [number,number,number];
+  const RED     = [239, 68, 68] as [number,number,number];
+  const pageW   = 210;
+
+  // Header bar
+  doc.setFillColor(...DARK);
+  doc.rect(0, 0, pageW, 38, 'F');
+  doc.setFillColor(...GOLD_C);
+  doc.rect(0, 38, pageW, 1.5, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(...WHITE);
+  doc.text('NauticShield', 14, 17);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...GOLD_C);
+  doc.text('Quick Security Assessment', 14, 25);
+  doc.setTextColor(...GREY as [number,number,number]);
+  doc.setFontSize(9);
+  doc.text(`Generated ${new Date().toLocaleString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}`, 14, 33);
+
+  // Compliance score box
+  const scoreColor = score >= 80 ? GREEN : score >= 60 ? AMBER : RED;
+  doc.setFillColor(...PANEL);
+  doc.roundedRect(14, 46, 58, 32, 3, 3, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(32);
+  doc.setTextColor(...scoreColor);
+  doc.text(`${score}%`, 43, 67, { align: 'center' });
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...GREY as [number,number,number]);
+  doc.text('COMPLIANCE SCORE', 43, 74, { align: 'center' });
+
+  // Summary stats
+  const passCt = checks.filter(c => c.status === 'pass').length;
+  const warnCt = checks.filter(c => c.status === 'warn').length;
+  const failCt = checks.filter(c => c.status === 'fail').length;
+  const stats = [
+    { label: 'Passed',   value: String(passCt), color: GREEN },
+    { label: 'Warnings', value: String(warnCt), color: AMBER },
+    { label: 'Failed',   value: String(failCt), color: RED   },
+  ];
+  stats.forEach(({ label, value, color }, i) => {
+    const x = 80 + i * 44;
+    doc.setFillColor(...PANEL);
+    doc.roundedRect(x, 46, 38, 32, 3, 3, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(22);
+    doc.setTextColor(...color);
+    doc.text(value, x + 19, 65, { align: 'center' });
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...GREY as [number,number,number]);
+    doc.text(label, x + 19, 73, { align: 'center' });
+  });
+
+  // Rating label
+  const rating = score >= 80 ? 'Good — maintain current controls' : score >= 60 ? 'Fair — address warnings promptly' : 'Poor — immediate remediation required';
+  doc.setFillColor(...scoreColor);
+  doc.rect(14, 83, pageW - 28, 0.8, 'F');
+  doc.setFontSize(9);
+  doc.setTextColor(...scoreColor);
+  doc.text(rating, 14, 91);
+
+  // Checks table
+  autoTable(doc, {
+    startY:  96,
+    margin:  { left: 14, right: 14 },
+    head:    [['Category', 'Check', 'Result', 'Detail']],
+    body:    checks.map(c => [c.category, c.check, c.status.toUpperCase(), c.detail]),
+    styles:  { font: 'helvetica', fontSize: 8, cellPadding: 3, textColor: WHITE, fillColor: PANEL },
+    headStyles:     { fillColor: [22, 33, 52] as [number,number,number], textColor: GOLD_C, fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: [10, 15, 24] as [number,number,number] },
+    columnStyles: {
+      0: { cellWidth: 38 },
+      1: { cellWidth: 60 },
+      2: { cellWidth: 18 },
+      3: { cellWidth: 'auto' },
+    },
+    didParseCell(data) {
+      if (data.column.index === 2 && data.section === 'body') {
+        const v = data.cell.raw as string;
+        data.cell.styles.textColor = v === 'PASS' ? GREEN : v === 'WARN' ? AMBER : RED;
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+  });
+
+  // Port scan section
+  const finalY = (doc as any).lastAutoTable?.finalY ?? 160;
+  if (finalY < 240) {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...GOLD_C);
+    doc.text('Port Exposure Summary', 14, finalY + 10);
+    autoTable(doc, {
+      startY:  finalY + 14,
+      margin:  { left: 14, right: 14 },
+      head:    [['Device', 'IP', 'Open Ports', 'Risk Ports']],
+      body:    scanResults.map(r => [r.deviceName, r.ip, r.openPorts.join(', ') || 'None', r.riskPorts.join(', ') || 'None']),
+      styles:  { font: 'helvetica', fontSize: 8, cellPadding: 3, textColor: WHITE, fillColor: PANEL },
+      headStyles: { fillColor: [22, 33, 52] as [number,number,number], textColor: GOLD_C, fontStyle: 'bold', fontSize: 8 },
+      alternateRowStyles: { fillColor: [10, 15, 24] as [number,number,number] },
+      didParseCell(data) {
+        if (data.column.index === 3 && data.section === 'body') {
+          const v = data.cell.raw as string;
+          if (v !== 'None') data.cell.styles.textColor = RED;
+        }
+      },
+    });
+  }
+
+  // Footer
+  const pgH = doc.internal.pageSize.getHeight();
+  doc.setFillColor(...DARK);
+  doc.rect(0, pgH - 14, pageW, 14, 'F');
+  doc.setFontSize(8);
+  doc.setTextColor(...GREY as [number,number,number]);
+  doc.text('CONFIDENTIAL — NauticShield Security Assessment. For internal use only.', pageW / 2, pgH - 5, { align: 'center' });
+
+  doc.save(`NauticShield-Security-Assessment-${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents }: {
+  tests:       PenTest[];
+  devices:     Device[];
+  scanResults: ScanResult[];
+  threats:     ThreatEntry[];
+  fwRules:     FirewallRule[];
+  incidents:   Incident[];
+}) {
+  const next       = tests.find(t => t.result === 'scheduled');
+  const daysUntil  = next ? Math.ceil((new Date(next.date).getTime() - Date.now()) / (1000*60*60*24)) : null;
+
+  type ScanPhase = 'idle' | 'scanning' | 'done';
+  const [phase,    setPhase]    = useState<ScanPhase>('idle');
+  const [progress, setProgress] = useState(0);
+  const [label,    setLabel]    = useState('');
+  const [result,   setResult]   = useState<{ score: number; checks: PenCheckResult[] } | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  function runScan() {
+    setPhase('scanning');
+    setProgress(0);
+    setResult(null);
+
+    const steps = [
+      'Enumerating network devices\u2026',
+      'Scanning open ports\u2026',
+      'Evaluating firewall rules\u2026',
+      'Analysing active threats\u2026',
+      'Checking incident backlog\u2026',
+      'Running compliance checks\u2026',
+      'Calculating score\u2026',
+    ];
+    let i = 0;
+    const tick = () => {
+      if (i >= steps.length) {
+        const final = scoreScanResults(devices, scanResults, threats, fwRules, incidents);
+        setResult(final);
+        setPhase('done');
+        return;
+      }
+      setLabel(steps[i]);
+      setProgress(Math.round(((i + 1) / steps.length) * 100));
+      i++;
+      setTimeout(tick, 480);
+    };
+    setTimeout(tick, 200);
+  }
+
+  const categories = result ? Array.from(new Set(result.checks.map(c => c.category))) : [];
+  const statusIcon = (s: CheckStatus) => s === 'pass' ? '\u2713' : s === 'warn' ? '\u26a0' : '\u00d7';
+  const statusColor = (s: CheckStatus) => s === 'pass' ? '#22c55e' : s === 'warn' ? '#f59e0b' : '#ef4444';
 
   return (
-    <Card>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <CardLabel>Penetration Test Schedule</CardLabel>
-        {next && (
-          <span style={{ background: GOLD_BG, color: GOLD, border: `1px solid ${GOLD_BORDER}`, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>
-            Next in {daysUntil}d
-          </span>
-        )}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {tests.map(t => {
-          const isScheduled = t.result === 'scheduled';
-          const color = t.result === 'pass' ? '#22c55e' : t.result === 'fail' ? '#ef4444' : GOLD;
-          const Icon  = t.result === 'pass' ? CalendarCheck : t.result === 'fail' ? CalendarX : Clock;
-          return (
-            <div key={t.id} style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              background: '#080b10', borderRadius: 10, padding: '11px 14px',
-              border: `1px solid ${isScheduled ? GOLD_BORDER : '#1a2535'}`,
-              opacity: isScheduled ? 1 : 0.85,
-            }}>
-              <div style={{ width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}18`, flexShrink: 0 }}>
-                <Icon size={14} color={color} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 500 }}>{t.label}</div>
-                <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 2 }}>
-                  {isScheduled ? `Scheduled for ${new Date(t.date).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}` :
-                    `Completed ${new Date(t.date).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })} · Next due ${new Date(t.nextDue).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}`}
-                </div>
-              </div>
-              {!isScheduled && (
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <span style={{ background: `${color}18`, color, borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 700 }}>
-                    {t.result === 'pass' ? 'PASS' : 'FAIL'}
-                  </span>
-                  {t.findings > 0 && (
-                    <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 3 }}>{t.findings} finding{t.findings > 1 ? 's' : ''}</div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ marginTop: 14, padding: '10px 14px', background: '#080b10', borderRadius: 10, border: '1px solid #1a2535' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <CheckCircle2 size={13} color="#22c55e" />
-          <span style={{ color: '#8899aa', fontSize: 12 }}>Annual cadence recommended for low-sensitivity yacht environments. Quarterly testing is unnecessary at this risk level.</span>
+    <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 14, padding: 24 }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ background: 'rgba(212,168,71,0.1)', border: '1px solid rgba(212,168,71,0.25)', borderRadius: 10, padding: 9 }}>
+            <Fingerprint size={18} color={GOLD} />
+          </div>
+          <div>
+            <div style={{ color: '#f0f4f8', fontSize: 15, fontWeight: 700 }}>Quick Security Assessment</div>
+            <div style={{ color: '#4a5a6a', fontSize: 12, marginTop: 2 }}>Single-click scan of your vessel network and security posture</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {next && (
+            <span style={{ background: GOLD_BG, color: GOLD, border: `1px solid ${GOLD_BORDER}`, borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700 }}>
+              Annual pen test in {daysUntil}d
+            </span>
+          )}
+          {result && (
+            <button
+              onClick={() => exportPenTestPDF(result.score, result.checks, scanResults)}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(212,168,71,0.1)', color: GOLD, border: `1px solid ${GOLD_BORDER}`, borderRadius: 9, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <ClipboardList size={14} /> Export PDF
+            </button>
+          )}
+          <button
+            onClick={runScan}
+            disabled={phase === 'scanning'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              background: phase === 'scanning' ? 'rgba(14,165,233,0.06)' : 'rgba(14,165,233,0.12)',
+              color: phase === 'scanning' ? '#4a5a6a' : '#7dd3fc',
+              border: `1px solid ${phase === 'scanning' ? '#1a2535' : 'rgba(14,165,233,0.35)'}`,
+              borderRadius: 9, padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: phase === 'scanning' ? 'default' : 'pointer',
+            }}
+          >
+            <Radar size={15} /> {phase === 'idle' ? 'Run Quick Scan' : phase === 'scanning' ? 'Scanning\u2026' : 'Rescan'}
+          </button>
         </div>
       </div>
-    </Card>
+
+      {/* Scanning progress */}
+      {phase === 'scanning' && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ color: '#7dd3fc', fontSize: 12 }}>{label}</span>
+            <span style={{ color: '#4a5a6a', fontSize: 12 }}>{progress}%</span>
+          </div>
+          <div style={{ background: '#080b10', borderRadius: 6, height: 6, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg, #0ea5e9, #38bdf8)', borderRadius: 6, transition: 'width 0.4s ease' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+            {Array.from({ length: 7 }, (_, i) => (
+              <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i < Math.round(progress / 100 * 7) ? '#0ea5e9' : '#1a2535', transition: 'background 0.4s' }} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Results */}
+      {phase === 'done' && result && (
+        <div>
+          {/* Score + summary */}
+          <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, marginBottom: 20 }}>
+            {/* Score ring */}
+            <div style={{ background: '#080b10', border: `2px solid ${result.score >= 80 ? 'rgba(34,197,94,0.3)' : result.score >= 60 ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 0' }}>
+              <div style={{ fontSize: 48, fontWeight: 800, color: result.score >= 80 ? '#22c55e' : result.score >= 60 ? '#f59e0b' : '#ef4444', lineHeight: 1 }}>{result.score}%</div>
+              <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 6, fontWeight: 600, letterSpacing: 0.8 }}>COMPLIANCE</div>
+              <div style={{ marginTop: 10, background: result.score >= 80 ? 'rgba(34,197,94,0.1)' : result.score >= 60 ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)', color: result.score >= 80 ? '#22c55e' : result.score >= 60 ? '#f59e0b' : '#ef4444', borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700 }}>
+                {result.score >= 80 ? 'GOOD' : result.score >= 60 ? 'FAIR' : 'POOR'}
+              </div>
+            </div>
+            {/* Check summary bars */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                { label: 'Passed',   count: result.checks.filter(c => c.status === 'pass').length, color: '#22c55e' },
+                { label: 'Warnings', count: result.checks.filter(c => c.status === 'warn').length, color: '#f59e0b' },
+                { label: 'Failed',   count: result.checks.filter(c => c.status === 'fail').length, color: '#ef4444' },
+              ].map(({ label, count, color }) => (
+                <div key={label}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                    <span style={{ color: '#6b7f92', fontSize: 12 }}>{label}</span>
+                    <span style={{ color, fontWeight: 700, fontSize: 12 }}>{count}</span>
+                  </div>
+                  <div style={{ background: '#080b10', borderRadius: 4, height: 5, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${(count / result.checks.length) * 100}%`, background: color, borderRadius: 4 }} />
+                  </div>
+                </div>
+              ))}
+              <div style={{ marginTop: 6, color: '#4a5a6a', fontSize: 11 }}>
+                Scanned {result.checks.length} controls across {categories.length} categories &middot; {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+          </div>
+
+          {/* Check results by category */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {categories.map(cat => {
+              const catChecks = result.checks.filter(c => c.category === cat);
+              const isOpen    = expanded === cat;
+              const catFail   = catChecks.filter(c => c.status === 'fail').length;
+              const catWarn   = catChecks.filter(c => c.status === 'warn').length;
+              const catPass   = catChecks.filter(c => c.status === 'pass').length;
+              const catColor  = catFail > 0 ? '#ef4444' : catWarn > 0 ? '#f59e0b' : '#22c55e';
+              return (
+                <div key={cat} style={{ background: '#080b10', border: `1px solid ${catFail > 0 ? 'rgba(239,68,68,0.2)' : catWarn > 0 ? 'rgba(245,158,11,0.15)' : '#1a2535'}`, borderRadius: 10, overflow: 'hidden' }}>
+                  <button
+                    onClick={() => setExpanded(isOpen ? null : cat)}
+                    style={{ width: '100%', background: 'transparent', border: 'none', cursor: 'pointer', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}
+                  >
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: catColor, flexShrink: 0 }} />
+                    <span style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 600, flex: 1 }}>{cat}</span>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {catFail > 0  && <span style={{ background: 'rgba(239,68,68,0.1)',  color: '#ef4444', borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>{catFail} fail</span>}
+                      {catWarn > 0  && <span style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b', borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>{catWarn} warn</span>}
+                      {catPass > 0  && <span style={{ background: 'rgba(34,197,94,0.1)',  color: '#22c55e', borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>{catPass} pass</span>}
+                      <span style={{ color: '#4a5a6a' }}>{isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
+                    </div>
+                  </button>
+                  {isOpen && (
+                    <div style={{ borderTop: '1px solid #1a2535', padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {catChecks.map(c => (
+                        <div key={c.check} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                          <span style={{ color: statusColor(c.status), fontWeight: 700, fontSize: 14, flexShrink: 0, marginTop: 1 }}>{statusIcon(c.status)}</span>
+                          <div>
+                            <div style={{ color: '#cbd5e1', fontSize: 12, fontWeight: 600 }}>{c.check}</div>
+                            <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 2 }}>{c.detail}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Idle state */}
+      {phase === 'idle' && (
+        <div style={{ background: '#080b10', borderRadius: 12, padding: '28px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, border: '1px dashed #1a2535' }}>
+          <Radar size={32} color="#1a2535" />
+          <div style={{ color: '#4a5a6a', fontSize: 13, textAlign: 'center' }}>
+            Click <strong style={{ color: '#7dd3fc' }}>Run Quick Scan</strong> to assess your vessel network &mdash; no technical knowledge required.<br />
+            <span style={{ fontSize: 11 }}>The scan typically completes in under 5 seconds and checks {10} security controls.</span>
+          </div>
+        </div>
+      )}
+
+      {/* Historical pen test schedule (collapsed accordion) */}
+      <div style={{ marginTop: 20, borderTop: '1px solid #1a2535', paddingTop: 16 }}>
+        <div style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Scheduled Annual Pen Tests</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {tests.map(t => {
+            const color = t.result === 'pass' ? '#22c55e' : t.result === 'fail' ? '#ef4444' : GOLD;
+            const Icon  = t.result === 'pass' ? CalendarCheck : t.result === 'fail' ? CalendarX : Clock;
+            return (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#080b10', borderRadius: 8, padding: '9px 12px', border: `1px solid ${t.result === 'scheduled' ? GOLD_BORDER : '#1a2535'}` }}>
+                <Icon size={13} color={color} style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1, color: '#8899aa', fontSize: 12 }}>{t.label}</div>
+                <div style={{ color: '#4a5a6a', fontSize: 11 }}>
+                  {t.result === 'scheduled'
+                    ? new Date(t.date).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })
+                    : `${t.findings} finding${t.findings !== 1 ? 's' : ''}`}
+                </div>
+                {t.result !== 'scheduled' && (
+                  <span style={{ background: `${color}18`, color, borderRadius: 5, padding: '1px 8px', fontSize: 10, fontWeight: 700 }}>
+                    {t.result.toUpperCase()}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -802,11 +1226,18 @@ export default function Cyber() {
       {/* Incident log */}
       <IncidentLog incidents={incidents} onUpdateStatus={updateIncident} />
 
-      {/* Pen test + Coverage side by side */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <PenTestPanel tests={mockPenTests} />
-        <ProtectionCoverage coverage={coverage} />
-      </div>
+      {/* Pen test — full width */}
+      <PenTestPanel
+        tests={mockPenTests}
+        devices={devices}
+        scanResults={scanResults}
+        threats={threats}
+        fwRules={fwRules}
+        incidents={incidents}
+      />
+
+      {/* Protection coverage — full width */}
+      <ProtectionCoverage coverage={coverage} />
 
       {/* Recommendations */}
       <Card style={{ border: `1px solid ${GOLD_BORDER}`, background: `linear-gradient(135deg, #0d1421 80%, rgba(212,168,71,0.04))` }}>
