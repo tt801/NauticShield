@@ -8,6 +8,7 @@ import Zones        from '@/pages/Zones'
 import Report       from '@/pages/Report'
 import GuestNetwork from '@/pages/GuestNetwork'
 import Voyage       from '@/pages/Voyage'
+import Cyber        from '@/pages/Cyber'
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/report"        element={<Report />} />
           <Route path="/guest-network" element={<GuestNetwork />} />
           <Route path="/voyage"        element={<Voyage />} />
+          <Route path="/cyber"         element={<Cyber />} />
         </Routes>
       </Layout>
     </BrowserRouter>

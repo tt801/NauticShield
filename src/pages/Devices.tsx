@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Smartphone,
   Laptop,
@@ -9,9 +9,12 @@ import {
   Search,
   Filter,
   AlertTriangle,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
-import { devices } from '@/data/mock';
 import type { DeviceStatus, DeviceType } from '@/data/mock';
+import { useVesselData } from '@/context/VesselDataProvider';
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -86,10 +89,44 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
 
 // ── Device row ────────────────────────────────────────────────────
 
-function DeviceRow({ device }: { device: (typeof devices)[number] }) {
-  const Icon      = typeIcons[device.type];
-  const sc        = statusColors[device.status];
-  const isUnknown = device.type === 'unknown';
+function DeviceRow({ device, onSave }: {
+  device: { id: string; name: string; type: DeviceType; status: DeviceStatus; ip: string; mac: string; lastSeen: string; manufacturer?: string | null; location?: string | null };
+  onSave: (id: string, patch: { name?: string; type?: string; location?: string }) => void;
+}) {
+  const [editing, setEditing]   = useState(false);
+  const [name, setName]         = useState(device.name);
+  const [type, setType]         = useState<DeviceType>(device.type);
+  const [location, setLocation] = useState(device.location ?? '');
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  // Keep local state in sync if WS updates arrive while not editing
+  useEffect(() => {
+    if (!editing) {
+      setName(device.name);
+      setType(device.type);
+      setLocation(device.location ?? '');
+    }
+  }, [device.name, device.type, device.location, editing]);
+
+  useEffect(() => {
+    if (editing) nameRef.current?.focus();
+  }, [editing]);
+
+  function commit() {
+    onSave(device.id, { name: name.trim() || device.name, type, location: location.trim() || undefined });
+    setEditing(false);
+  }
+
+  function cancel() {
+    setName(device.name);
+    setType(device.type);
+    setLocation(device.location ?? '');
+    setEditing(false);
+  }
+
+  const Icon = typeIcons[type];
+  const sc   = statusColors[device.status];
+  const isUnknown = type === 'unknown';
 
   return (
     <div style={{
@@ -110,28 +147,69 @@ function DeviceRow({ device }: { device: (typeof devices)[number] }) {
         <Icon size={17} color={isUnknown ? '#f59e0b' : '#0ea5e9'} />
       </div>
 
-      {/* Name + meta */}
+      {/* Name + meta — editable */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {device.name}
-          </span>
-          {isUnknown && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
-              borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 600, flexShrink: 0,
-            }}>
-              <AlertTriangle size={10} />
-              Unknown
-            </span>
-          )}
-        </div>
-        <div style={{ color: '#6b7f92', fontSize: 11, marginTop: 3 }}>
-          {typeLabels[device.type]}
-          {device.manufacturer ? ` · ${device.manufacturer}` : ''}
-          {device.location ? ` · ${device.location}` : ''}
-        </div>
+        {editing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <input
+              ref={nameRef}
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') cancel(); }}
+              placeholder="Device name"
+              style={{
+                background: '#0d1421', border: '1px solid #0ea5e9', borderRadius: 6,
+                color: '#f0f4f8', fontSize: 13, padding: '4px 10px', outline: 'none', width: '100%',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 6 }}>
+              <select
+                value={type}
+                onChange={e => setType(e.target.value as DeviceType)}
+                style={{
+                  background: '#0d1421', border: '1px solid #1a2535', borderRadius: 6,
+                  color: '#f0f4f8', fontSize: 12, padding: '3px 8px', outline: 'none', cursor: 'pointer',
+                }}
+              >
+                {(Object.keys(typeLabels) as DeviceType[]).map(t => (
+                  <option key={t} value={t}>{typeLabels[t]}</option>
+                ))}
+              </select>
+              <input
+                value={location}
+                onChange={e => setLocation(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') cancel(); }}
+                placeholder="Location (e.g. Bridge)"
+                style={{
+                  background: '#0d1421', border: '1px solid #1a2535', borderRadius: 6,
+                  color: '#f0f4f8', fontSize: 12, padding: '3px 8px', outline: 'none', flex: 1,
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {device.name}
+              </span>
+              {isUnknown && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
+                  borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 600, flexShrink: 0,
+                }}>
+                  <AlertTriangle size={10} /> Unknown
+                </span>
+              )}
+            </div>
+            <div style={{ color: '#6b7f92', fontSize: 11, marginTop: 3 }}>
+              {typeLabels[device.type]}
+              {device.manufacturer ? ` · ${device.manufacturer}` : ''}
+              {device.location     ? ` · ${device.location}`     : ''}
+            </div>
+          </>
+        )}
       </div>
 
       {/* IP + MAC */}
@@ -143,17 +221,36 @@ function DeviceRow({ device }: { device: (typeof devices)[number] }) {
       {/* Last seen */}
       <div style={{ textAlign: 'right', width: 100, flexShrink: 0 }}>
         <div style={{ color: '#6b7f92', fontSize: 11 }}>Last seen</div>
-        <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 500, marginTop: 2 }}>{device.lastSeen}</div>
+        <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 500, marginTop: 2 }}>
+          {new Date(device.lastSeen).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+        </div>
       </div>
 
       {/* Status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, width: 72, justifyContent: 'flex-end' }}>
-        <div style={{
-          width: 8, height: 8, borderRadius: '50%',
-          background: sc.color,
-          boxShadow: `0 0 6px ${sc.glow}`,
-        }} />
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: sc.color, boxShadow: `0 0 6px ${sc.glow}` }} />
         <span style={{ color: sc.color, fontSize: 12, fontWeight: 600 }}>{sc.label}</span>
+      </div>
+
+      {/* Edit / Save / Cancel buttons */}
+      <div style={{ flexShrink: 0 }}>
+        {editing ? (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={commit} title="Save" style={{
+              background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.4)',
+              color: '#22c55e', borderRadius: 7, padding: '5px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center',
+            }}><Check size={13} /></button>
+            <button onClick={cancel} title="Cancel" style={{
+              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+              color: '#ef4444', borderRadius: 7, padding: '5px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center',
+            }}><X size={13} /></button>
+          </div>
+        ) : (
+          <button onClick={() => setEditing(true)} title="Rename" style={{
+            background: 'transparent', border: '1px solid #1a2535',
+            color: '#6b7f92', borderRadius: 7, padding: '5px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center',
+          }}><Pencil size={13} /></button>
+        )}
       </div>
     </div>
   );
@@ -162,9 +259,10 @@ function DeviceRow({ device }: { device: (typeof devices)[number] }) {
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function Devices() {
-  const [search, setSearch]           = useState('');
+  const { devices, renameDevice } = useVesselData();
+  const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
-  const [typeFilter, setTypeFilter]   = useState<FilterType>('all');
+  const [typeFilter, setTypeFilter]     = useState<FilterType>('all');
 
   const filtered = devices.filter(d => {
     const matchStatus = statusFilter === 'all' || d.status === statusFilter;
@@ -264,7 +362,7 @@ export default function Devices() {
               No devices match your filters.
             </div>
           ) : (
-            filtered.map(d => <DeviceRow key={d.id} device={d} />)
+            filtered.map(d => <DeviceRow key={d.id} device={d} onSave={renameDevice} />)
           )}
         </div>
       </Card>

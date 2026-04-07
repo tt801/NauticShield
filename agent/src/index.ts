@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import 'dotenv/config';
 import express        from 'express';
 import cors           from 'cors';
@@ -6,11 +7,13 @@ import { WebSocketServer, WebSocket } from 'ws';
 
 import { broadcast, initBroadcaster } from './broadcaster';
 import { scanNetwork, checkInternetConnectivity, updateInternetStatus } from './scanner';
+import { runAlertEngine } from './alertEngine';
 import * as db          from './db';
 import devicesRouter    from './routes/devices';
 import alertsRouter     from './routes/alerts';
 import statusRouter     from './routes/status';
 import actionsRouter    from './routes/actions';
+import voyageRouter     from './routes/voyage';
 import type { VesselSnapshot, WsClientMessage } from './types';
 
 const PORT    = parseInt(process.env.PORT    ?? '3000', 10);
@@ -39,6 +42,7 @@ app.use('/api/devices', devicesRouter);
 app.use('/api/alerts',  alertsRouter);
 app.use('/api/status',  statusRouter);
 app.use('/api/actions', actionsRouter);
+app.use('/api/voyage',  voyageRouter);
 
 // Snapshot endpoint — returns everything the frontend needs in one call
 app.get('/api/snapshot', (_req, res) => {
@@ -91,15 +95,18 @@ async function runCycle(): Promise<void> {
     // 1. Internet check
     const { reachable, latencyMs } = await checkInternetConnectivity();
     const internetStatus = updateInternetStatus(reachable, latencyMs);
-    const networkHealth  = db.getNetworkHealth();
 
     // 2. Network scan — returns changed devices
     const { newDevices, updatedDevices } = await scanNetwork(SUBNET);
 
-    // 3. Broadcast changes over WebSocket
+    // 3. Run alert engine — fires / clears alerts based on current state
+    runAlertEngine(internetStatus);
+
+    // 4. Broadcast changes over WebSocket
     for (const d of newDevices)     broadcast({ type: 'device:new',    data: d });
     for (const d of updatedDevices) broadcast({ type: 'device:update', data: d });
 
+    const networkHealth = db.getNetworkHealth();
     if (networkHealth) {
       broadcast({ type: 'status:update', data: { internetStatus, networkHealth } });
     }

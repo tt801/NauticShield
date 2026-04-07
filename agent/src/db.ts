@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // node:sqlite is built into Node.js 22.5+ — no native addon compilation needed.
 import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
@@ -36,7 +37,8 @@ db.exec(`
     description TEXT NOT NULL,
     timestamp   TEXT NOT NULL,
     resolved    INTEGER NOT NULL DEFAULT 0,
-    resolvedAt  TEXT
+    resolvedAt  TEXT,
+    fingerprint TEXT
   );
 
   CREATE TABLE IF NOT EXISTS internet_status (
@@ -59,20 +61,40 @@ db.exec(`
     offlineDevices INTEGER NOT NULL DEFAULT 0,
     updatedAt      TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS voyage_log (
+    id           TEXT PRIMARY KEY,
+    date         TEXT NOT NULL,
+    location     TEXT NOT NULL,
+    region       TEXT NOT NULL DEFAULT '',
+    avgDownMbps  REAL NOT NULL DEFAULT 0,
+    avgLatencyMs REAL NOT NULL DEFAULT 0,
+    uptimePct    REAL NOT NULL DEFAULT 100,
+    provider     TEXT NOT NULL DEFAULT 'Starlink',
+    incidents    INTEGER NOT NULL DEFAULT 0,
+    blocks       TEXT NOT NULL DEFAULT '[]',
+    notes        TEXT NOT NULL DEFAULT '',
+    createdAt    TEXT NOT NULL
+  );
 `);
+
+// Safe migration: add fingerprint column to existing DBs that predate this schema version
+try {
+  db.exec(`ALTER TABLE alerts ADD COLUMN fingerprint TEXT`);
+} catch { /* column already exists — safe to ignore */ }
 
 // ── Devices ───────────────────────────────────────────────────────
 
 export function getDevices(): Device[] {
-  return db.prepare('SELECT * FROM devices ORDER BY name').all() as Device[];
+  return db.prepare('SELECT * FROM devices ORDER BY name').all() as unknown as Device[];
 }
 
 export function getDeviceById(id: string): Device | undefined {
-  return db.prepare('SELECT * FROM devices WHERE id = ?').get(id) as Device | undefined;
+  return db.prepare('SELECT * FROM devices WHERE id = ?').get(id) as unknown as Device | undefined;
 }
 
 export function getDeviceByMac(mac: string): Device | undefined {
-  return db.prepare('SELECT * FROM devices WHERE mac = ?').get(mac) as Device | undefined;
+  return db.prepare('SELECT * FROM devices WHERE mac = ?').get(mac) as unknown as Device | undefined;
 }
 
 export function upsertDevice(device: Device): void {
@@ -102,6 +124,20 @@ export function updateDeviceStatus(mac: string, status: DeviceStatus): Device | 
   return getDeviceByMac(mac);
 }
 
+export function renameDevice(id: string, name: string, type?: string, location?: string): Device | undefined {
+  const now = new Date().toISOString();
+  if (type !== undefined && location !== undefined) {
+    db.prepare(`UPDATE devices SET name = ?, type = ?, location = ?, updatedAt = ? WHERE id = ?`).run(name, type, location, now, id);
+  } else if (type !== undefined) {
+    db.prepare(`UPDATE devices SET name = ?, type = ?, updatedAt = ? WHERE id = ?`).run(name, type, now, id);
+  } else if (location !== undefined) {
+    db.prepare(`UPDATE devices SET name = ?, location = ?, updatedAt = ? WHERE id = ?`).run(name, location, now, id);
+  } else {
+    db.prepare(`UPDATE devices SET name = ?, updatedAt = ? WHERE id = ?`).run(name, now, id);
+  }
+  return getDeviceById(id);
+}
+
 type DeviceStatus = Device['status'];
 
 // ── Alerts ────────────────────────────────────────────────────────
@@ -110,14 +146,29 @@ export function getAlerts(): Alert[] {
   return db.prepare('SELECT * FROM alerts ORDER BY timestamp DESC').all().map((row: any) => ({
     ...row,
     resolved: Boolean(row.resolved),
-  })) as Alert[];
+  })) as unknown as Alert[];
 }
 
-export function addAlert(alert: Alert): void {
+export function addAlert(alert: Alert & { fingerprint?: string }): void {
   db.prepare(`
-    INSERT OR IGNORE INTO alerts (id, severity, title, description, timestamp, resolved)
-    VALUES (@id, @severity, @title, @description, @timestamp, @resolved)
-  `).run({ ...alert, resolved: alert.resolved ? 1 : 0 });
+    INSERT OR IGNORE INTO alerts (id, severity, title, description, timestamp, resolved, fingerprint)
+    VALUES (@id, @severity, @title, @description, @timestamp, @resolved, @fingerprint)
+  `).run({ ...alert, resolved: alert.resolved ? 1 : 0, fingerprint: alert.fingerprint ?? null });
+}
+
+/** Returns the open (unresolved) alert for a given fingerprint, or undefined. */
+export function getOpenAlertByFingerprint(fingerprint: string): Alert | undefined {
+  const row = db.prepare(
+    `SELECT * FROM alerts WHERE fingerprint = ? AND resolved = 0 LIMIT 1`
+  ).get(fingerprint) as unknown as (Alert & { fingerprint: string }) | undefined;
+  if (!row) return undefined;
+  return { ...row, resolved: Boolean((row as any).resolved) };
+}
+
+/** Auto-resolve all open alerts matching a fingerprint. */
+export function autoResolveByFingerprint(fingerprint: string): void {
+  db.prepare(`UPDATE alerts SET resolved = 1, resolvedAt = ? WHERE fingerprint = ? AND resolved = 0`)
+    .run(new Date().toISOString(), fingerprint);
 }
 
 export function resolveAlert(id: string): void {
@@ -128,7 +179,7 @@ export function resolveAlert(id: string): void {
 // ── Internet status ───────────────────────────────────────────────
 
 export function getInternetStatus(): InternetStatus | undefined {
-  return db.prepare('SELECT * FROM internet_status WHERE id = 1').get() as InternetStatus | undefined;
+  return db.prepare('SELECT * FROM internet_status WHERE id = 1').get() as unknown as InternetStatus | undefined;
 }
 
 export function setInternetStatus(s: InternetStatus): void {
@@ -149,7 +200,7 @@ export function setInternetStatus(s: InternetStatus): void {
 // ── Network health ────────────────────────────────────────────────
 
 export function getNetworkHealth(): NetworkHealth | undefined {
-  return db.prepare('SELECT * FROM network_health WHERE id = 1').get() as NetworkHealth | undefined;
+  return db.prepare('SELECT * FROM network_health WHERE id = 1').get() as unknown as NetworkHealth | undefined;
 }
 
 export function setNetworkHealth(h: NetworkHealth): void {
@@ -181,4 +232,51 @@ export function recomputeNetworkHealth(): NetworkHealth {
   const health: NetworkHealth = { score, activeDevices: active, totalDevices: total, unknownDevices: unknown, offlineDevices: offline };
   setNetworkHealth(health);
   return health;
+}
+
+// ── Voyage Log ────────────────────────────────────────────────────
+
+export interface VoyageEntry {
+  id:           string;
+  date:         string;
+  location:     string;
+  region:       string;
+  avgDownMbps:  number;
+  avgLatencyMs: number;
+  uptimePct:    number;
+  provider:     string;
+  incidents:    number;
+  blocks:       string; // JSON string of ConnStatus[]
+  notes:        string;
+  createdAt:    string;
+}
+
+export function getVoyageLog(): VoyageEntry[] {
+  return db.prepare('SELECT * FROM voyage_log ORDER BY date DESC, createdAt DESC').all() as unknown as VoyageEntry[];
+}
+
+export function addVoyageEntry(entry: Omit<VoyageEntry, 'createdAt'>): VoyageEntry {
+  const createdAt = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO voyage_log (id, date, location, region, avgDownMbps, avgLatencyMs, uptimePct, provider, incidents, blocks, notes, createdAt)
+    VALUES (@id, @date, @location, @region, @avgDownMbps, @avgLatencyMs, @uptimePct, @provider, @incidents, @blocks, @notes, @createdAt)
+  `).run({ ...entry, createdAt });
+  return { ...entry, createdAt };
+}
+
+export function updateVoyageEntry(id: string, patch: Partial<Omit<VoyageEntry, 'id' | 'createdAt'>>): VoyageEntry | undefined {
+  const existing = db.prepare('SELECT * FROM voyage_log WHERE id = ?').get(id) as unknown as VoyageEntry | undefined;
+  if (!existing) return undefined;
+  const merged = { ...existing, ...patch };
+  db.prepare(`
+    UPDATE voyage_log SET date=@date, location=@location, region=@region, avgDownMbps=@avgDownMbps,
+      avgLatencyMs=@avgLatencyMs, uptimePct=@uptimePct, provider=@provider, incidents=@incidents,
+      blocks=@blocks, notes=@notes WHERE id=@id
+  `).run({ ...merged });
+  return merged;
+}
+
+export function deleteVoyageEntry(id: string): boolean {
+  const result = db.prepare('DELETE FROM voyage_log WHERE id = ?').run(id);
+  return (result as any).changes > 0;
 }

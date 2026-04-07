@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   ShieldCheck,
   ShieldX,
@@ -15,8 +15,8 @@ import {
   HelpCircle,
   Gauge,
 } from 'lucide-react';
-import { devices } from '@/data/mock';
-import type { DeviceType } from '@/data/mock';
+import type { Device, DeviceType } from '@/data/mock';
+import { useVesselData } from '@/context/VesselDataProvider';
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -40,9 +40,7 @@ const bwOptions: BandwidthLimit[] = [
   { label: '5 Mbps',     value: '5'         },
 ];
 
-// Simulate guest-connected devices (phones, laptops, unknown)
-const guestDeviceIds = new Set(['1', '5', '6', '12', '13', '14', '15', '16', '19', '20']);
-const guestDevices   = devices.filter(d => guestDeviceIds.has(d.id));
+// Guest device filtering happens inside the component (based on live device types)
 
 // ── Card shell ────────────────────────────────────────────────────
 
@@ -72,14 +70,14 @@ function GuestDeviceRow({
   onBlock,
   onBandwidth,
 }: {
-  device: (typeof guestDevices)[number];
+  device: Device;
   access: DeviceAccess;
   bandwidth: string;
   onApprove: () => void;
   onBlock:   () => void;
   onBandwidth: (v: string) => void;
 }) {
-  const Icon      = typeIcons[device.type];
+  const Icon      = typeIcons[device.type as DeviceType];
   const isUnknown = device.type === 'unknown';
 
   const accessStyle: Record<DeviceAccess, { color: string; bg: string; border: string; label: string }> = {
@@ -178,18 +176,29 @@ function GuestDeviceRow({
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function GuestNetwork() {
-  // Initial state: unknown devices = pending, known = approved
-  const [accessMap, setAccessMap] = useState<Record<string, DeviceAccess>>(() => {
-    const m: Record<string, DeviceAccess> = {};
-    guestDevices.forEach(d => { m[d.id] = d.type === 'unknown' ? 'pending' : 'approved'; });
-    return m;
-  });
+  const { devices } = useVesselData();
+  const guestDevices = useMemo(
+    () => devices.filter(d => d.type === 'phone' || d.type === 'laptop' || d.type === 'unknown'),
+    [devices]
+  );
 
-  const [bwMap, setBwMap] = useState<Record<string, string>>(() => {
-    const m: Record<string, string> = {};
-    guestDevices.forEach(d => { m[d.id] = 'unlimited'; });
-    return m;
-  });
+  // Initial state: unknown devices = pending, known = approved
+  const [accessMap, setAccessMap] = useState<Record<string, DeviceAccess>>({});
+  const [bwMap,     setBwMap]     = useState<Record<string, string>>({});
+
+  // Sync new guest devices into maps as they appear
+  useEffect(() => {
+    setAccessMap(m => {
+      const next = { ...m };
+      guestDevices.forEach(d => { if (!(d.id in next)) next[d.id] = d.type === 'unknown' ? 'pending' : 'approved'; });
+      return next;
+    });
+    setBwMap(m => {
+      const next = { ...m };
+      guestDevices.forEach(d => { if (!(d.id in next)) next[d.id] = 'unlimited'; });
+      return next;
+    });
+  }, [guestDevices]);
 
   const setAccess = (id: string, v: DeviceAccess) => setAccessMap(m => ({ ...m, [id]: v }));
   const setBw     = (id: string, v: string)        => setBwMap(m => ({ ...m, [id]: v }));

@@ -12,16 +12,21 @@ import {
   ChevronRight,
   Settings,
   HelpCircle,
+  ShieldCheck,
 } from 'lucide-react';
 
 const navItems = [
   { to: '/',              label: 'Dashboard',    icon: LayoutDashboard },
   { to: '/devices',       label: 'Devices',      icon: MonitorSmartphone },
-  { to: '/zones',         label: 'Vessel Zones', icon: Map },
   { to: '/alerts',        label: 'Alerts',       icon: BellRing },
   { to: '/guest-network', label: 'Guest Network',icon: Wifi },
-  { to: '/voyage',        label: 'Voyage Log',   icon: Navigation },
-  { to: '/report',        label: 'Owner Report', icon: FileText },
+];
+
+const premiumNavItems = [
+  { to: '/zones',  label: 'Vessel Zones', icon: Map         },
+  { to: '/voyage', label: 'Voyage Log',   icon: Navigation  },
+  { to: '/report', label: 'Reporting',    icon: FileText    },
+  { to: '/cyber',  label: 'Cyber',        icon: ShieldCheck },
 ];
 
 const bottomItems = [
@@ -141,6 +146,63 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <>
                   <Icon size={17} color={isActive ? '#0ea5e9' : '#6b7f92'} style={{ flexShrink: 0 }} />
                   {!collapsed && label}
+                </>
+              )}
+            </NavLink>
+          ))}
+
+          {/* ── Premium separator ── */}
+          <div style={{ margin: '10px 4px 6px', borderTop: '1px solid #1a2535' }} />
+          {!collapsed && (
+            <div style={{ padding: '0 4px 4px', fontSize: 10, fontWeight: 700, letterSpacing: 1.2, color: 'rgba(212,168,71,0.5)', textTransform: 'uppercase' }}>Premium</div>
+          )}
+
+          {premiumNavItems.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              title={collapsed ? label : undefined}
+              style={({ isActive }) => ({
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: collapsed ? '10px 0' : '9px 12px',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                textDecoration: 'none',
+                color: isActive ? '#d4a847' : '#a07830',
+                background: isActive ? 'rgba(212,168,71,0.12)' : 'transparent',
+                border: isActive ? '1px solid rgba(212,168,71,0.25)' : '1px solid transparent',
+                transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+              })}
+              onMouseEnter={e => {
+                const el = e.currentTarget as HTMLElement;
+                if (!el.style.background.includes('rgba(212,168,71,0.12)')) {
+                  el.style.background = 'rgba(212,168,71,0.06)';
+                  el.style.color = '#d4a847';
+                }
+              }}
+              onMouseLeave={e => {
+                const el = e.currentTarget as HTMLElement;
+                if (!el.style.background.includes('rgba(212,168,71,0.12)')) {
+                  el.style.background = 'transparent';
+                  el.style.color = '#a07830';
+                }
+              }}
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon size={17} color={isActive ? '#d4a847' : '#a07830'} style={{ flexShrink: 0 }} />
+                  {!collapsed && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {label}
+                      <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.5, background: 'rgba(212,168,71,0.15)', color: '#d4a847', borderRadius: 4, padding: '1px 5px' }}>✦</span>
+                    </span>
+                  )}
                 </>
               )}
             </NavLink>

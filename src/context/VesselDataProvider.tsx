@@ -31,6 +31,7 @@ export interface VesselContextValue {
   lastSync:       Date | null;
   isLive:         boolean;
   resolveAlert:   (id: string) => Promise<void>;
+  renameDevice:   (id: string, patch: { name?: string; type?: string; location?: string }) => Promise<void>;
   runAction:      (action: string, payload?: Record<string, unknown>) => Promise<{ success: boolean; message?: string }>;
 }
 
@@ -122,6 +123,16 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
           case 'alert:new':
             setAlerts(prev => [msg.data, ...prev]);
             setLastSync(new Date());
+            if (msg.data.severity === 'critical' && typeof Notification !== 'undefined') {
+              if (Notification.permission === 'granted') {
+                new Notification('NauticShield Alert', { body: msg.data.title, icon: '/favicon.ico' });
+              } else if (Notification.permission === 'default') {
+                Notification.requestPermission().then(perm => {
+                  if (perm === 'granted')
+                    new Notification('NauticShield Alert', { body: msg.data.title, icon: '/favicon.ico' });
+                });
+              }
+            }
             break;
           case 'alert:resolve':
             setAlerts(prev =>
@@ -194,6 +205,12 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
     try { await agentApi.resolveAlert(id); } catch { /* agent might be offline */ }
   }, []);
 
+  const renameDevice = useCallback(async (id: string, patch: { name?: string; type?: string; location?: string }) => {
+    // Optimistic update
+    setDevices(prev => prev.map(d => d.id === id ? { ...d, ...patch } as typeof d : d));
+    try { await agentApi.renameDevice(id, patch); } catch { /* agent offline — update stays locally until next sync */ }
+  }, []);
+
   const runAction = useCallback(async (action: string, payload?: Record<string, unknown>) => {
     try {
       return await agentApi.runAction(action, payload);
@@ -206,7 +223,7 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
     <VesselContext.Provider value={{
       devices, alerts, internetStatus, networkHealth,
       agentStatus, lastSync, isLive,
-      resolveAlert, runAction,
+      resolveAlert, renameDevice, runAction,
     }}>
       {children}
     </VesselContext.Provider>

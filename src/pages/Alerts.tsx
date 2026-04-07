@@ -7,8 +7,8 @@ import {
   ChevronUp,
   Filter,
 } from 'lucide-react';
-import { alerts } from '@/data/mock';
-import type { AlertSeverity } from '@/data/mock';
+import type { AlertSeverity, Alert } from '@/data/mock';
+import { useVesselData } from '@/context/VesselDataProvider';
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
 
 // ── Alert row ─────────────────────────────────────────────────────
 
-function AlertRow({ alert }: { alert: (typeof alerts)[number] }) {
+function AlertRow({ alert, onResolve }: { alert: Alert; onResolve: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const c = severityConfig[alert.severity];
 
@@ -139,8 +139,21 @@ function AlertRow({ alert }: { alert: (typeof alerts)[number] }) {
           color: '#8899aa', fontSize: 13, lineHeight: 1.6,
           borderTop: '1px solid #1a2535',
           padding: '12px 16px 14px 64px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12,
         }}>
-          {alert.description}
+          <span>{alert.description}</span>
+          {!alert.resolved && (
+            <button
+              onClick={() => onResolve(alert.id)}
+              style={{
+                flexShrink: 0, background: 'rgba(34,197,94,0.1)', color: '#22c55e',
+                border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8,
+                padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Mark resolved
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -150,6 +163,7 @@ function AlertRow({ alert }: { alert: (typeof alerts)[number] }) {
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function Alerts() {
+  const { alerts, resolveAlert } = useVesselData();
   const [sevFilter,   setSevFilter]   = useState<FilterSev>('all');
   const [stateFilter, setStateFilter] = useState<FilterState>('all');
 
@@ -251,7 +265,7 @@ export default function Alerts() {
               No alerts match your filters.
             </div>
           ) : (
-            filtered.map(a => <AlertRow key={a.id} alert={a} />)
+            filtered.map(a => <AlertRow key={a.id} alert={a} onResolve={resolveAlert} />)
           )}
         </div>
       </Card>
