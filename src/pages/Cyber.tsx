@@ -46,7 +46,8 @@ type ThreatEntry    = { id: string; deviceId?: string; deviceName: string; ip: s
 type ScanResult     = { id: string; deviceId: string; deviceName: string; ip: string; openPorts: number[]; riskPorts: number[]; manufacturer: string; flagged: boolean };
 type IncidentStatus = 'open' | 'investigating' | 'contained' | 'resolved';
 type Incident       = { id: string; title: string; description: string; severity: 'critical' | 'high' | 'medium'; status: IncidentStatus; opened: string; updated: string; assignee: string; slaHours: number };
-type PenTest        = { id: string; label: string; date: string; result: 'pass' | 'fail' | 'scheduled'; findings: number; nextDue: string };
+type PenTestFinding = { id: string; category: string; title: string; severity: 'critical' | 'high' | 'medium' | 'low'; description: string; remediated: boolean };
+type PenTest        = { id: string; label: string; firm: string; date: string; result: 'pass' | 'fail' | 'scheduled'; score: number; findings: PenTestFinding[]; nextDue: string; reportRef: string };
 type ProtectionStatus = 'protected' | 'partial' | 'unprotected';
 type DeviceProtection = { deviceId: string; name: string; ip: string; type: string; edr: boolean; epp: boolean; encrypted: boolean; status: ProtectionStatus };
 
@@ -109,10 +110,42 @@ const mockIncidents: Incident[] = [
 
 // Pen test schedule
 const mockPenTests: PenTest[] = [
-  { id: 'pt1', label: 'Annual Pen Test — Q1 2026', date: '2026-03-15', result: 'pass',      findings: 2, nextDue: '2027-03-15' },
-  { id: 'pt2', label: 'Annual Pen Test — Q1 2025', date: '2025-03-10', result: 'pass',      findings: 4, nextDue: '2026-03-10' },
-  { id: 'pt3', label: 'Annual Pen Test — Q1 2024', date: '2024-03-08', result: 'fail',      findings: 7, nextDue: '2025-03-08' },
-  { id: 'pt4', label: 'Annual Pen Test — Q2 2026', date: '2026-06-01', result: 'scheduled', findings: 0, nextDue: '2026-06-01' },
+  {
+    id: 'pt1', label: 'Annual Pen Test — Q1 2026', firm: 'CyberKeel Maritime Security',
+    date: '2026-03-15', result: 'pass', score: 87, nextDue: '2027-03-15', reportRef: 'CK-2026-0315',
+    findings: [
+      { id: 'f1a', category: 'Network', title: 'RDP exposed on crew laptop', severity: 'high', description: 'Remote Desktop Protocol reachable from guest VLAN. Patched by disabling RDP and enforcing VPN-only remote access.', remediated: true },
+      { id: 'f1b', category: 'Firmware', title: 'IP camera running end-of-life firmware', severity: 'medium', description: 'Hikvision camera on firmware v3.2.1 (EOL). Updated to v4.1.8 during engagement.', remediated: true },
+    ],
+  },
+  {
+    id: 'pt2', label: 'Annual Pen Test — Q1 2025', firm: 'CyberKeel Maritime Security',
+    date: '2025-03-10', result: 'pass', score: 79, nextDue: '2026-03-10', reportRef: 'CK-2025-0310',
+    findings: [
+      { id: 'f2a', category: 'Access Control', title: 'Default credentials on NMEA gateway', severity: 'critical', description: 'Furuno NMEA 2000 gateway using factory default admin/admin credentials. Changed during engagement.', remediated: true },
+      { id: 'f2b', category: 'Network Segmentation', title: 'Guest VLAN can reach navigation LAN', severity: 'high', description: 'ACL misconfiguration allowed inter-VLAN routing from guest Wi-Fi to navigation network. Firewall rule added.', remediated: true },
+      { id: 'f2c', category: 'Patch Management', title: 'Unpatched Windows 10 on bridge PC', severity: 'medium', description: 'Bridge workstation 14 months behind on Windows updates. Auto-update enabled.', remediated: true },
+      { id: 'f2d', category: 'Monitoring', title: 'No IDS/IPS on external-facing interfaces', severity: 'medium', description: 'Starlink interface lacked intrusion detection. NauticShield monitoring deployed.', remediated: true },
+    ],
+  },
+  {
+    id: 'pt3', label: 'Annual Pen Test — Q1 2024', firm: 'Security Innovation (SI)',
+    date: '2024-03-08', result: 'fail', score: 52, nextDue: '2025-03-08', reportRef: 'SI-2024-YT-042',
+    findings: [
+      { id: 'f3a', category: 'Network', title: 'Unencrypted Telnet on satellite modem', severity: 'critical', description: 'VSAT modem management interface accessible via Telnet (plaintext). Remote attacker could intercept credentials. Replaced with SSH.', remediated: true },
+      { id: 'f3b', category: 'Physical Security', title: 'Server room unlocked during engagement', severity: 'high', description: 'Engine control room with network switch found unlocked at 02:00 during social engineering test. Policy updated.', remediated: true },
+      { id: 'f3c', category: 'Authentication', title: 'No MFA on any remote access', severity: 'high', description: 'Crew and management remote access relied solely on passwords. MFA enforced via Azure AD post-engagement.', remediated: true },
+      { id: 'f3d', category: 'Network', title: 'AIS transponder on flat network', severity: 'high', description: 'AIS transponder on same broadcast domain as crew devices. Segmented into dedicated maritime VLAN.', remediated: true },
+      { id: 'f3e', category: 'Monitoring', title: 'No centralised logging', severity: 'medium', description: 'No SIEM or log aggregation. Individual device logs not retained. Centralised syslog implemented.', remediated: false },
+      { id: 'f3f', category: 'Patch Management', title: 'Multiple EOL software packages', severity: 'medium', description: '7 packages with known CVEs across bridge and crew systems. 5 of 7 remediated. 2 pending vendor patches.', remediated: false },
+      { id: 'f3g', category: 'Encryption', title: 'Internal comms not encrypted in transit', severity: 'medium', description: 'HTTP used for internal web interfaces. Switched to self-signed TLS pending CA certificate procurement.', remediated: true },
+    ],
+  },
+  {
+    id: 'pt4', label: 'Annual Pen Test — Q2 2026', firm: 'TBD',
+    date: '2026-06-01', result: 'scheduled', score: 0, nextDue: '2026-06-01', reportRef: '',
+    findings: [],
+  },
 ];
 
 // Device protection coverage (built from live devices)
@@ -998,26 +1031,105 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
         </div>
       )}
 
-      {/* Historical pen test schedule (collapsed accordion) */}
+      {/* Pen test results ─ clickable accordion */}
       <div style={{ marginTop: 20, borderTop: '1px solid #1a2535', paddingTop: 16 }}>
-        <div style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Scheduled Annual Pen Tests</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' }}>Professional Pen Test Results</div>
+          <span style={{ color: '#4a5a6a', fontSize: 10 }}>Click any entry to view findings</span>
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {tests.map(t => {
-            const color = t.result === 'pass' ? '#22c55e' : t.result === 'fail' ? '#ef4444' : GOLD;
-            const Icon  = t.result === 'pass' ? CalendarCheck : t.result === 'fail' ? CalendarX : Clock;
+            const color      = t.result === 'pass' ? '#22c55e' : t.result === 'fail' ? '#ef4444' : GOLD;
+            const Icon       = t.result === 'pass' ? CalendarCheck : t.result === 'fail' ? CalendarX : Clock;
+            const isOpen     = expanded === t.id;
+            const isScheduled= t.result === 'scheduled';
+            const openFinds  = t.findings.filter(f => !f.remediated);
+            const fixedFinds = t.findings.filter(f => f.remediated);
             return (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#080b10', borderRadius: 8, padding: '9px 12px', border: `1px solid ${t.result === 'scheduled' ? GOLD_BORDER : '#1a2535'}` }}>
-                <Icon size={13} color={color} style={{ flexShrink: 0 }} />
-                <div style={{ flex: 1, color: '#8899aa', fontSize: 12 }}>{t.label}</div>
-                <div style={{ color: '#4a5a6a', fontSize: 11 }}>
-                  {t.result === 'scheduled'
-                    ? new Date(t.date).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })
-                    : `${t.findings} finding${t.findings !== 1 ? 's' : ''}`}
-                </div>
-                {t.result !== 'scheduled' && (
-                  <span style={{ background: `${color}18`, color, borderRadius: 5, padding: '1px 8px', fontSize: 10, fontWeight: 700 }}>
-                    {t.result.toUpperCase()}
-                  </span>
+              <div key={t.id} style={{ background: '#080b10', borderRadius: 10, border: `1px solid ${isScheduled ? GOLD_BORDER : isOpen ? color + '40' : '#1a2535'}`, overflow: 'hidden', transition: 'border-color 0.2s' }}>
+                {/* Row header */}
+                <button
+                  onClick={() => !isScheduled && setExpanded(isOpen ? null : t.id)}
+                  style={{ width: '100%', background: 'transparent', border: 'none', cursor: isScheduled ? 'default' : 'pointer', padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' }}
+                >
+                  <Icon size={14} color={color} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: '#cbd5e1', fontSize: 12, fontWeight: 600 }}>{t.label}</div>
+                    <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 1 }}>
+                      {isScheduled
+                        ? `Scheduled · ${new Date(t.date).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })} · ${t.firm || 'Firm TBD'}`
+                        : `${t.firm} · ${new Date(t.date).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })} · Ref: ${t.reportRef}`}
+                    </div>
+                  </div>
+                  {!isScheduled && (
+                    <>
+                      <div style={{ textAlign: 'right', flexShrink: 0, marginRight: 8 }}>
+                        <div style={{ color, fontSize: 16, fontWeight: 800, lineHeight: 1 }}>{t.score}%</div>
+                        <div style={{ color: '#4a5a6a', fontSize: 10 }}>score</div>
+                      </div>
+                      <span style={{ background: `${color}18`, color, borderRadius: 5, padding: '2px 9px', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                        {t.result.toUpperCase()}
+                      </span>
+                      <span style={{ color: '#4a5a6a', flexShrink: 0, marginLeft: 2 }}>
+                        {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </span>
+                    </>
+                  )}
+                  {isScheduled && (
+                    <span style={{ background: GOLD_BG, color: GOLD, border: `1px solid ${GOLD_BORDER}`, borderRadius: 5, padding: '2px 9px', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>UPCOMING</span>
+                  )}
+                </button>
+
+                {/* Expanded findings */}
+                {isOpen && !isScheduled && (
+                  <div style={{ borderTop: '1px solid #1a2535', padding: '12px 14px 14px' }}>
+                    {/* Summary bar */}
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                      {[
+                        { label: 'Critical', count: t.findings.filter(f => f.severity === 'critical').length, color: '#ef4444' },
+                        { label: 'High',     count: t.findings.filter(f => f.severity === 'high').length,     color: '#f97316' },
+                        { label: 'Medium',   count: t.findings.filter(f => f.severity === 'medium').length,   color: '#f59e0b' },
+                        { label: 'Low',      count: t.findings.filter(f => f.severity === 'low').length,      color: '#22c55e' },
+                        { label: 'Remediated', count: fixedFinds.length, color: '#0ea5e9' },
+                        { label: 'Open',       count: openFinds.length,  color: '#ef4444' },
+                      ].filter(s => s.count > 0).map(({ label, count, color: c }) => (
+                        <div key={label} style={{ background: c + '15', border: `1px solid ${c}40`, borderRadius: 6, padding: '4px 10px' }}>
+                          <span style={{ color: c, fontSize: 11, fontWeight: 700 }}>{count}</span>
+                          <span style={{ color: '#4a5a6a', fontSize: 10, marginLeft: 4 }}>{label}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Findings list */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {t.findings.map(f => {
+                        const sevColor = f.severity === 'critical' ? '#ef4444' : f.severity === 'high' ? '#f97316' : f.severity === 'medium' ? '#f59e0b' : '#22c55e';
+                        return (
+                          <div key={f.id} style={{ background: '#0d1421', border: `1px solid ${f.remediated ? '#1a2535' : sevColor + '30'}`, borderRadius: 8, padding: '10px 13px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                            <div style={{ flexShrink: 0, marginTop: 2 }}>
+                              <span style={{ background: sevColor + '18', color: sevColor, borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const }}>{f.severity}</span>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ color: f.remediated ? '#6b7f92' : '#f0f4f8', fontSize: 12, fontWeight: 600, marginBottom: 3, textDecoration: f.remediated ? 'line-through' : 'none' }}>{f.title}</div>
+                              <div style={{ color: '#4a5a6a', fontSize: 11, lineHeight: 1.5 }}>{f.description}</div>
+                              <div style={{ color: '#4a5a6a', fontSize: 10, marginTop: 4 }}>{f.category}</div>
+                            </div>
+                            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              {f.remediated
+                                ? <span style={{ color: '#22c55e', fontSize: 11, display: 'flex', alignItems: 'center', gap: 3 }}><CheckCircle2 size={12} /> Fixed</span>
+                                : <span style={{ color: '#ef4444', fontSize: 11, fontWeight: 600 }}>Open</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {openFinds.length === 0 && (
+                      <div style={{ marginTop: 10, color: '#22c55e', fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <CheckCircle2 size={12} /> All findings remediated
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             );

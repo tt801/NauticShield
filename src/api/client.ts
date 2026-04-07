@@ -34,6 +34,28 @@ export interface VesselSnapshot {
   timestamp:      string;
 }
 
+export interface CyberAssessment {
+  id:      string;
+  runAt:   string;
+  score:   number;
+  checks:  string; // JSON
+  cadence: string;
+}
+
+export interface CyberFinding {
+  id:           string;
+  assessmentId: string;
+  category:     string;
+  check_name:   string;
+  status:       string;
+  detail:       string;
+  weight:       number;
+  findingStatus:string;
+  remediatedAt: string;
+  notes:        string;
+  createdAt:    string;
+}
+
 // ── Fetch with abort-based timeout ────────────────────────────────
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
@@ -111,5 +133,27 @@ export const agentApi = {
 
     delete: (id: string) =>
       fetchJSON<{ ok: boolean }>(`${AGENT_URL}/api/voyage/${id}`, { method: 'DELETE' }),
+  },
+
+  cyber: {
+    listAssessments: () =>
+      fetchJSON<CyberAssessment[]>(`${AGENT_URL}/api/cyber/assessments`),
+
+    saveAssessment: (score: number, checks: string, cadence?: string) =>
+      fetchJSON<CyberAssessment>(`${AGENT_URL}/api/cyber/assessments`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ score, checks, cadence: cadence ?? 'manual' }),
+      }),
+
+    listFindings: () =>
+      fetchJSON<CyberFinding[]>(`${AGENT_URL}/api/cyber/findings`),
+
+    updateFinding: (id: string, patch: { findingStatus?: string; notes?: string }) =>
+      fetchJSON<CyberFinding>(`${AGENT_URL}/api/cyber/findings/${id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(patch),
+      }),
   },
 };

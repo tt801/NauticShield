@@ -89,6 +89,28 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_perf_date ON perf_samples (date);
+
+  CREATE TABLE IF NOT EXISTS cyber_assessments (
+    id        TEXT PRIMARY KEY,
+    runAt     TEXT NOT NULL,
+    score     INTEGER NOT NULL,
+    checks    TEXT NOT NULL,
+    cadence   TEXT NOT NULL DEFAULT 'manual'
+  );
+
+  CREATE TABLE IF NOT EXISTS cyber_findings (
+    id          TEXT PRIMARY KEY,
+    assessmentId TEXT NOT NULL,
+    category    TEXT NOT NULL,
+    check_name  TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    detail      TEXT NOT NULL,
+    weight      INTEGER NOT NULL DEFAULT 1,
+    findingStatus TEXT NOT NULL DEFAULT 'open',
+    remediatedAt  TEXT,
+    notes       TEXT NOT NULL DEFAULT '',
+    createdAt   TEXT NOT NULL
+  );
 `);
 
 // Safe migration: add fingerprint column to existing DBs that predate this schema version
@@ -111,6 +133,9 @@ for (const [col, def] of [
 ] as [string, string][]) {
   try { db.exec(`ALTER TABLE voyage_log ADD COLUMN ${col} ${def}`); } catch { /* exists */ }
 }
+
+// Safe migration: add cadence column to existing cyber_assessments
+try { db.exec(`ALTER TABLE cyber_assessments ADD COLUMN cadence TEXT NOT NULL DEFAULT 'manual'`); } catch { /* exists */ }
 
 // Keep perf_samples lean — drop anything older than 90 days on startup
 try {
@@ -322,6 +347,65 @@ export function updateVoyageEntry(id: string, patch: Partial<Omit<VoyageEntry, '
 export function deleteVoyageEntry(id: string): boolean {
   const result = db.prepare('DELETE FROM voyage_log WHERE id = ?').run(id);
   return (result as any).changes > 0;
+}
+
+// ── Cyber assessments ────────────────────────────────────────────
+
+export interface CyberAssessment {
+  id:       string;
+  runAt:    string;
+  score:    number;
+  checks:   string; // JSON string of CheckResult[]
+  cadence:  string; // 'manual' | 'quarterly' | 'annual'
+}
+
+export interface CyberFinding {
+  id:           string;
+  assessmentId: string;
+  category:     string;
+  check_name:   string;
+  status:       string;  // 'pass' | 'warn' | 'fail'
+  detail:       string;
+  weight:       number;
+  findingStatus:string;  // 'open' | 'remediated'
+  remediatedAt: string;
+  notes:        string;
+  createdAt:    string;
+}
+
+export function listAssessments(): CyberAssessment[] {
+  return db.prepare('SELECT * FROM cyber_assessments ORDER BY runAt DESC').all() as unknown as CyberAssessment[];
+}
+
+export function addAssessment(a: CyberAssessment): CyberAssessment {
+  db.prepare(
+    'INSERT INTO cyber_assessments (id, runAt, score, checks, cadence) VALUES (@id, @runAt, @score, @checks, @cadence)'
+  ).run(a as any);
+  return a;
+}
+
+export function listFindings(): CyberFinding[] {
+  return db.prepare('SELECT * FROM cyber_findings ORDER BY createdAt DESC').all() as unknown as CyberFinding[];
+}
+
+export function addFinding(f: CyberFinding): CyberFinding {
+  db.prepare(
+    `INSERT INTO cyber_findings
+       (id, assessmentId, category, check_name, status, detail, weight, findingStatus, remediatedAt, notes, createdAt)
+     VALUES
+       (@id, @assessmentId, @category, @check_name, @status, @detail, @weight, @findingStatus, @remediatedAt, @notes, @createdAt)`
+  ).run(f as any);
+  return f;
+}
+
+export function updateFinding(id: string, patch: Partial<Pick<CyberFinding, 'findingStatus' | 'remediatedAt' | 'notes'>>): CyberFinding | undefined {
+  const existing = db.prepare('SELECT * FROM cyber_findings WHERE id = ?').get(id) as unknown as CyberFinding | undefined;
+  if (!existing) return undefined;
+  const merged = { ...existing, ...patch };
+  db.prepare(
+    'UPDATE cyber_findings SET findingStatus=@findingStatus, remediatedAt=@remediatedAt, notes=@notes WHERE id=@id'
+  ).run(merged as any);
+  return merged;
 }
 
 // ── Perf samples ─────────────────────────────────────────────────

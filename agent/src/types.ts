@@ -63,6 +63,11 @@ export type WsServerMessage =
   | { type: 'alert:new';     data: Alert }
   | { type: 'alert:resolve'; data: { id: string } }
   | { type: 'status:update'; data: { internetStatus: InternetStatus; networkHealth: NetworkHealth } }
+  | { type: 'voyage:add';    data: unknown }
+  | { type: 'voyage:update'; data: unknown }
+  | { type: 'voyage:delete'; data: unknown }
+  | { type: 'cyber:assessment'; data: unknown }
+  | { type: 'cyber:finding'; data: unknown }
   | { type: 'pong' };
 
 export type WsClientMessage =
