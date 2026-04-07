@@ -149,6 +149,7 @@ function VoyageRow({ entry, downHistory, onDelete, onUpdate }: {
   const statusCfg     = STATUS_CONFIG[status] ?? STATUS_CONFIG.completed;
   const isUnderway    = !!entry.locationTo;
   const isActive      = status === 'in_port' || status === 'underway';
+  const [picking, setPicking] = useState(false);
   const etaFormatted  = entry.eta
     ? new Date(entry.eta + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     : null;
@@ -197,9 +198,27 @@ function VoyageRow({ entry, downHistory, onDelete, onUpdate }: {
               <Clock size={11} color="#4a5a6a" />
               <span style={{ color: '#4a5a6a', fontSize: 11 }}>{dateFormatted}</span>
               {!isActive && (
-                <span style={{ background: statusCfg.bg, color: statusCfg.color, border: `1px solid ${statusCfg.border}`, borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 700 }}>
-                  {isUnderway ? 'TRANSIT' : 'PORT STAY'}
-                </span>
+                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                  <button
+                    onClick={() => setPicking(p => !p)}
+                    title="Change status"
+                    style={{ background: statusCfg.bg, color: statusCfg.color, border: `1px solid ${statusCfg.border}`, borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
+                  >
+                    {isUnderway ? 'TRANSIT' : 'PORT STAY'} ▾
+                  </button>
+                  {picking && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#0d1421', border: '1px solid #1a2535', borderRadius: 8, padding: 6, display: 'flex', flexDirection: 'column', gap: 4, zIndex: 10, whiteSpace: 'nowrap', boxShadow: '0 4px 16px rgba(0,0,0,0.5)' }}>
+                      <button onClick={() => { onUpdate(entry.id, { status: 'in_port' }); setPicking(false); }}
+                        style={{ background: 'rgba(14,165,233,0.1)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.25)', borderRadius: 6, padding: '5px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}>
+                        ⚓ In Port
+                      </button>
+                      <button onClick={() => { onUpdate(entry.id, { status: 'underway' }); setPicking(false); }}
+                        style={{ background: 'rgba(139,92,246,0.1)', color: '#c4b5fd', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 6, padding: '5px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}>
+                        ⛵ Underway
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -531,7 +550,7 @@ function AddEntryModal({ onSave, onClose }: {
           {/* Destination (underway only) */}
           {isUnderway && (
             <div style={{ background: '#080b10', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ color: '#a78bfa', fontSize: 11, fontWeight: 700, letterSpacing: 0.8 }}>\u26f5\ufe0f  DESTINATION</div>
+              <div style={{ color: '#a78bfa', fontSize: 11, fontWeight: 700, letterSpacing: 0.8 }}>⛵  DESTINATION</div>
               <div>
                 {lbl('Destination port / place')}
                 <input
