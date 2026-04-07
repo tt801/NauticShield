@@ -904,9 +904,7 @@ function exportEngagementBrief(
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...WHITE);
   const purposeLines = doc.splitTextToSize(
-    'This document provides essential context for an upcoming external penetration test of the vessel's onboard network and systems. ' +
-    'It summarises the current security posture, historical assessment scores, open remediation items, and proposed engagement scope in line with ' +
-    'BIMCO Cyber Security Guidelines (2nd Ed.) and IMO MSC-FAL.1/Circ.3 functional elements.',
+    "This document provides essential context for an upcoming external penetration test of the vessel's onboard network and systems. It summarises the current security posture, historical assessment scores, open remediation items, and proposed engagement scope in line with BIMCO Cyber Security Guidelines (2nd Ed.) and IMO MSC-FAL.1/Circ.3 functional elements.",
     pageW - 52
   );
   doc.setFontSize(9);
