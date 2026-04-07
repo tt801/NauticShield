@@ -2183,21 +2183,6 @@ export default function Cyber() {
   }, []);
 
   const dismissAlert = (id: string) => setRiskAlerts(prev => prev.filter(a => a.id !== id));
-  const [riskAlerts,   setRiskAlerts]   = useState<{id: string; device: Device; cve: MaritimeCVE}[]>([]);
-
-  // Fire risk alerts on mount for all Critical/High CVSS devices
-  useEffect(() => {
-    const alerts = devices
-      .filter(d => !isolatedIps.has(d.ip))
-      .map(d => { const cves = matchCVEs(d); return { device: d, cve: cves[0] }; })
-      .filter(x => x.cve && x.cve.cvss >= 7.0)
-      .slice(0, 4)
-      .map(x => ({ id: `${x.device.id}-${x.cve!.id}`, device: x.device, cve: x.cve! }));
-    if (alerts.length > 0) setRiskAlerts(alerts);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const dismissAlert = (id: string) => setRiskAlerts(prev => prev.filter(a => a.id !== id));
 
   const scanResults   = buildScanResults(devices);
   const coverage      = buildProtection(devices);
