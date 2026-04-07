@@ -642,11 +642,13 @@ export default function Voyage() {
   }
 
   async function handleUpdate(id: string, patch: Partial<Omit<VoyageEntry, 'id' | 'createdAt'>>) {
+    // Optimistic update — apply patch immediately so the UI responds without waiting for the agent
+    setLog(l => l.map(e => e.id === id ? { ...e, ...patch } : e));
     try {
       const updated = await agentApi.voyage.update(id, patch);
       setLog(l => l.map(e => e.id === id ? updated : e));
     } catch (err) {
-      console.error('Failed to update voyage entry', err);
+      console.error('Failed to update voyage entry — agent may be offline', err);
     }
   }
 
