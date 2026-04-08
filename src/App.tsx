@@ -77,6 +77,7 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
                 </Routes>
               </Layout>
             ) : (
+              <>
               <SignedIn>
                 <Layout>
                   <Routes>
@@ -94,6 +95,7 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
                 </Layout>
               </SignedIn>
               <SignedOut><RedirectToSignIn /></SignedOut>
+              </>
             )
           } />
         </Routes>
