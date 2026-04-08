@@ -61,8 +61,16 @@ router.post('/', async (req: AuthedRequest, res) => {
     : maxVesselsForPlan(plan);
 
   // 2. Count current org memberships
-  const { data: memberships } = await clerk.users.getOrganizationMembershipList({ userId });
+  const { data: memberships } = await clerk.users.getOrganizationMembershipList({ userId, limit: 100 });
   const currentVessels = memberships.length;
+
+  console.log('[vessels] quota check', {
+    userId,
+    plan,
+    maxVessels,
+    currentVessels,
+    orgs: memberships.map(m => ({ id: m.organization.id, name: m.organization.name })),
+  });
 
   if (currentVessels >= maxVessels) {
     return res.status(402).json({

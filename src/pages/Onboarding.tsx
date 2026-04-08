@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { useOrganizationList } from '@clerk/clerk-react';
+import { useState, useEffect } from 'react';
+import { useOrganizationList, useClerk } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';
 import { Anchor, ShieldCheck, AlertTriangle, ExternalLink } from 'lucide-react';
 import { fetchJSON } from '@/api/client';
 import { AGENT_URL } from '@/api/config';
@@ -51,11 +52,25 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function Onboarding() {
-  const { setActive, userMemberships } = useOrganizationList({ userMemberships: true });
+  const { setActive, userMemberships, isLoaded } = useOrganizationList({ userMemberships: true });
+  const { signOut } = useClerk();
+  const navigate = useNavigate();
   const [vesselName, setVesselName] = useState('');
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [limitHit, setLimitHit]     = useState(false);
+
+  // If Clerk already shows the user has a vessel (reused email, previous partial session, etc.),
+  // silently activate it and redirect to dashboard.
+  useEffect(() => {
+    if (!isLoaded) return;
+    const memberships = userMemberships?.data;
+    if (memberships && memberships.length > 0 && setActive) {
+      setActive({ organization: memberships[0].organization.id }).then(() => {
+        navigate('/', { replace: true });
+      });
+    }
+  }, [isLoaded, userMemberships?.data, setActive, navigate]);
 
   // If the user already has an org (e.g. from a previous session), just activate it
   async function activateExisting() {
@@ -83,7 +98,7 @@ export default function Onboarding() {
       );
       // Activate the newly created org in Clerk's client session
       await setActive!({ organization: result.orgId });
-      // OrgGate will now see an active org and route to dashboard
+      navigate('/', { replace: true });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
       // 402 = vessel quota reached — show upgrade prompt instead of generic error
@@ -94,6 +109,12 @@ export default function Onboarding() {
       }
       setLoading(false);
     }
+  }
+
+  // Don't render the form until memberships have loaded — avoids a flash
+  // of the create form for users who already have a vessel (auto-redirected above).
+  if (!isLoaded || (userMemberships?.data?.length ?? 0) > 0) {
+    return <div style={{ ...S.page }}><div style={{ color: '#4a5a6a', fontSize: 13 }}>Loading…</div></div>;
   }
 
   return (
@@ -187,6 +208,14 @@ export default function Onboarding() {
         <div style={S.footer}>
           Your vessel data stays on-board. Only identity information<br />
           is processed by Clerk's authentication service.
+        </div>
+        <div style={{ textAlign: 'center', marginTop: 16 }}>
+          <button
+            onClick={() => signOut()}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3a4a5a', fontSize: 12, textDecoration: 'underline' }}
+          >
+            Sign out
+          </button>
         </div>
       </div>
     </div>
