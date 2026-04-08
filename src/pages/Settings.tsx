@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   Lock,
   AlertTriangle,
-  ExternalLink,
+  Send,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
@@ -112,12 +112,32 @@ const ROLE_COLORS: Record<string, string> = {
 // ── Page ─────────────────────────────────────────────────────────
 
 export default function Settings() {
-  const auth                         = useAuth();
-  const { user }                     = useUser();
-  const { organization, memberships } = useOrganization({ memberships: true });
-  const { signOut, openUserProfile } = useClerk();
+  const auth                          = useAuth();
+  const { user }                      = useUser();
+  const { organization, memberships, invitations } = useOrganization({ memberships: true, invitations: true });
+  const { signOut, openUserProfile }  = useClerk();
 
-  const [activeTab, setActiveTab] = useState<'account' | 'users' | 'subscription' | 'security'>('account');
+  const [activeTab, setActiveTab]     = useState<'account' | 'users' | 'subscription' | 'security'>('account');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole]   = useState('org:member');
+  const [inviting, setInviting]       = useState(false);
+  const [inviteMsg, setInviteMsg]     = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  async function handleInvite() {
+    const email = inviteEmail.trim();
+    if (!email || !organization) return;
+    setInviting(true);
+    setInviteMsg(null);
+    try {
+      await organization.inviteMember({ emailAddress: email, role: inviteRole });
+      setInviteMsg({ type: 'ok', text: `Invite sent to ${email}` });
+      setInviteEmail('');
+    } catch (e: unknown) {
+      setInviteMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed to send invite' });
+    } finally {
+      setInviting(false);
+    }
+  }
 
   const currentPlan = PLANS.find(p => p.id === CURRENT_PLAN_ID) ?? PLANS[2];
 
@@ -295,17 +315,86 @@ export default function Settings() {
                   );
                 })}
               </div>
-              <div style={{ color: '#4a5a6a', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <ExternalLink size={11} />
-                Invite new users and manage roles in the{' '}
-                <a
-                  href="https://dashboard.clerk.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: '#d4a847', textDecoration: 'none' }}
-                >
-                  Clerk dashboard
-                </a>
+              <div style={{ borderTop: '1px solid #1a2535', paddingTop: 20, marginTop: 4 }}>
+                <SectionTitle icon={Send} label="Invite a crew member" />
+
+                {inviteMsg && (
+                  <div style={{
+                    background: inviteMsg.type === 'ok' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                    border: `1px solid ${inviteMsg.type === 'ok' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                    borderRadius: 8, padding: '8px 14px',
+                    color: inviteMsg.type === 'ok' ? '#4ade80' : '#f87171',
+                    fontSize: 12, marginBottom: 14,
+                  }}>{inviteMsg.text}</div>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <input
+                    type="email"
+                    placeholder="crew@vessel.com"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && !inviting && handleInvite()}
+                    disabled={inviting}
+                    style={{
+                      flex: 1, background: '#0a0f18', border: '1px solid #1a2535',
+                      borderRadius: 8, padding: '10px 12px', color: '#f0f4f8',
+                      fontSize: 13, outline: 'none',
+                    }}
+                  />
+                  <select
+                    value={inviteRole}
+                    onChange={e => setInviteRole(e.target.value)}
+                    disabled={inviting}
+                    style={{
+                      background: '#0a0f18', border: '1px solid #1a2535',
+                      borderRadius: 8, padding: '10px 12px', color: '#f0f4f8',
+                      fontSize: 13, outline: 'none', cursor: 'pointer',
+                    }}
+                  >
+                    <option value="org:admin">Owner</option>
+                    <option value="org:captain">Captain</option>
+                    <option value="org:it_tech">IT Tech</option>
+                    <option value="org:member">Crew</option>
+                  </select>
+                  <button
+                    onClick={handleInvite}
+                    disabled={inviting || !inviteEmail.trim()}
+                    style={{
+                      background: inviting || !inviteEmail.trim() ? '#1a2535' : '#d4a847',
+                      border: 'none', borderRadius: 8, padding: '10px 16px',
+                      color: inviting || !inviteEmail.trim() ? '#4a5a6a' : '#080b10',
+                      fontSize: 13, fontWeight: 700, cursor: inviting || !inviteEmail.trim() ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap' as const,
+                    }}
+                  >
+                    {inviting ? 'Sending…' : 'Send invite'}
+                  </button>
+                </div>
+
+                {/* Pending invitations */}
+                {(invitations?.data?.length ?? 0) > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ color: '#4a5a6a', fontSize: 11, fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Pending invitations
+                    </div>
+                    {invitations!.data.map(inv => (
+                      <div key={inv.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        background: '#0a0f18', border: '1px solid #1a2535',
+                        borderRadius: 8, padding: '10px 14px', marginBottom: 6,
+                      }}>
+                        <div style={{ flex: 1, color: '#8a9ab0', fontSize: 12 }}>{inv.emailAddress}</div>
+                        <span style={{
+                          background: '#1a2535', color: '#4a5a6a',
+                          borderRadius: 20, padding: '2px 10px', fontSize: 11,
+                        }}>
+                          {ROLE_LABELS[inv.role.replace('org:', '')] ?? inv.role} · pending
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}

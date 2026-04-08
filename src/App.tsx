@@ -1,12 +1,13 @@
-import { ClerkProvider, SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react'
+import { ClerkProvider, SignedIn, SignedOut, RedirectToSignIn, useOrganizationList } from '@clerk/clerk-react'
 import { dark } from '@clerk/themes'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { VesselDataProvider } from '@/context/VesselDataProvider'
 import { AuthProvider }       from '@/context/AuthProvider'
 import { AuthTokenBridge }    from '@/components/AuthTokenBridge'
 import { ProtectedRoute }     from '@/components/ProtectedRoute'
 import Layout       from '@/components/Layout'
 import SignInPage   from '@/pages/SignIn'
+import Onboarding   from '@/pages/Onboarding'
 import Dashboard    from '@/pages/Dashboard'
 import Devices      from '@/pages/Devices'
 import Alerts       from '@/pages/Alerts'
@@ -45,6 +46,14 @@ export default function App() {
   );
 }
 
+// Guards signed-in users who have no org → sends them to /onboarding
+function OrgGate({ children }: { children: React.ReactNode }) {
+  const { userMemberships, isLoaded } = useOrganizationList({ userMemberships: true });
+  if (!isLoaded) return null;
+  if ((userMemberships.count ?? 0) === 0) return <Navigate to="/onboarding" replace />;
+  return <>{children}</>;
+}
+
 function AppRoutes({ devMode }: { devMode: boolean }) {
   const Protect = devMode
     ? ({ children }: { children: React.ReactNode }) => <>{children}</>
@@ -58,6 +67,13 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
           <Route path="/sign-in" element={devMode ? <Dashboard /> : (
             <SignedOut><SignInPage /></SignedOut>
           )} />
+
+          {/* Onboarding — signed-in but no org yet */}
+          <Route path="/onboarding" element={
+            devMode ? <Navigate to="/" replace /> : (
+              <SignedIn><Onboarding /></SignedIn>
+            )
+          } />
 
           {/* Protected — wrapped in Layout */}
           <Route path="/*" element={
@@ -79,20 +95,22 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
             ) : (
               <>
               <SignedIn>
-                <Layout>
-                  <Routes>
-                    <Route path="/"              element={<Protect><Dashboard /></Protect>} />
-                    <Route path="/devices"       element={<Protect require="view:devices"><Devices /></Protect>} />
-                    <Route path="/alerts"        element={<Protect require="view:alerts"><Alerts /></Protect>} />
-                    <Route path="/zones"         element={<Protect require="view:zones"><Zones /></Protect>} />
-                    <Route path="/report"        element={<Protect require="view:report"><Report /></Protect>} />
-                    <Route path="/guest-network" element={<Protect require="view:guest_network"><GuestNetwork /></Protect>} />
-                    <Route path="/voyage"        element={<Protect require="view:voyage"><Voyage /></Protect>} />
-                    <Route path="/cyber"         element={<Protect require="view:cyber"><Cyber /></Protect>} />
-                    <Route path="/settings"      element={<Protect require="view:settings"><Settings /></Protect>} />
-                    <Route path="*"              element={<Dashboard />} />
-                  </Routes>
-                </Layout>
+                <OrgGate>
+                  <Layout>
+                    <Routes>
+                      <Route path="/"              element={<Protect><Dashboard /></Protect>} />
+                      <Route path="/devices"       element={<Protect require="view:devices"><Devices /></Protect>} />
+                      <Route path="/alerts"        element={<Protect require="view:alerts"><Alerts /></Protect>} />
+                      <Route path="/zones"         element={<Protect require="view:zones"><Zones /></Protect>} />
+                      <Route path="/report"        element={<Protect require="view:report"><Report /></Protect>} />
+                      <Route path="/guest-network" element={<Protect require="view:guest_network"><GuestNetwork /></Protect>} />
+                      <Route path="/voyage"        element={<Protect require="view:voyage"><Voyage /></Protect>} />
+                      <Route path="/cyber"         element={<Protect require="view:cyber"><Cyber /></Protect>} />
+                      <Route path="/settings"      element={<Protect require="view:settings"><Settings /></Protect>} />
+                      <Route path="*"              element={<Dashboard />} />
+                    </Routes>
+                  </Layout>
+                </OrgGate>
               </SignedIn>
               <SignedOut><RedirectToSignIn /></SignedOut>
               </>
