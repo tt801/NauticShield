@@ -537,3 +537,70 @@ export function writeAuditLog(entry: AuditEntry): void {
 export function getAuditLog(limit = 200): unknown[] {
   return db.prepare('SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?').all(limit);
 }
+
+// ── Notification Preferences ──────────────────────────────────────
+
+// One row per vessel (singleton, id=1). Stores JSON for per-category toggles
+// plus contact details for email and SMS.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS notification_prefs (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    emailTo     TEXT NOT NULL DEFAULT '',
+    phoneTo     TEXT NOT NULL DEFAULT '',
+    categories  TEXT NOT NULL DEFAULT '{}'
+  );
+  INSERT OR IGNORE INTO notification_prefs (id, emailTo, phoneTo, categories)
+  VALUES (1, '', '', '{}');
+`);
+
+export type NotificationCategory =
+  | 'new_device'
+  | 'port_scan'
+  | 'internet_down'
+  | 'cyber_critical'
+  | 'device_spike';
+
+export interface CategoryPref {
+  email: boolean;
+  sms:   boolean;
+}
+
+export interface NotificationPrefs {
+  emailTo:    string;
+  phoneTo:    string;
+  categories: Record<NotificationCategory, CategoryPref>;
+}
+
+const DEFAULT_CATEGORIES: Record<NotificationCategory, CategoryPref> = {
+  new_device:     { email: true,  sms: false },
+  port_scan:      { email: true,  sms: true  },
+  internet_down:  { email: true,  sms: true  },
+  cyber_critical: { email: true,  sms: true  },
+  device_spike:   { email: true,  sms: false },
+};
+
+export function getNotificationPrefs(): NotificationPrefs {
+  const row = db.prepare('SELECT * FROM notification_prefs WHERE id = 1').get() as
+    { emailTo: string; phoneTo: string; categories: string } | undefined;
+  if (!row) return { emailTo: '', phoneTo: '', categories: DEFAULT_CATEGORIES };
+  let categories: Record<NotificationCategory, CategoryPref>;
+  try {
+    categories = { ...DEFAULT_CATEGORIES, ...JSON.parse(row.categories) };
+  } catch {
+    categories = DEFAULT_CATEGORIES;
+  }
+  return { emailTo: row.emailTo, phoneTo: row.phoneTo, categories };
+}
+
+export function setNotificationPrefs(prefs: Partial<NotificationPrefs>): NotificationPrefs {
+  const current = getNotificationPrefs();
+  const next = {
+    emailTo:    prefs.emailTo    ?? current.emailTo,
+    phoneTo:    prefs.phoneTo    ?? current.phoneTo,
+    categories: prefs.categories ?? current.categories,
+  };
+  db.prepare(`
+    UPDATE notification_prefs SET emailTo = ?, phoneTo = ?, categories = ? WHERE id = 1
+  `).run(next.emailTo, next.phoneTo, JSON.stringify(next.categories));
+  return next;
+}

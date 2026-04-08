@@ -15,11 +15,23 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Alert, InternetStatus } from './types';
 import * as db from './db';
 import { broadcast } from './broadcaster';
+import { notify } from './notifier';
+import type { NotificationCategory } from './db';
 
 const HIGH_LATENCY_MS = parseInt(process.env.HIGH_LATENCY_THRESHOLD_MS ?? '200', 10);
 const OFFLINE_GRACE_S = parseInt(process.env.OFFLINE_GRACE_SECONDS      ?? '90',  10);
 
 // ── Helper ────────────────────────────────────────────────────────
+
+// Map fingerprint prefix → notification category
+function categoryFromFingerprint(fp: string): NotificationCategory | null {
+  if (fp.startsWith('internet:down'))         return 'internet_down';
+  if (fp.startsWith('device:unknown'))        return 'new_device';
+  if (fp.startsWith('network:port-scan'))     return 'port_scan';
+  if (fp.startsWith('cyber:critical'))        return 'cyber_critical';
+  if (fp.startsWith('network:device-spike'))  return 'device_spike';
+  return null;
+}
 
 function fire(
   fingerprint: string,
@@ -42,6 +54,13 @@ function fire(
   db.addAlert(alert);
   broadcast({ type: 'alert:new', data: alert });
   console.log(`[Alert] 🔔 ${severity.toUpperCase()} — ${title}`);
+
+  // Send notification (non-blocking, non-fatal)
+  const category = categoryFromFingerprint(fingerprint);
+  if (category) {
+    notify({ category, subject: `NauticShield Alert: ${title}`, body: description })
+      .catch(() => { /* already logged inside notifier */ });
+  }
 }
 
 function clear(fingerprint: string, reason: string): void {

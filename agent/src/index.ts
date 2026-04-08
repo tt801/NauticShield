@@ -11,12 +11,13 @@ import { runAlertEngine } from './alertEngine';
 import * as db          from './db';
 import { requireAuth, makeRateLimiter } from './auth';
 import type { AuthedRequest } from './auth';
-import devicesRouter    from './routes/devices';
-import alertsRouter     from './routes/alerts';
-import statusRouter     from './routes/status';
-import actionsRouter    from './routes/actions';
-import voyageRouter     from './routes/voyage';
-import cyberRouter      from './routes/cyber';
+import devicesRouter       from './routes/devices';
+import alertsRouter        from './routes/alerts';
+import statusRouter        from './routes/status';
+import actionsRouter       from './routes/actions';
+import voyageRouter        from './routes/voyage';
+import cyberRouter         from './routes/cyber';
+import notificationsRouter from './routes/notifications';
 import type { VesselSnapshot, WsClientMessage } from './types';
 
 const PORT    = parseInt(process.env.PORT    ?? '3000', 10);
@@ -82,12 +83,13 @@ app.get('/api/health', (_req, res) => {
 // All other API routes require a valid JWT
 app.use('/api', requireAuth);
 
-app.use('/api/devices', devicesRouter);
-app.use('/api/alerts',  alertsRouter);
-app.use('/api/status',  statusRouter);
-app.use('/api/actions', actionsRouter);
-app.use('/api/voyage',  voyageRouter);
-app.use('/api/cyber',   cyberRouter);
+app.use('/api/devices',       devicesRouter);
+app.use('/api/alerts',        alertsRouter);
+app.use('/api/status',        statusRouter);
+app.use('/api/actions',       actionsRouter);
+app.use('/api/voyage',        voyageRouter);
+app.use('/api/cyber',         cyberRouter);
+app.use('/api/notifications', notificationsRouter);
 
 // Snapshot endpoint
 app.get('/api/snapshot', (_req, res) => {

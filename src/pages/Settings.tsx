@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useOrganization, useUser, useClerk, UserButton } from '@clerk/clerk-react';
 import {
   ShieldCheck,
@@ -14,8 +14,12 @@ import {
   Lock,
   AlertTriangle,
   Send,
+  Bell,
+  Mail,
+  MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { fetchJSON } from '@/api/client';
 
 // ── Plan definitions ─────────────────────────────────────────────
 
@@ -117,7 +121,18 @@ export default function Settings() {
   const { organization, memberships, invitations } = useOrganization({ memberships: true, invitations: true });
   const { signOut, openUserProfile }  = useClerk();
 
-  const [activeTab, setActiveTab]     = useState<'account' | 'users' | 'subscription' | 'security'>('account');
+  const [activeTab, setActiveTab]     = useState<'account' | 'users' | 'subscription' | 'security' | 'notifications'>('account');
+
+  // ── Notification prefs ────────────────────────────────────────
+  type CategoryPref = { email: boolean; sms: boolean };
+  type NotifPrefs = { emailTo: string; phoneTo: string; categories: Record<string, CategoryPref> };
+  const [notifPrefs, setNotifPrefs]   = useState<NotifPrefs | null>(null);
+  const [notifSaving, setNotifSaving] = useState(false);
+  const [notifMsg,    setNotifMsg]    = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    fetchJSON<NotifPrefs>('/api/notifications').then(setNotifPrefs).catch(() => {});
+  }, []);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole]   = useState('org:member');
   const [inviting, setInviting]       = useState(false);
@@ -142,10 +157,11 @@ export default function Settings() {
   const currentPlan = PLANS.find(p => p.id === CURRENT_PLAN_ID) ?? PLANS[2];
 
   const tabs: { id: typeof activeTab; label: string; icon: React.ElementType; require?: boolean }[] = [
-    { id: 'account',      label: 'Account',      icon: ShieldCheck },
-    { id: 'users',        label: 'Users & Roles', icon: Users,      require: auth.can('settings:manage_users') },
-    { id: 'subscription', label: 'Subscription',  icon: CreditCard, require: auth.can('settings:manage_billing') },
-    { id: 'security',     label: 'Security',      icon: Lock },
+    { id: 'account',       label: 'Account',       icon: ShieldCheck },
+    { id: 'users',         label: 'Users & Roles',  icon: Users,      require: auth.can('settings:manage_users') },
+    { id: 'subscription',  label: 'Subscription',   icon: CreditCard, require: auth.can('settings:manage_billing') },
+    { id: 'security',      label: 'Security',       icon: Lock },
+    { id: 'notifications', label: 'Notifications',  icon: Bell },
   ];
 
   return (
@@ -597,6 +613,172 @@ export default function Settings() {
             )}
           </Card>
         </>
+      )}
+
+      {/* ─── Notifications ───────────────────────────────────────── */}
+      {activeTab === 'notifications' && notifPrefs && (() => {
+        const CATEGORIES: { key: string; label: string; desc: string }[] = [
+          { key: 'new_device',    label: 'New Device Detected',  desc: 'Unknown device joins the network' },
+          { key: 'port_scan',     label: 'Port Scan Detected',   desc: 'Active port scanning detected' },
+          { key: 'internet_down', label: 'Internet Connectivity', desc: 'Internet connection lost / restored' },
+          { key: 'cyber_critical', label: 'Cyber Critical',      desc: 'High-severity vulnerability or threat' },
+          { key: 'device_spike',  label: 'Device Spike',         desc: 'Unusual surge in connected devices' },
+        ];
+
+        function toggleCat(key: string, channel: 'email' | 'sms') {
+          setNotifPrefs(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              categories: {
+                ...prev.categories,
+                [key]: { ...prev.categories[key], [channel]: !prev.categories[key][channel] },
+              },
+            };
+          });
+        }
+
+        async function saveNotifPrefs() {
+          if (!notifPrefs) return;
+          setNotifSaving(true);
+          setNotifMsg(null);
+          try {
+            const updated = await fetchJSON<NotifPrefs>('/api/notifications', { method: 'PUT', body: JSON.stringify(notifPrefs) });
+            setNotifPrefs(updated);
+            setNotifMsg({ type: 'ok', text: 'Notification preferences saved.' });
+          } catch {
+            setNotifMsg({ type: 'err', text: 'Failed to save preferences.' });
+          } finally {
+            setNotifSaving(false);
+          }
+        }
+
+        return (
+          <>
+            {/* Contact details */}
+            <Card>
+              <SectionTitle icon={Bell} label="Notification Contacts" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#8899aa', fontSize: 12, fontWeight: 600, marginBottom: 8, letterSpacing: 0.5 }}>
+                    <Mail size={13} color="#d4a847" /> Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={notifPrefs.emailTo}
+                    onChange={e => setNotifPrefs(p => p ? { ...p, emailTo: e.target.value } : p)}
+                    placeholder="alerts@example.com"
+                    style={{
+                      width: '100%', background: '#0a0f18', border: '1px solid #1a2535',
+                      borderRadius: 9, padding: '10px 14px', color: '#f0f4f8', fontSize: 14,
+                      outline: 'none', boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#8899aa', fontSize: 12, fontWeight: 600, marginBottom: 8, letterSpacing: 0.5 }}>
+                    <MessageSquare size={13} color="#d4a847" /> SMS Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={notifPrefs.phoneTo}
+                    onChange={e => setNotifPrefs(p => p ? { ...p, phoneTo: e.target.value } : p)}
+                    placeholder="+1 555 000 0000"
+                    style={{
+                      width: '100%', background: '#0a0f18', border: '1px solid #1a2535',
+                      borderRadius: 9, padding: '10px 14px', color: '#f0f4f8', fontSize: 14,
+                      outline: 'none', boxSizing: 'border-box',
+                    }}
+                  />
+                  <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 6 }}>
+                    E.164 format recommended, e.g. +447911123456
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Per-category toggles */}
+            <Card>
+              <SectionTitle icon={Bell} label="Alert Channels" />
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', color: '#4a5a6a', fontSize: 11, fontWeight: 700, letterSpacing: 0.8, paddingBottom: 12, textTransform: 'uppercase' }}>Alert Type</th>
+                      <th style={{ textAlign: 'center', color: '#4a5a6a', fontSize: 11, fontWeight: 700, letterSpacing: 0.8, paddingBottom: 12, textTransform: 'uppercase', width: 80 }}>
+                        <Mail size={12} style={{ verticalAlign: 'middle' }} /> Email
+                      </th>
+                      <th style={{ textAlign: 'center', color: '#4a5a6a', fontSize: 11, fontWeight: 700, letterSpacing: 0.8, paddingBottom: 12, textTransform: 'uppercase', width: 80 }}>
+                        <MessageSquare size={12} style={{ verticalAlign: 'middle' }} /> SMS
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {CATEGORIES.map((cat, i) => {
+                      const pref = notifPrefs.categories[cat.key] ?? { email: false, sms: false };
+                      return (
+                        <tr key={cat.key} style={{ borderTop: i > 0 ? '1px solid #1a2535' : undefined }}>
+                          <td style={{ padding: '13px 0' }}>
+                            <div style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 600 }}>{cat.label}</div>
+                            <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 2 }}>{cat.desc}</div>
+                          </td>
+                          {(['email', 'sms'] as const).map(ch => (
+                            <td key={ch} style={{ textAlign: 'center' }}>
+                              <button
+                                onClick={() => toggleCat(cat.key, ch)}
+                                style={{
+                                  width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
+                                  background: pref[ch] ? '#d4a847' : '#1a2535',
+                                  position: 'relative', transition: 'background 0.2s',
+                                }}
+                                title={pref[ch] ? 'Enabled' : 'Disabled'}
+                              >
+                                <span style={{
+                                  position: 'absolute', top: 3, left: pref[ch] ? 21 : 3,
+                                  width: 16, height: 16, borderRadius: '50%',
+                                  background: '#f0f4f8', transition: 'left 0.2s', display: 'block',
+                                }} />
+                              </button>
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+
+            {/* Save */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <button
+                onClick={saveNotifPrefs}
+                disabled={notifSaving}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  background: 'linear-gradient(135deg, #d4a847, #b8922f)',
+                  color: '#080b10', border: 'none', borderRadius: 10,
+                  padding: '11px 22px', fontSize: 13, fontWeight: 700, cursor: notifSaving ? 'not-allowed' : 'pointer',
+                  opacity: notifSaving ? 0.7 : 1,
+                }}
+              >
+                <Send size={14} /> {notifSaving ? 'Saving…' : 'Save Preferences'}
+              </button>
+              {notifMsg && (
+                <span style={{ fontSize: 13, color: notifMsg.type === 'ok' ? '#22c55e' : '#ef4444' }}>
+                  {notifMsg.text}
+                </span>
+              )}
+            </div>
+          </>
+        );
+      })()}
+
+      {/* show spinner if notifications tab but prefs not yet loaded */}
+      {activeTab === 'notifications' && !notifPrefs && (
+        <div style={{ color: '#4a5a6a', fontSize: 13, padding: 40, textAlign: 'center' }}>
+          Loading notification preferences…
+        </div>
       )}
     </div>
   );
