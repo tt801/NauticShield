@@ -9,6 +9,8 @@ import { broadcast, initBroadcaster } from './broadcaster';
 import { scanNetwork, checkInternetConnectivity, updateInternetStatus } from './scanner';
 import { runAlertEngine } from './alertEngine';
 import * as db          from './db';
+import { requireAuth, makeRateLimiter } from './auth';
+import type { AuthedRequest } from './auth';
 import devicesRouter    from './routes/devices';
 import alertsRouter     from './routes/alerts';
 import statusRouter     from './routes/status';
@@ -26,9 +28,47 @@ const SCAN_MS = parseInt(process.env.SCAN_INTERVAL_MS ?? '30000', 10);
 const app    = express();
 const server = createServer(app);
 
-app.use(cors({ origin: true }));   // allow all origins (vessel LAN only)
+// CORS — vessel LAN origins from env, fallback to localhost in dev
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176').split(',');
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 
+// Security headers
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
+// Rate limiter: 200 req / minute per IP on all API routes
+makeRateLimiter(60_000, 200).then(limiter => app.use('/api', limiter));
+
+// Audit logging middleware — runs after auth so req.auth is populated
+app.use('/api', (req: AuthedRequest, res, next) => {
+  res.on('finish', () => {
+    db.writeAuditLog({
+      userId: req.auth?.userId ?? 'anonymous',
+      role:   req.auth?.role   ?? 'unknown',
+      email:  req.auth?.email  ?? null,
+      method: req.method,
+      path:   req.path,
+      status: res.statusCode,
+      ip:     (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0].trim()
+              ?? req.socket.remoteAddress
+              ?? null,
+    });
+  });
+  next();
+});
+
+// Public endpoint — no auth required
 app.get('/api/health', (_req, res) => {
   res.json({
     status:  'ok',
@@ -39,6 +79,9 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// All other API routes require a valid JWT
+app.use('/api', requireAuth);
+
 app.use('/api/devices', devicesRouter);
 app.use('/api/alerts',  alertsRouter);
 app.use('/api/status',  statusRouter);
@@ -46,7 +89,7 @@ app.use('/api/actions', actionsRouter);
 app.use('/api/voyage',  voyageRouter);
 app.use('/api/cyber',   cyberRouter);
 
-// Snapshot endpoint — returns everything the frontend needs in one call
+// Snapshot endpoint
 app.get('/api/snapshot', (_req, res) => {
   const snapshot: VesselSnapshot = {
     devices:       db.getDevices(),
@@ -56,6 +99,16 @@ app.get('/api/snapshot', (_req, res) => {
     timestamp:      new Date().toISOString(),
   };
   res.json(snapshot);
+});
+
+// Audit log endpoint — owner/captain only (checked inline since routes not yet refactored)
+app.get('/api/audit', (req: AuthedRequest, res) => {
+  const role = req.auth?.role ?? 'crew';
+  if (!['owner', 'captain'].includes(role)) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  res.json(db.getAuditLog(500));
 });
 
 // ── WebSocket ─────────────────────────────────────────────────────

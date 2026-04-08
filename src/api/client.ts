@@ -56,13 +56,27 @@ export interface CyberFinding {
   createdAt:    string;
 }
 
-// ── Fetch with abort-based timeout ────────────────────────────────
+// ── JWT token provider (set by AuthTokenBridge) ──────────────────
+// Avoids importing Clerk hooks directly into this module (non-React file).
+
+let _getToken: (() => Promise<string | null>) | null = null;
+
+export function setTokenProvider(fn: () => Promise<string | null>) {
+  _getToken = fn;
+}
+
+// ── Fetch with abort-based timeout + Bearer token ─────────────────
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timer      = setTimeout(() => controller.abort(), API_TIMEOUT);
   try {
-    const res = await fetch(url, { ...init, signal: controller.signal });
+    const token = _getToken ? await _getToken() : null;
+    const headers: HeadersInit = {
+      ...(init?.headers ?? {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    const res = await fetch(url, { ...init, headers, signal: controller.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json() as T;
   } finally {

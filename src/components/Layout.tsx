@@ -14,6 +14,8 @@ import {
   HelpCircle,
   ShieldCheck,
 } from 'lucide-react';
+import { useInactivityLogout } from '@/hooks/useInactivityLogout';
+import { useAuthOptional } from '@/context/AuthContext';
 
 const navItems = [
   { to: '/',              label: 'Dashboard',    icon: LayoutDashboard },
@@ -30,12 +32,14 @@ const premiumNavItems = [
 ];
 
 const bottomItems = [
-  { label: 'Settings', icon: Settings },
-  { label: 'Help',     icon: HelpCircle },
+  { label: 'Settings', icon: Settings, to: '/settings' },
+  { label: 'Help',     icon: HelpCircle, to: null },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
+  const auth = useAuthOptional();
+  useInactivityLogout(auth?.role);
 
   return (
     <div style={{ display: 'flex', height: '100%', minHeight: '100vh', background: '#080b10' }}>
@@ -214,34 +218,35 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Bottom nav */}
         <nav style={{ padding: collapsed ? '0 8px 8px' : '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {bottomItems.map(({ label, icon: Icon }) => (
-            <button
-              key={label}
-              title={collapsed ? label : undefined}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: collapsed ? '10px 0' : '9px 12px',
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 500,
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: '#6b7f92',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                width: '100%',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = '#a0b4c8'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7f92'; }}
-            >
-              <Icon size={17} color="#6b7f92" style={{ flexShrink: 0 }} />
-              {!collapsed && label}
-            </button>
-          ))}
+          {bottomItems.map(({ label, icon: Icon, to }) => {
+            const btnStyle: React.CSSProperties = {
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: collapsed ? '10px 0' : '9px 12px',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              borderRadius: 8, fontSize: 13, fontWeight: 500,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: '#6b7f92', whiteSpace: 'nowrap', overflow: 'hidden', width: '100%',
+            };
+            if (to) {
+              return (
+                <NavLink key={label} to={to} title={collapsed ? label : undefined}
+                  style={({ isActive }) => ({ ...btnStyle, color: isActive ? '#d4a847' : '#6b7f92', background: isActive ? 'rgba(212,168,71,0.08)' : 'transparent', textDecoration: 'none' })}
+                >
+                  <Icon size={17} style={{ flexShrink: 0 }} />
+                  {!collapsed && label}
+                </NavLink>
+              );
+            }
+            return (
+              <button key={label} title={collapsed ? label : undefined} style={btnStyle}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = '#a0b4c8'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7f92'; }}
+              >
+                <Icon size={17} color="#6b7f92" style={{ flexShrink: 0 }} />
+                {!collapsed && label}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Vessel footer */}
@@ -250,14 +255,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e', flexShrink: 0 }} />
               <div>
-                <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600 }}>M/Y Aurora</div>
+                <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600 }}>{auth?.vesselName ?? 'M/Y Aurora'}</div>
                 <div style={{ color: '#3a4a5a', fontSize: 11, marginTop: 1 }}>Last sync: just now</div>
               </div>
             </div>
           </div>
         ) : (
           <div style={{ padding: '12px 0', display: 'flex', justifyContent: 'center', borderTop: '1px solid #1a2535' }}>
-            <div title="M/Y Aurora — connected" style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+            <div title={`${auth?.vesselName ?? 'M/Y Aurora'} — connected`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
           </div>
         )}
       </aside>

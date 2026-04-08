@@ -3,6 +3,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 import type { Device, Alert, InternetStatus, NetworkHealth } from './types';
 
 const DB_PATH = process.env.DB_PATH ?? './data/vessel.db';
@@ -89,28 +90,6 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_perf_date ON perf_samples (date);
-
-  CREATE TABLE IF NOT EXISTS cyber_assessments (
-    id        TEXT PRIMARY KEY,
-    runAt     TEXT NOT NULL,
-    score     INTEGER NOT NULL,
-    checks    TEXT NOT NULL,
-    cadence   TEXT NOT NULL DEFAULT 'manual'
-  );
-
-  CREATE TABLE IF NOT EXISTS cyber_findings (
-    id          TEXT PRIMARY KEY,
-    assessmentId TEXT NOT NULL,
-    category    TEXT NOT NULL,
-    check_name  TEXT NOT NULL,
-    status      TEXT NOT NULL,
-    detail      TEXT NOT NULL,
-    weight      INTEGER NOT NULL DEFAULT 1,
-    findingStatus TEXT NOT NULL DEFAULT 'open',
-    remediatedAt  TEXT,
-    notes       TEXT NOT NULL DEFAULT '',
-    createdAt   TEXT NOT NULL
-  );
 `);
 
 // Safe migration: add fingerprint column to existing DBs that predate this schema version
@@ -133,9 +112,6 @@ for (const [col, def] of [
 ] as [string, string][]) {
   try { db.exec(`ALTER TABLE voyage_log ADD COLUMN ${col} ${def}`); } catch { /* exists */ }
 }
-
-// Safe migration: add cadence column to existing cyber_assessments
-try { db.exec(`ALTER TABLE cyber_assessments ADD COLUMN cadence TEXT NOT NULL DEFAULT 'manual'`); } catch { /* exists */ }
 
 // Keep perf_samples lean — drop anything older than 90 days on startup
 try {
@@ -349,65 +325,6 @@ export function deleteVoyageEntry(id: string): boolean {
   return (result as any).changes > 0;
 }
 
-// ── Cyber assessments ────────────────────────────────────────────
-
-export interface CyberAssessment {
-  id:       string;
-  runAt:    string;
-  score:    number;
-  checks:   string; // JSON string of CheckResult[]
-  cadence:  string; // 'manual' | 'quarterly' | 'annual'
-}
-
-export interface CyberFinding {
-  id:           string;
-  assessmentId: string;
-  category:     string;
-  check_name:   string;
-  status:       string;  // 'pass' | 'warn' | 'fail'
-  detail:       string;
-  weight:       number;
-  findingStatus:string;  // 'open' | 'remediated'
-  remediatedAt: string;
-  notes:        string;
-  createdAt:    string;
-}
-
-export function listAssessments(): CyberAssessment[] {
-  return db.prepare('SELECT * FROM cyber_assessments ORDER BY runAt DESC').all() as unknown as CyberAssessment[];
-}
-
-export function addAssessment(a: CyberAssessment): CyberAssessment {
-  db.prepare(
-    'INSERT INTO cyber_assessments (id, runAt, score, checks, cadence) VALUES (@id, @runAt, @score, @checks, @cadence)'
-  ).run(a as any);
-  return a;
-}
-
-export function listFindings(): CyberFinding[] {
-  return db.prepare('SELECT * FROM cyber_findings ORDER BY createdAt DESC').all() as unknown as CyberFinding[];
-}
-
-export function addFinding(f: CyberFinding): CyberFinding {
-  db.prepare(
-    `INSERT INTO cyber_findings
-       (id, assessmentId, category, check_name, status, detail, weight, findingStatus, remediatedAt, notes, createdAt)
-     VALUES
-       (@id, @assessmentId, @category, @check_name, @status, @detail, @weight, @findingStatus, @remediatedAt, @notes, @createdAt)`
-  ).run(f as any);
-  return f;
-}
-
-export function updateFinding(id: string, patch: Partial<Pick<CyberFinding, 'findingStatus' | 'remediatedAt' | 'notes'>>): CyberFinding | undefined {
-  const existing = db.prepare('SELECT * FROM cyber_findings WHERE id = ?').get(id) as unknown as CyberFinding | undefined;
-  if (!existing) return undefined;
-  const merged = { ...existing, ...patch };
-  db.prepare(
-    'UPDATE cyber_findings SET findingStatus=@findingStatus, remediatedAt=@remediatedAt, notes=@notes WHERE id=@id'
-  ).run(merged as any);
-  return merged;
-}
-
 // ── Perf samples ─────────────────────────────────────────────────
 
 export interface PerfSample {
@@ -435,43 +352,6 @@ export interface AutofillResult {
   incidents:    number;
   blocks:       string; // JSON ConnStatus[]
   hasData:      boolean;
-}
-
-export function getAutofillForRange(from: string, to: string): AutofillResult {
-  type SampleRow = { status: string; provider: string; downloadMbps: number; latencyMs: number; hour: number };
-  const rows = db.prepare(
-    'SELECT status, provider, downloadMbps, latencyMs, hour FROM perf_samples WHERE date >= ? AND date <= ? ORDER BY date, hour'
-  ).all(from, to) as unknown as SampleRow[];
-
-  if (rows.length === 0) {
-    return { avgDownMbps: 0, avgLatencyMs: 0, uptimePct: 100, provider: 'Starlink', incidents: 0, blocks: '[]', hasData: false };
-  }
-
-  const upRows    = rows.filter(r => r.status !== 'down');
-  const avgDown   = upRows.length ? upRows.reduce((s, r) => s + r.downloadMbps, 0) / upRows.length : 0;
-  const avgLat    = upRows.length ? upRows.reduce((s, r) => s + r.latencyMs,    0) / upRows.length : 0;
-  const uptimePct = +(rows.filter(r => r.status !== 'down').length / rows.length * 100).toFixed(1);
-
-  const providerCounts: Record<string, number> = {};
-  for (const r of rows) providerCounts[r.provider] = (providerCounts[r.provider] ?? 0) + 1;
-  const provider = Object.entries(providerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Starlink';
-
-  // Count down→up transitions across the whole range as incidents
-  let incidents = 0;
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i - 1].status === 'down' && rows[i].status !== 'down') incidents++;
-  }
-  if (rows[0].status === 'down') incidents++;
-
-  return {
-    avgDownMbps:  Math.round(avgDown * 10) / 10,
-    avgLatencyMs: Math.round(avgLat),
-    uptimePct,
-    provider,
-    incidents,
-    blocks:  '[]',
-    hasData: true,
-  };
 }
 
 export function getAutofillForDate(date: string): AutofillResult {
@@ -518,4 +398,142 @@ export function getAutofillForDate(date: string): AutofillResult {
     blocks: JSON.stringify(blocks),
     hasData: true,
   };
+}
+
+export function getAutofillForRange(from: string, to: string): Record<string, AutofillResult> {
+  const result: Record<string, AutofillResult> = {};
+  const start = new Date(from);
+  const end   = new Date(to);
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const date = d.toISOString().slice(0, 10);
+    result[date] = getAutofillForDate(date);
+  }
+  return result;
+}
+
+// ── Cyber Assessments & Findings ─────────────────────────────────
+
+// Safe schema creation for cyber tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cyber_assessments (
+    id       TEXT PRIMARY KEY,
+    runAt    TEXT NOT NULL,
+    score    INTEGER NOT NULL,
+    checks   TEXT NOT NULL,
+    cadence  TEXT NOT NULL DEFAULT 'manual'
+  );
+
+  CREATE TABLE IF NOT EXISTS cyber_findings (
+    id            TEXT PRIMARY KEY,
+    assessmentId  TEXT NOT NULL,
+    category      TEXT NOT NULL,
+    check_name    TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    detail        TEXT NOT NULL DEFAULT '',
+    weight        REAL NOT NULL DEFAULT 1,
+    findingStatus TEXT NOT NULL DEFAULT 'open',
+    remediatedAt  TEXT NOT NULL DEFAULT '',
+    notes         TEXT NOT NULL DEFAULT '',
+    createdAt     TEXT NOT NULL
+  );
+`);
+
+export interface CyberAssessment {
+  id:      string;
+  runAt:   string;
+  score:   number;
+  checks:  string;
+  cadence: string;
+}
+
+export interface CyberFinding {
+  id:            string;
+  assessmentId:  string;
+  category:      string;
+  check_name:    string;
+  status:        string;
+  detail:        string;
+  weight:        number;
+  findingStatus: string;
+  remediatedAt:  string;
+  notes:         string;
+  createdAt:     string;
+}
+
+export function listAssessments(): CyberAssessment[] {
+  return db.prepare('SELECT * FROM cyber_assessments ORDER BY runAt DESC').all() as unknown as CyberAssessment[];
+}
+
+export function addAssessment(a: CyberAssessment): CyberAssessment {
+  db.prepare(`
+    INSERT INTO cyber_assessments (id, runAt, score, checks, cadence)
+    VALUES (@id, @runAt, @score, @checks, @cadence)
+  `).run({ ...a });
+  return a;
+}
+
+export function listFindings(): CyberFinding[] {
+  return db.prepare('SELECT * FROM cyber_findings ORDER BY createdAt DESC').all() as unknown as CyberFinding[];
+}
+
+export function addFinding(f: CyberFinding): CyberFinding {
+  db.prepare(`
+    INSERT INTO cyber_findings
+      (id, assessmentId, category, check_name, status, detail, weight, findingStatus, remediatedAt, notes, createdAt)
+    VALUES
+      (@id, @assessmentId, @category, @check_name, @status, @detail, @weight, @findingStatus, @remediatedAt, @notes, @createdAt)
+  `).run({ ...f });
+  return f;
+}
+
+export function updateFinding(id: string, patch: Partial<Pick<CyberFinding, 'findingStatus' | 'remediatedAt' | 'notes'>>): CyberFinding | undefined {
+  const sets = Object.keys(patch).map(k => `${k} = @${k}`).join(', ');
+  if (!sets) return undefined;
+  db.prepare(`UPDATE cyber_findings SET ${sets} WHERE id = @id`).run({ ...patch, id });
+  return db.prepare('SELECT * FROM cyber_findings WHERE id = ?').get(id) as unknown as CyberFinding | undefined;
+}
+
+// ── Audit Log ─────────────────────────────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id      TEXT PRIMARY KEY,
+    ts      TEXT NOT NULL,
+    userId  TEXT NOT NULL,
+    role    TEXT NOT NULL,
+    email   TEXT,
+    method  TEXT NOT NULL,
+    path    TEXT NOT NULL,
+    status  INTEGER NOT NULL,
+    ip      TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log (ts);
+`);
+
+export interface AuditEntry {
+  userId: string;
+  role:   string;
+  email:  string | null;
+  method: string;
+  path:   string;
+  status: number;
+  ip:     string | null;
+}
+
+export function writeAuditLog(entry: AuditEntry): void {
+  try {
+    db.prepare(`
+      INSERT INTO audit_log (id, ts, userId, role, email, method, path, status, ip)
+      VALUES (@id, @ts, @userId, @role, @email, @method, @path, @status, @ip)
+    `).run({
+      id:     uuidv4(),
+      ts:     new Date().toISOString(),
+      ...entry,
+    });
+  } catch { /* non-fatal */ }
+}
+
+export function getAuditLog(limit = 200): unknown[] {
+  return db.prepare('SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?').all(limit);
 }
