@@ -22,10 +22,10 @@ export interface AuthedRequest extends Request {
 
 function mapRole(clerkRole: string | undefined): string {
   switch (clerkRole) {
-    case 'org:owner':   return 'owner';
+    case 'org:admin':   return 'owner';
     case 'org:captain': return 'captain';
     case 'org:it_tech': return 'it_tech';
-    case 'org:crew':    return 'crew';
+    case 'org:member':  return 'crew';
     default:            return 'crew';
   }
 }

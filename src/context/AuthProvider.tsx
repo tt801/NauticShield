@@ -6,10 +6,10 @@ import type { VesselRole, Action } from './AuthContext';
 // Map Clerk org role slugs → our internal VesselRole
 function mapClerkRole(clerkRole: string | undefined | null): VesselRole {
   switch (clerkRole) {
-    case 'org:owner':    return 'owner';
+    case 'org:admin':    return 'owner';
     case 'org:captain':  return 'captain';
     case 'org:it_tech':  return 'it_tech';
-    case 'org:crew':     return 'crew';
+    case 'org:member':   return 'crew';
     default:             return 'crew'; // least privilege if unknown
   }
 }
