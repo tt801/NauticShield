@@ -1,0 +1,38 @@
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nauticshield-agent
+    restart: unless-stopped
+
+    # ── Networking ─────────────────────────────────────────────────
+    # host network mode lets the agent see the vessel LAN directly
+    # (required for nmap scanning and mDNS in the future)
+    network_mode: host
+
+    # ── Environment ────────────────────────────────────────────────
+    # Copy .env.example → .env and fill in your values.
+    # Never commit .env to git.
+    env_file:
+      - .env
+
+    # ── Persistence ────────────────────────────────────────────────
+    # SQLite database and any other data survive container restarts
+    volumes:
+      - vessel-data:/app/data
+
+    # ── Port (not needed when network_mode: host, but shown for reference)
+    # ports:
+    #   - "3000:3000"
+
+    # ── Resource limits ────────────────────────────────────────────
+    # Mini PC tuning — adjust to your hardware
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  vessel-data:
+    driver: local
