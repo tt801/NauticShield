@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useOrganizationList } from '@clerk/clerk-react';
+import { useOrganizationList, useAuth } from '@clerk/clerk-react';
 import { Anchor, ShieldCheck } from 'lucide-react';
+import { fetchJSON } from '@/api/client';
 
 const S: Record<string, React.CSSProperties> = {
   page: {
@@ -49,7 +50,8 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function Onboarding() {
-  const { createOrganization, setActive } = useOrganizationList();
+  const { setActive } = useOrganizationList();
+  const { getToken }  = useAuth();
   const [vesselName, setVesselName] = useState('');
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
@@ -60,11 +62,23 @@ export default function Onboarding() {
     setLoading(true);
     setError(null);
     try {
-      const org = await createOrganization!({ name });
-      await setActive!({ organization: org.id });
-      // Page will re-render via OrgGate and route to dashboard
+      // Server-side creation enforces the vessel quota from publicMetadata.
+      // If the user has hit their plan limit the backend returns 402.
+      const token = await getToken();
+      const result = await fetchJSON<{ orgId: string; orgName: string; message?: string }>(
+        '/api/vessels',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name }),
+        },
+      );
+      // Activate the newly created org in Clerk's client session
+      await setActive!({ organization: result.orgId });
+      // OrgGate will now see an active org and route to dashboard
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create vessel. Please try again.');
+      const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
+      setError(msg);
       setLoading(false);
     }
   }

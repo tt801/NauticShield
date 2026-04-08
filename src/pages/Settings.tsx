@@ -133,6 +133,14 @@ export default function Settings() {
   useEffect(() => {
     fetchJSON<NotifPrefs>('/api/notifications').then(setNotifPrefs).catch(() => {});
   }, []);
+
+  // ── Vessel quota ─────────────────────────────────────────────────
+  type VesselQuota = { plan: string; currentVessels: number; maxVessels: number };
+  const [vesselQuota, setVesselQuota] = useState<VesselQuota | null>(null);
+
+  useEffect(() => {
+    fetchJSON<VesselQuota>('/api/vessels/quota').then(setVesselQuota).catch(() => {});
+  }, []);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole]   = useState('org:member');
   const [inviting, setInviting]       = useState(false);
@@ -497,6 +505,51 @@ export default function Settings() {
               );
             })}
           </div>
+
+          <Card>
+            <SectionTitle icon={Building2} label="Vessel Quota" />
+            {vesselQuota ? (() => {
+              const { currentVessels, maxVessels, plan } = vesselQuota;
+              const atLimit = currentVessels >= maxVessels;
+              const pct     = Math.min(100, Math.round((currentVessels / maxVessels) * 100));
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <span style={{ color: '#8899aa', fontSize: 13 }}>
+                      Vessels used
+                    </span>
+                    <span style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 700 }}>
+                      {currentVessels} / {maxVessels === 999 ? '∞' : maxVessels}
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div style={{ height: 6, background: '#1a2535', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 3,
+                      width: `${maxVessels === 999 ? 10 : pct}%`,
+                      background: atLimit ? '#ef4444' : '#d4a847',
+                      transition: 'width 0.4s',
+                    }} />
+                  </div>
+                  {atLimit && plan !== 'enterprise' && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      background: 'rgba(212,168,71,0.08)', border: '1px solid rgba(212,168,71,0.25)',
+                      borderRadius: 10, padding: '12px 16px',
+                    }}>
+                      <AlertTriangle size={14} color="#d4a847" style={{ flexShrink: 0 }} />
+                      <div style={{ fontSize: 12, color: '#8899aa', lineHeight: 1.6 }}>
+                        You've reached the <strong style={{ color: '#d4a847' }}>{plan}</strong> plan vessel limit.
+                        Upgrade to add more vessels to your account.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })() : (
+              <div style={{ color: '#4a5a6a', fontSize: 13 }}>Loading…</div>
+            )}
+          </Card>
 
           <Card>
             <SectionTitle icon={CreditCard} label="Billing" />

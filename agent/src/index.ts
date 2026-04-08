@@ -18,6 +18,7 @@ import actionsRouter       from './routes/actions';
 import voyageRouter        from './routes/voyage';
 import cyberRouter         from './routes/cyber';
 import notificationsRouter from './routes/notifications';
+import vesselsRouter       from './routes/vessels';
 import type { VesselSnapshot, WsClientMessage } from './types';
 
 const PORT    = parseInt(process.env.PORT    ?? '3000', 10);
@@ -90,6 +91,7 @@ app.use('/api/actions',       actionsRouter);
 app.use('/api/voyage',        voyageRouter);
 app.use('/api/cyber',         cyberRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/vessels',       vesselsRouter);
 
 // Snapshot endpoint
 app.get('/api/snapshot', (_req, res) => {
