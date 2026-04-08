@@ -24,6 +24,7 @@ export default function App() {
           <Route path="/guest-network" element={<GuestNetwork />} />
           <Route path="/voyage"        element={<Voyage />} />
           <Route path="/cyber"         element={<Cyber />} />
+          <Route path="*"              element={<Dashboard />} />
         </Routes>
       </Layout>
     </BrowserRouter>

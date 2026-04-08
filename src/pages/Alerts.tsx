@@ -87,7 +87,6 @@ function AlertRow({ alert, onResolve, isNew }: { alert: Alert; onResolve: (id: s
       overflow: 'hidden',
       animation: isNew ? 'newAlertIn 0.4s ease' : undefined,
     }}>
-      <style>{`@keyframes newAlertIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }`}</style>
       <button
         onClick={() => setExpanded(e => !e)}
         style={{
@@ -171,7 +170,8 @@ function AlertRow({ alert, onResolve, isNew }: { alert: Alert; onResolve: (id: s
 export default function Alerts() {
   const { alerts, resolveAlert, agentStatus, isLive, lastSync } = useVesselData();
   const [sevFilter,   setSevFilter]   = useState<FilterSev>('all');
-  const seenRef   = useRef<Set<string>>(new Set());
+  const seenRef    = useRef<Set<string>>(new Set());
+  const newIdsRef  = useRef<Set<string>>(new Set());
   const [newCount, setNewCount] = useState(0);
 
   // Track newly arriving alerts (ones that weren't there on first render)
@@ -187,13 +187,14 @@ export default function Alerts() {
     alerts.forEach(a => {
       if (!seenRef.current.has(a.id)) {
         seenRef.current.add(a.id);
+        newIdsRef.current.add(a.id);
         fresh++;
       }
     });
     if (fresh > 0) setNewCount(n => n + fresh);
   }, [alerts]);
 
-  const clearNew = () => setNewCount(0);
+  const clearNew = () => { setNewCount(0); newIdsRef.current.clear(); };
   const [stateFilter, setStateFilter] = useState<FilterState>('all');
 
   const filtered = alerts.filter(a => {
@@ -210,6 +211,10 @@ export default function Alerts() {
 
   return (
     <div style={{ padding: 28, maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <style>{`
+        @keyframes newAlertIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes alertPulse { 0%,100% { transform: scale(1); opacity:0.4; } 50% { transform: scale(2.2); opacity:0; } }
+      `}</style>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -282,7 +287,6 @@ export default function Alerts() {
           <RefreshCw size={13} />
         </button>
       </div>
-      <style>{`@keyframes alertPulse { 0%,100% { transform: scale(1); opacity:0.4; } 50% { transform: scale(2.2); opacity:0; } }`}</style>
 
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
@@ -346,7 +350,7 @@ export default function Alerts() {
               No alerts match your filters.
             </div>
           ) : (
-            filtered.map(a => <AlertRow key={a.id} alert={a} onResolve={resolveAlert} isNew={newCount > 0 && !seenRef.current.has(a.id + '-seen')} />)
+            filtered.map(a => <AlertRow key={a.id} alert={a} onResolve={resolveAlert} isNew={newIdsRef.current.has(a.id)} />)
           )}
         </div>
       </Card>

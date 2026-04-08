@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Smartphone,
   Laptop,
@@ -15,9 +15,7 @@ import {
   ShieldAlert,
   Wifi,
   Clock,
-  Info,
   Terminal,
-  ExternalLink,
   MapPin,
 } from 'lucide-react';
 import type { DeviceStatus, DeviceType } from '@/data/mock';
@@ -470,6 +468,12 @@ export default function Devices() {
   const { devices, renameDevice } = useVesselData();
   const [search, setSearch]             = useState('');
   const [selectedDevice, setSelectedDevice] = useState<typeof devices[0] | null>(null);
+  useEffect(() => {
+    if (!selectedDevice) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedDevice(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selectedDevice]);
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [typeFilter, setTypeFilter]     = useState<FilterType>('all');
 
@@ -583,7 +587,13 @@ export default function Devices() {
 
       {/* Device detail panel overlay */}
       {selectedDevice && (
-        <DeviceDetailPanel device={selectedDevice} onClose={() => setSelectedDevice(null)} />
+        <>
+          <div
+            onClick={() => setSelectedDevice(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 999 }}
+          />
+          <DeviceDetailPanel device={selectedDevice} onClose={() => setSelectedDevice(null)} />
+        </>
       )}
     </div>
   );
