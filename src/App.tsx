@@ -1,4 +1,4 @@
-import { ClerkProvider, SignedIn, SignedOut } from '@clerk/clerk-react'
+import { ClerkProvider, SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react'
 import { dark } from '@clerk/themes'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { VesselDataProvider } from '@/context/VesselDataProvider'
@@ -93,6 +93,7 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
                   </Routes>
                 </Layout>
               </SignedIn>
+              <SignedOut><RedirectToSignIn /></SignedOut>
             )
           } />
         </Routes>
