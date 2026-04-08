@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import { useClerk, useAuth } from '@clerk/clerk-react';
 
 // Timeout in ms per role — stricter for lower-privilege roles
 const TIMEOUT_MS: Record<string, number> = {
@@ -15,19 +14,19 @@ const EVENTS: (keyof DocumentEventMap)[] = [
 ];
 
 export function useInactivityLogout(role?: string) {
-  const { signOut }  = useClerk();
-  const { isSignedIn } = useAuth();
-  const timerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!isSignedIn) return;
+    // Only activate when a role is provided (i.e. user is signed in)
+    if (!role) return;
 
-    const timeout = TIMEOUT_MS[role ?? ''] ?? DEFAULT_TIMEOUT_MS;
+    const timeout = TIMEOUT_MS[role] ?? DEFAULT_TIMEOUT_MS;
 
     function reset() {
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
-        signOut();
+        // Redirect to sign-in; Clerk will handle the session on that page
+        window.location.href = '/sign-in';
       }, timeout);
     }
 
@@ -38,5 +37,5 @@ export function useInactivityLogout(role?: string) {
       if (timerRef.current) clearTimeout(timerRef.current);
       EVENTS.forEach(e => document.removeEventListener(e, reset));
     };
-  }, [isSignedIn, role, signOut]);
+  }, [role]);
 }
