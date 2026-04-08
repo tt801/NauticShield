@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useOrganizationList, useAuth } from '@clerk/clerk-react';
-import { Anchor, ShieldCheck } from 'lucide-react';
+import { useOrganizationList } from '@clerk/clerk-react';
+import { Anchor, ShieldCheck, AlertTriangle, ExternalLink } from 'lucide-react';
 import { fetchJSON } from '@/api/client';
+import { AGENT_URL } from '@/api/config';
 
 const S: Record<string, React.CSSProperties> = {
   page: {
@@ -50,11 +51,19 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function Onboarding() {
-  const { setActive } = useOrganizationList();
-  const { getToken }  = useAuth();
+  const { setActive, userMemberships } = useOrganizationList({ userMemberships: true });
   const [vesselName, setVesselName] = useState('');
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
+  const [limitHit, setLimitHit]     = useState(false);
+
+  // If the user already has an org (e.g. from a previous session), just activate it
+  async function activateExisting() {
+    const existing = userMemberships?.data?.[0];
+    if (existing && setActive) {
+      await setActive({ organization: existing.organization.id });
+    }
+  }
 
   async function handleCreate() {
     const name = vesselName.trim();
@@ -64,12 +73,11 @@ export default function Onboarding() {
     try {
       // Server-side creation enforces the vessel quota from publicMetadata.
       // If the user has hit their plan limit the backend returns 402.
-      const token = await getToken();
       const result = await fetchJSON<{ orgId: string; orgName: string; message?: string }>(
-        '/api/vessels',
+        `${AGENT_URL}/api/vessels`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name }),
         },
       );
@@ -78,7 +86,12 @@ export default function Onboarding() {
       // OrgGate will now see an active org and route to dashboard
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
-      setError(msg);
+      // 402 = vessel quota reached — show upgrade prompt instead of generic error
+      if (msg.includes('vessel_limit_reached') || msg.includes('plan allows')) {
+        setLimitHit(true);
+      } else {
+        setError(msg);
+      }
       setLoading(false);
     }
   }
@@ -104,6 +117,51 @@ export default function Onboarding() {
         </div>
 
         {error && <div style={S.error}>{error}</div>}
+
+        {/* Vessel limit reached — upgrade prompt */}
+        {limitHit && (
+          <div style={{
+            background: 'rgba(212,168,71,0.08)',
+            border: '1px solid rgba(212,168,71,0.35)',
+            borderRadius: 12, padding: '18px 20px', marginBottom: 20,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <AlertTriangle size={15} color="#d4a847" />
+              <span style={{ color: '#d4a847', fontWeight: 700, fontSize: 13 }}>Vessel limit reached</span>
+            </div>
+            <p style={{ color: '#8899aa', fontSize: 12, lineHeight: 1.7, margin: '0 0 14px' }}>
+              Your current plan only allows 1 vessel. Upgrade to <strong style={{ color: '#f0f4f8' }}>Pro</strong> (3 vessels)
+              or <strong style={{ color: '#f0f4f8' }}>Enterprise</strong> (unlimited) to add more.
+            </p>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <a
+                href="https://nauticshield.io/pricing"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: 'linear-gradient(135deg, #d4a847, #b8922f)',
+                  color: '#080b10', borderRadius: 8,
+                  padding: '8px 16px', fontSize: 12, fontWeight: 700, textDecoration: 'none',
+                }}
+              >
+                View plans &amp; upgrade <ExternalLink size={11} />
+              </a>
+              {(userMemberships?.count ?? 0) > 0 && (
+                <button
+                  onClick={activateExisting}
+                  style={{
+                    background: 'rgba(255,255,255,0.05)', border: '1px solid #1a2535',
+                    color: '#8899aa', borderRadius: 8,
+                    padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Continue with existing vessel
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <label style={S.label}>Vessel name</label>
         <input

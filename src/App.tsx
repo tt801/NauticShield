@@ -1,6 +1,7 @@
 import { ClerkProvider, SignedIn, SignedOut, RedirectToSignIn, useOrganizationList } from '@clerk/clerk-react'
 import { dark } from '@clerk/themes'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { Component, type ReactNode } from 'react'
 import { VesselDataProvider } from '@/context/VesselDataProvider'
 import { AuthProvider }       from '@/context/AuthProvider'
 import { AuthTokenBridge }    from '@/components/AuthTokenBridge'
@@ -18,6 +19,29 @@ import Voyage       from '@/pages/Voyage'
 import Cyber        from '@/pages/Cyber'
 import Settings     from '@/pages/Settings'
 
+// ── Error Boundary ────────────────────────────────────────────────
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    const { error } = this.state;
+    if (!error) return this.props.children;
+    return (
+      <div style={{ minHeight: '100vh', background: '#080b10', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+        <div style={{ background: '#0d1421', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 32, maxWidth: 600, width: '100%' }}>
+          <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 16, marginBottom: 12 }}>Application Error</div>
+          <pre style={{ color: '#f87171', fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+            {error.message}{'\n\n'}{(error as Error & { stack?: string }).stack}
+          </pre>
+          <button onClick={() => window.location.reload()} style={{ marginTop: 20, padding: '8px 18px', background: '#d4a847', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', color: '#080b10' }}>
+            Reload
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 
 if (!CLERK_KEY || CLERK_KEY === 'pk_test_REPLACE_ME') {
@@ -30,19 +54,21 @@ if (!CLERK_KEY || CLERK_KEY === 'pk_test_REPLACE_ME') {
 export default function App() {
   // If no Clerk key is configured, run in dev mode (no auth wall)
   if (!CLERK_KEY || CLERK_KEY === 'pk_test_REPLACE_ME') {
-    return <AppRoutes devMode />;
+    return <ErrorBoundary><AppRoutes devMode /></ErrorBoundary>;
   }
 
   return (
-    <ClerkProvider
-      publishableKey={CLERK_KEY}
-      appearance={{ baseTheme: dark }}
-    >
-      <AuthTokenBridge />
-      <AuthProvider>
-        <AppRoutes devMode={false} />
-      </AuthProvider>
-    </ClerkProvider>
+    <ErrorBoundary>
+      <ClerkProvider
+        publishableKey={CLERK_KEY}
+        appearance={{ baseTheme: dark }}
+      >
+        <AuthTokenBridge />
+        <AuthProvider>
+          <AppRoutes devMode={false} />
+        </AuthProvider>
+      </ClerkProvider>
+    </ErrorBoundary>
   );
 }
 

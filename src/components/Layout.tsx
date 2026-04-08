@@ -13,9 +13,28 @@ import {
   Settings,
   HelpCircle,
   ShieldCheck,
+  LogOut,
 } from 'lucide-react';
+import { useClerk } from '@clerk/clerk-react';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 import { useAuthOptional } from '@/context/AuthContext';
+
+const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
+
+function SignOutButton() {
+  const { signOut } = useClerk();
+  return (
+    <button
+      onClick={() => signOut()}
+      title="Sign out"
+      style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6, color: '#3a4a5a', display: 'flex', alignItems: 'center' }}
+      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ef4444'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#3a4a5a'; }}
+    >
+      <LogOut size={14} />
+    </button>
+  );
+}
 
 const navItems = [
   { to: '/',              label: 'Dashboard',    icon: LayoutDashboard },
@@ -40,6 +59,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const auth = useAuthOptional();
   useInactivityLogout(auth?.role);
+  const hasClerk = !!CLERK_KEY && CLERK_KEY !== 'pk_test_REPLACE_ME';
 
   return (
     <div style={{ display: 'flex', height: '100%', minHeight: '100vh', background: '#080b10' }}>
@@ -252,17 +272,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Vessel footer */}
         {!collapsed ? (
           <div style={{ padding: '12px 16px', borderTop: '1px solid #1a2535' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e', flexShrink: 0 }} />
-              <div>
-                <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600 }}>{auth?.vesselName ?? 'M/Y Aurora'}</div>
-                <div style={{ color: '#3a4a5a', fontSize: 11, marginTop: 1 }}>Last sync: just now</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e', flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{auth?.vesselName ?? 'M/Y Aurora'}</div>
+                  <div style={{ color: '#3a4a5a', fontSize: 11, marginTop: 1 }}>Last sync: just now</div>
+                </div>
               </div>
+              {hasClerk && <SignOutButton />}
             </div>
           </div>
         ) : (
-          <div style={{ padding: '12px 0', display: 'flex', justifyContent: 'center', borderTop: '1px solid #1a2535' }}>
+          <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, borderTop: '1px solid #1a2535' }}>
             <div title={`${auth?.vesselName ?? 'M/Y Aurora'} — connected`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+            {hasClerk && <SignOutButton />}
           </div>
         )}
       </aside>

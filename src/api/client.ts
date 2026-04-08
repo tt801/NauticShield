@@ -67,7 +67,7 @@ export function setTokenProvider(fn: () => Promise<string | null>) {
 
 // ── Fetch with abort-based timeout + Bearer token ─────────────────
 
-async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
+export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timer      = setTimeout(() => controller.abort(), API_TIMEOUT);
   try {
@@ -77,7 +77,11 @@ async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     };
     const res = await fetch(url, { ...init, headers, signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { const body = await res.json(); if (body?.message) msg = body.message; } catch { /* ignore */ }
+      throw new Error(msg);
+    }
     return await res.json() as T;
   } finally {
     clearTimeout(timer);

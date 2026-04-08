@@ -119,6 +119,11 @@ try {
   db.exec(`DELETE FROM perf_samples WHERE date < '${cutoff}'`);
 } catch { /* ignore */ }
 
+// Close DB cleanly on process exit so the lock is always released
+process.on('exit',    () => { try { db.close(); } catch { /* ignore */ } });
+process.on('SIGINT',  () => process.exit(0));
+process.on('SIGTERM', () => process.exit(0));
+
 // ── Devices ───────────────────────────────────────────────────────
 
 export function getDevices(): Device[] {

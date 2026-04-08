@@ -30,11 +30,19 @@ const SCAN_MS = parseInt(process.env.SCAN_INTERVAL_MS ?? '30000', 10);
 const app    = express();
 const server = createServer(app);
 
-// CORS — vessel LAN origins from env, fallback to localhost in dev
-const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176').split(',');
+// CORS — allow any localhost port in dev; in production restrict to explicit origins
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : null; // null = dev mode, allow all localhost
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    if (!origin) return cb(null, true); // same-origin / curl
+    if (!allowedOrigins) {
+      // Dev: allow any localhost/127.0.0.1 origin regardless of port
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return cb(null, true);
+    } else {
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+    }
     cb(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,

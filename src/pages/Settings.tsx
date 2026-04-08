@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { fetchJSON } from '@/api/client';
+import { AGENT_URL } from '@/api/config';
 
 // ── Plan definitions ─────────────────────────────────────────────
 
@@ -131,7 +132,7 @@ export default function Settings() {
   const [notifMsg,    setNotifMsg]    = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
-    fetchJSON<NotifPrefs>('/api/notifications').then(setNotifPrefs).catch(() => {});
+    fetchJSON<NotifPrefs>(`${AGENT_URL}/api/notifications`).then(setNotifPrefs).catch(() => {});
   }, []);
 
   // ── Vessel quota ─────────────────────────────────────────────────
@@ -139,7 +140,7 @@ export default function Settings() {
   const [vesselQuota, setVesselQuota] = useState<VesselQuota | null>(null);
 
   useEffect(() => {
-    fetchJSON<VesselQuota>('/api/vessels/quota').then(setVesselQuota).catch(() => {});
+    fetchJSON<VesselQuota>(`${AGENT_URL}/api/vessels/quota`).then(setVesselQuota).catch(() => {});
   }, []);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole]   = useState('org:member');
@@ -696,7 +697,7 @@ export default function Settings() {
           setNotifSaving(true);
           setNotifMsg(null);
           try {
-            const updated = await fetchJSON<NotifPrefs>('/api/notifications', { method: 'PUT', body: JSON.stringify(notifPrefs) });
+            const updated = await fetchJSON<NotifPrefs>(`${AGENT_URL}/api/notifications`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(notifPrefs) });
             setNotifPrefs(updated);
             setNotifMsg({ type: 'ok', text: 'Notification preferences saved.' });
           } catch {
