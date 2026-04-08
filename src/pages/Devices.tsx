@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Smartphone,
   Laptop,
@@ -12,11 +12,46 @@ import {
   Pencil,
   Check,
   X,
+  ShieldAlert,
+  Wifi,
+  Clock,
+  Info,
+  Terminal,
+  ExternalLink,
+  MapPin,
 } from 'lucide-react';
 import type { DeviceStatus, DeviceType } from '@/data/mock';
 import { useVesselData } from '@/context/VesselDataProvider';
 
 // ── Helpers ───────────────────────────────────────────────────────
+
+// Quick CVE severity summary by device type (mirrors Cyber.tsx MARITIME_CVE_DB counts)
+const CVE_SUMMARY: Record<string, { critical: number; high: number; medium: number }> = {
+  camera:  { critical: 3, high: 2, medium: 1 },
+  router:  { critical: 3, high: 3, medium: 0 },
+  tv:      { critical: 0, high: 2, medium: 3 },
+  laptop:  { critical: 1, high: 2, medium: 0 },
+  phone:   { critical: 0, high: 1, medium: 1 },
+  unknown: { critical: 1, high: 0, medium: 0 },
+};
+
+const MOCK_PORTS: Record<string, { port: number; service: string; state: 'open' | 'filtered' }[]> = {
+  camera:  [{ port: 554, service: 'RTSP', state: 'open' }, { port: 8080, service: 'HTTP Admin', state: 'open' }, { port: 22, service: 'SSH', state: 'filtered' }],
+  router:  [{ port: 80, service: 'HTTP', state: 'open' }, { port: 443, service: 'HTTPS', state: 'open' }, { port: 22, service: 'SSH', state: 'open' }, { port: 179, service: 'BGP', state: 'filtered' }],
+  tv:      [{ port: 1900, service: 'SSDP/UPnP', state: 'open' }, { port: 8001, service: 'SmartTV', state: 'open' }],
+  laptop:  [{ port: 445, service: 'SMB', state: 'filtered' }, { port: 3389, service: 'RDP', state: 'filtered' }],
+  phone:   [{ port: 5353, service: 'mDNS', state: 'open' }],
+  unknown: [{ port: 23, service: 'Telnet', state: 'open' }, { port: 80, service: 'HTTP', state: 'open' }, { port: 8888, service: 'Unknown', state: 'open' }],
+};
+
+const MOCK_ACTIVITY: Record<string, { time: string; event: string }[]> = {
+  camera:  [{ time: '09:14', event: 'RTSP stream started' }, { time: '08:00', event: 'Device came online' }, { time: 'Yesterday', event: 'Firmware version queried' }],
+  router:  [{ time: '09:30', event: 'DNS query burst (×340)' }, { time: '09:00', event: 'WAN link reset' }, { time: '08:22', event: 'DHCP table refreshed' }],
+  tv:      [{ time: '22:14', event: 'Netflix stream started' }, { time: '20:00', event: 'Device came online' }, { time: '14:00', event: 'Software update checked' }],
+  laptop:  [{ time: '09:45', event: 'Connected to guest SSID' }, { time: '09:44', event: 'DHCP lease granted' }, { time: 'Yesterday', event: 'SMB browse request' }],
+  phone:   [{ time: '10:02', event: 'iMessage sync' }, { time: '09:55', event: 'Connected to ship Wi-Fi' }, { time: 'Yesterday', event: 'App store update' }],
+  unknown: [{ time: '03:47', event: 'Port scan detected' }, { time: '03:46', event: 'ARP probe sent' }, { time: '03:45', event: 'Device appeared on network' }],
+};
 
 const typeIcons: Record<DeviceType, React.ElementType> = {
   phone:   Smartphone,
@@ -84,6 +119,179 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
     >
       {label}
     </button>
+  );
+}
+
+// ── Device detail panel ──────────────────────────────────────────────
+
+function DeviceDetailPanel({ device, onClose }: {
+  device: { id: string; name: string; type: string; status: string; ip: string; mac: string; lastSeen: string; manufacturer?: string | null; location?: string | null };
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<'overview' | 'ports' | 'activity'>('overview');
+  const dt   = (device.type in CVE_SUMMARY) ? device.type : 'unknown';
+  const cve  = CVE_SUMMARY[dt] ?? { critical: 0, high: 0, medium: 0 };
+  const ports    = MOCK_PORTS[dt]    ?? [];
+  const activity = MOCK_ACTIVITY[dt] ?? [];
+  const Icon = typeIcons[device.type as keyof typeof typeIcons] ?? HelpCircle;
+  const sc   = statusColors[device.status as keyof typeof statusColors] ?? statusColors.unknown;
+  const totalCve = cve.critical + cve.high + cve.medium;
+  const cveColor = cve.critical > 0 ? '#ef4444' : cve.high > 0 ? '#f97316' : cve.medium > 0 ? '#f59e0b' : '#22c55e';
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, right: 0, bottom: 0, width: 420,
+      background: '#080b10', borderLeft: '1px solid #1a2535',
+      display: 'flex', flexDirection: 'column',
+      zIndex: 1000, boxShadow: '-8px 0 40px rgba(0,0,0,0.7)',
+    }}>
+      {/* Header */}
+      <div style={{ padding: '20px 20px 0', borderBottom: '1px solid #1a2535', paddingBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 12, background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Icon size={22} color="#0ea5e9" />
+            </div>
+            <div>
+              <div style={{ color: '#f0f4f8', fontSize: 16, fontWeight: 800, lineHeight: 1.2 }}>{device.name}</div>
+              <div style={{ color: '#6b7f92', fontSize: 12, marginTop: 3 }}>{typeLabels[device.type as keyof typeof typeLabels] ?? device.type}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a5a6a', padding: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Status + IP + location pills */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: sc.color + '18', border: `1px solid ${sc.color}44`, borderRadius: 20, padding: '3px 10px', fontSize: 12, fontWeight: 700, color: sc.color }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: sc.color, boxShadow: `0 0 5px ${sc.glow}` }} />
+            {sc.label}
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#0d1421', border: '1px solid #1a2535', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#6b7f92', fontFamily: 'monospace' }}>
+            <Wifi size={10} />{device.ip}
+          </span>
+          {device.location && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#0d1421', border: '1px solid #1a2535', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#6b7f92' }}>
+              <MapPin size={10} />{device.location}
+            </span>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 4, marginTop: 14 }}>
+          {(['overview', 'ports', 'activity'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              border: '1px solid', cursor: 'pointer',
+              background: tab === t ? 'rgba(14,165,233,0.12)' : 'transparent',
+              color: tab === t ? '#7dd3fc' : '#6b7f92',
+              borderColor: tab === t ? 'rgba(14,165,233,0.35)' : '#1a2535',
+            }}>
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Body */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {tab === 'overview' && (
+          <>
+            <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ color: '#4a5a6a', fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase' }}>Device Info</div>
+              {[
+                { label: 'MAC Address',  value: device.mac,             mono: true },
+                { label: 'Manufacturer', value: device.manufacturer ?? '—' },
+                { label: 'Last Seen',    value: new Date(device.lastSeen).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) },
+              ].map(({ label, value, mono }) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: '#6b7f92', fontSize: 12 }}>{label}</span>
+                  <span style={{ color: '#f0f4f8', fontSize: 12, fontFamily: mono ? 'monospace' : undefined }}>{value}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ background: '#0d1421', border: `1px solid ${cveColor}33`, borderRadius: 12, padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <ShieldAlert size={14} color={cveColor} />
+                  <span style={{ color: '#4a5a6a', fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase' }}>CVE Exposure</span>
+                </div>
+                <span style={{ color: cveColor, fontSize: 11, fontWeight: 700 }}>
+                  {totalCve === 0 ? 'No known CVEs' : `${totalCve} matched`}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[
+                  { label: 'Critical', value: cve.critical, color: '#ef4444' },
+                  { label: 'High',     value: cve.high,     color: '#f97316' },
+                  { label: 'Medium',   value: cve.medium,   color: '#f59e0b' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} style={{ flex: 1, background: '#0a0f18', border: `1px solid ${value > 0 ? color + '33' : '#1a2535'}`, borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                    <div style={{ color: value > 0 ? color : '#2a3a50', fontSize: 20, fontWeight: 800, lineHeight: 1 }}>{value}</div>
+                    <div style={{ color: '#4a5a6a', fontSize: 10, marginTop: 3 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+              {totalCve > 0 && (
+                <div style={{ marginTop: 10, color: '#4a5a6a', fontSize: 11, textAlign: 'center' }}>
+                  Full CVE detail in <span style={{ color: '#0ea5e9' }}>Cyber → Device Risk Panel</span>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {tab === 'ports' && (
+          <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 12, padding: '14px 16px' }}>
+            <div style={{ color: '#4a5a6a', fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 }}>Open / Filtered Ports</div>
+            {ports.length === 0 ? (
+              <div style={{ color: '#4a5a6a', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>No port data available</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {ports.map(p => (
+                  <div key={p.port} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 12px' }}>
+                    <Terminal size={12} color="#4a5a6a" />
+                    <span style={{ color: '#f0f4f8', fontFamily: 'monospace', fontSize: 13, fontWeight: 700, width: 42 }}>{p.port}</span>
+                    <span style={{ color: '#8899aa', fontSize: 12, flex: 1 }}>{p.service}</span>
+                    <span style={{
+                      borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 700,
+                      background: p.state === 'open' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.08)',
+                      color: p.state === 'open' ? '#ef4444' : '#f59e0b',
+                      border: `1px solid ${p.state === 'open' ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`,
+                    }}>
+                      {p.state}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'activity' && (
+          <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 12, padding: '14px 16px' }}>
+            <div style={{ color: '#4a5a6a', fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 }}>Recent Activity</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {activity.map((ev, i) => (
+                <div key={i} style={{ display: 'flex', gap: 12, paddingBottom: i < activity.length - 1 ? 12 : 0, marginBottom: i < activity.length - 1 ? 12 : 0, borderBottom: i < activity.length - 1 ? '1px solid #1a2535' : 'none' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                    <Clock size={12} color="#4a5a6a" />
+                    {i < activity.length - 1 && <div style={{ flex: 1, width: 1, background: '#1a2535' }} />}
+                  </div>
+                  <div>
+                    <div style={{ color: '#f0f4f8', fontSize: 12 }}>{ev.event}</div>
+                    <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 2 }}>{ev.time}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -261,6 +469,7 @@ function DeviceRow({ device, onSave }: {
 export default function Devices() {
   const { devices, renameDevice } = useVesselData();
   const [search, setSearch]             = useState('');
+  const [selectedDevice, setSelectedDevice] = useState<typeof devices[0] | null>(null);
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [typeFilter, setTypeFilter]     = useState<FilterType>('all');
 
@@ -362,11 +571,20 @@ export default function Devices() {
               No devices match your filters.
             </div>
           ) : (
-            filtered.map(d => <DeviceRow key={d.id} device={d} onSave={renameDevice} />)
+            filtered.map(d => (
+              <div key={d.id} onClick={() => setSelectedDevice(d)} style={{ cursor: 'pointer' }}>
+                <DeviceRow device={d} onSave={renameDevice} />
+              </div>
+            ))
           )}
         </div>
       </Card>
 
+
+      {/* Device detail panel overlay */}
+      {selectedDevice && (
+        <DeviceDetailPanel device={selectedDevice} onClose={() => setSelectedDevice(null)} />
+      )}
     </div>
   );
 }

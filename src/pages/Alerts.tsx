@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   ShieldAlert,
   CheckCircle2,
@@ -6,6 +6,10 @@ import {
   ChevronDown,
   ChevronUp,
   Filter,
+  Wifi,
+  WifiOff,
+  Zap,
+  RefreshCw,
 } from 'lucide-react';
 import type { AlertSeverity, Alert } from '@/data/mock';
 import { useVesselData } from '@/context/VesselDataProvider';
@@ -70,18 +74,20 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
 
 // ── Alert row ─────────────────────────────────────────────────────
 
-function AlertRow({ alert, onResolve }: { alert: Alert; onResolve: (id: string) => void }) {
+function AlertRow({ alert, onResolve, isNew }: { alert: Alert; onResolve: (id: string) => void; isNew?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const c = severityConfig[alert.severity];
 
   return (
     <div style={{
-      background: '#0a0f18',
+      background: isNew ? 'rgba(239,68,68,0.04)' : '#0a0f18',
       border: `1px solid ${alert.resolved ? '#1a2535' : c.border}`,
       borderLeft: `3px solid ${alert.resolved ? '#1a2535' : c.text}`,
       borderRadius: 12,
       overflow: 'hidden',
+      animation: isNew ? 'newAlertIn 0.4s ease' : undefined,
     }}>
+      <style>{`@keyframes newAlertIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }`}</style>
       <button
         onClick={() => setExpanded(e => !e)}
         style={{
@@ -163,8 +169,31 @@ function AlertRow({ alert, onResolve }: { alert: Alert; onResolve: (id: string) 
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function Alerts() {
-  const { alerts, resolveAlert } = useVesselData();
+  const { alerts, resolveAlert, agentStatus, isLive, lastSync } = useVesselData();
   const [sevFilter,   setSevFilter]   = useState<FilterSev>('all');
+  const seenRef   = useRef<Set<string>>(new Set());
+  const [newCount, setNewCount] = useState(0);
+
+  // Track newly arriving alerts (ones that weren't there on first render)
+  const initialized = useRef(false);
+  useEffect(() => {
+    if (!initialized.current) {
+      // Seed seen set with current alerts on first render
+      alerts.forEach(a => seenRef.current.add(a.id));
+      initialized.current = true;
+      return;
+    }
+    let fresh = 0;
+    alerts.forEach(a => {
+      if (!seenRef.current.has(a.id)) {
+        seenRef.current.add(a.id);
+        fresh++;
+      }
+    });
+    if (fresh > 0) setNewCount(n => n + fresh);
+  }, [alerts]);
+
+  const clearNew = () => setNewCount(0);
   const [stateFilter, setStateFilter] = useState<FilterState>('all');
 
   const filtered = alerts.filter(a => {
@@ -202,6 +231,58 @@ export default function Alerts() {
           </div>
         )}
       </div>
+
+      {/* Live connection status strip */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+        background: '#0d1421', border: '1px solid #1a2535', borderRadius: 10,
+        padding: '10px 16px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          {isLive ? (
+            <>
+              <div style={{ position: 'relative', width: 10, height: 10 }}>
+                <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#22c55e', opacity: 0.4, animation: 'alertPulse 2s ease-in-out infinite' }} />
+                <div style={{ position: 'absolute', inset: 2, borderRadius: '50%', background: '#22c55e' }} />
+              </div>
+              <Wifi size={13} color="#22c55e" />
+              <span style={{ color: '#22c55e', fontSize: 12, fontWeight: 700 }}>Live</span>
+            </>
+          ) : (
+            <>
+              <WifiOff size={13} color="#ef4444" />
+              <span style={{ color: '#ef4444', fontSize: 12, fontWeight: 700 }}>
+                {agentStatus === 'connecting' ? 'Connecting…' : 'Agent Offline'}
+              </span>
+            </>
+          )}
+        </div>
+        <span style={{ color: '#1a2535' }}>|</span>
+        <span style={{ color: '#4a5a6a', fontSize: 12 }}>
+          {lastSync ? `Last sync ${lastSync.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Awaiting sync…'}
+        </span>
+        {newCount > 0 && (
+          <button
+            onClick={clearNew}
+            style={{
+              marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
+              background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+              border: '1px solid rgba(239,68,68,0.35)',
+              borderRadius: 20, padding: '4px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            <Zap size={11} /> {newCount} new alert{newCount > 1 ? 's' : ''} — click to clear
+          </button>
+        )}
+        <button
+          onClick={() => window.location.reload()}
+          style={{ marginLeft: newCount > 0 ? 0 : 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#4a5a6a', padding: 2, display: 'flex', alignItems: 'center' }}
+          title="Refresh"
+        >
+          <RefreshCw size={13} />
+        </button>
+      </div>
+      <style>{`@keyframes alertPulse { 0%,100% { transform: scale(1); opacity:0.4; } 50% { transform: scale(2.2); opacity:0; } }`}</style>
 
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
@@ -265,7 +346,7 @@ export default function Alerts() {
               No alerts match your filters.
             </div>
           ) : (
-            filtered.map(a => <AlertRow key={a.id} alert={a} onResolve={resolveAlert} />)
+            filtered.map(a => <AlertRow key={a.id} alert={a} onResolve={resolveAlert} isNew={newCount > 0 && !seenRef.current.has(a.id + '-seen')} />)
           )}
         </div>
       </Card>

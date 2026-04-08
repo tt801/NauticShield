@@ -14,6 +14,11 @@ import {
   Router,
   HelpCircle,
   Gauge,
+  Eye,
+  EyeOff,
+  Globe,
+  Zap,
+  BarChart2,
 } from 'lucide-react';
 import type { Device, DeviceType } from '@/data/mock';
 import { useVesselData } from '@/context/VesselDataProvider';
@@ -41,6 +46,14 @@ const bwOptions: BandwidthLimit[] = [
 ];
 
 // Guest device filtering happens inside the component (based on live device types)
+
+// Mock per-device data usage (GB this session)
+const MOCK_USAGE: Record<string, number> = {
+  'd-1': 1.2, 'd-2': 3.8, 'd-3': 0.4, 'd-4': 0.1, 'd-5': 2.1,
+  'd-6': 0.0, 'd-7': 5.4, 'd-8': 0.2, 'd-9': 1.1, 'd-10': 0.6,
+  'd-11': 0.0, 'd-12': 3.2,
+};
+const MAX_USAGE = 6; // GB cap for bar display
 
 // ── Card shell ────────────────────────────────────────────────────
 
@@ -87,7 +100,10 @@ function GuestDeviceRow({
   };
   const ac = accessStyle[access];
 
+  const usage = MOCK_USAGE[device.id] ?? 0;
+
   return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
     <div style={{
       display: 'flex', alignItems: 'center', gap: 14,
       background: '#0a0f18',
@@ -170,6 +186,17 @@ function GuestDeviceRow({
         </button>
       </div>
     </div>
+    {/* Data usage bar */}
+    {access !== 'blocked' && usage > 0 && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 16px 8px', background: '#0a0f18', borderRadius: '0 0 12px 12px', borderTop: '1px solid #0d1421' }}>
+        <BarChart2 size={11} color="#4a5a6a" />
+        <div style={{ flex: 1, height: 4, background: '#1a2535', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ width: `${Math.min(100, (usage / MAX_USAGE) * 100)}%`, height: '100%', background: usage > 4 ? '#f59e0b' : '#0ea5e9', borderRadius: 2, transition: 'width 0.4s' }} />
+        </div>
+        <span style={{ color: '#4a5a6a', fontSize: 10, fontFamily: 'monospace', flexShrink: 0 }}>{usage.toFixed(1)} GB</span>
+      </div>
+    )}
+    </div>
   );
 }
 
@@ -203,7 +230,23 @@ export default function GuestNetwork() {
   const setAccess = (id: string, v: DeviceAccess) => setAccessMap(m => ({ ...m, [id]: v }));
   const setBw     = (id: string, v: string)        => setBwMap(m => ({ ...m, [id]: v }));
 
-  const [wifiEnabled, setWifiEnabled] = useState(true);
+  const [wifiEnabled,   setWifiEnabled]   = useState(true);
+  const [portalEnabled, setPortalEnabled] = useState(true);
+  const [ssid,          setSsid]          = useState('Aurora Guest');
+  const [showPass,      setShowPass]      = useState(false);
+  const [wifiPass,      setWifiPass]      = useState('Yacht2026!');
+  const [splashType,    setSplashType]    = useState<'tos' | 'click' | 'none'>('tos');
+  const [speedRunning,  setSpeedRunning]  = useState(false);
+  const [speedResult,   setSpeedResult]   = useState<{dl: number; ul: number; ping: number} | null>(null);
+
+  function runSpeedTest() {
+    setSpeedRunning(true);
+    setSpeedResult(null);
+    setTimeout(() => {
+      setSpeedResult({ dl: 47 + Math.random() * 15, ul: 18 + Math.random() * 8, ping: 28 + Math.random() * 20 });
+      setSpeedRunning(false);
+    }, 2400);
+  }
 
   const approved = guestDevices.filter(d => accessMap[d.id] === 'approved').length;
   const blocked  = guestDevices.filter(d => accessMap[d.id] === 'blocked').length;
@@ -287,6 +330,113 @@ export default function GuestNetwork() {
           </Card>
         ))}
       </div>
+
+      {/* Captive Portal Settings */}
+      <Card style={{ borderLeft: `4px solid ${portalEnabled ? '#8b5cf6' : '#1a2535'}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: portalEnabled ? 16 : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ background: portalEnabled ? 'rgba(139,92,246,0.12)' : 'rgba(26,37,53,0.5)', borderRadius: 12, padding: 12 }}>
+              <Globe size={20} color={portalEnabled ? '#8b5cf6' : '#4a5a6a'} />
+            </div>
+            <div>
+              <div style={{ color: '#f0f4f8', fontSize: 15, fontWeight: 700 }}>Captive Portal</div>
+              <div style={{ color: '#6b7f92', fontSize: 12, marginTop: 2 }}>
+                {portalEnabled ? 'Guests see a splash page before internet access' : 'Disabled — guests connect directly'}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setPortalEnabled(v => !v)}
+            style={{ padding: '10px 24px', borderRadius: 10, fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer', background: portalEnabled ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}
+          >
+            {portalEnabled ? 'Disable' : 'Enable'}
+          </button>
+        </div>
+
+        {portalEnabled && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {/* SSID */}
+            <div>
+              <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, marginBottom: 6 }}>SSID (Network Name)</div>
+              <input
+                value={ssid}
+                onChange={e => setSsid(e.target.value)}
+                style={{ width: '100%', background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, color: '#f0f4f8', fontSize: 13, padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+            {/* Password */}
+            <div>
+              <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, marginBottom: 6 }}>Wi-Fi Password</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  value={wifiPass}
+                  onChange={e => setWifiPass(e.target.value)}
+                  style={{ flex: 1, background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, color: '#f0f4f8', fontSize: 13, padding: '8px 12px', outline: 'none' }}
+                />
+                <button onClick={() => setShowPass(v => !v)} style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', color: '#6b7f92', display: 'flex', alignItems: 'center' }}>
+                  {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+            {/* Splash type */}
+            <div>
+              <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, marginBottom: 6 }}>Splash Page Type</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {([['tos','Accept T&Cs'],['click','Click-through'],['none','No Page']] as const).map(([v, lbl]) => (
+                  <button
+                    key={v}
+                    onClick={() => setSplashType(v)}
+                    style={{
+                      flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 11, fontWeight: 600,
+                      border: '1px solid', cursor: 'pointer',
+                      background: splashType === v ? 'rgba(139,92,246,0.15)' : '#0a0f18',
+                      color: splashType === v ? '#8b5cf6' : '#6b7f92',
+                      borderColor: splashType === v ? 'rgba(139,92,246,0.4)' : '#1a2535',
+                    }}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Speed Test */}
+      <Card style={{ padding: '14px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Zap size={16} color="#0ea5e9" />
+            <div>
+              <div style={{ color: '#f0f4f8', fontSize: 14, fontWeight: 700 }}>Network Speed Test</div>
+              <div style={{ color: '#6b7f92', fontSize: 12 }}>Run a quick speed test on the guest network</div>
+            </div>
+          </div>
+          <button
+            onClick={runSpeedTest}
+            disabled={speedRunning}
+            style={{ padding: '9px 20px', borderRadius: 10, fontSize: 13, fontWeight: 700, border: 'none', cursor: speedRunning ? 'default' : 'pointer', background: speedRunning ? 'rgba(14,165,233,0.06)' : 'rgba(14,165,233,0.15)', color: speedRunning ? '#0ea5e977' : '#0ea5e9' }}
+          >
+            {speedRunning ? 'Testing…' : 'Run Test'}
+          </button>
+        </div>
+        {speedResult && !speedRunning && (
+          <div style={{ display: 'flex', gap: 12, marginTop: 14 }}>
+            {[
+              { label: 'Download', value: `${speedResult.dl.toFixed(1)} Mbps`, color: '#22c55e' },
+              { label: 'Upload',   value: `${speedResult.ul.toFixed(1)} Mbps`, color: '#0ea5e9' },
+              { label: 'Ping',     value: `${speedResult.ping.toFixed(0)} ms`,  color: '#f59e0b' },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ flex: 1, background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
+                <div style={{ color: '#6b7f92', fontSize: 11, marginBottom: 4 }}>{label}</div>
+                <div style={{ color, fontSize: 18, fontWeight: 800 }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {/* Bulk actions */}
       <Card style={{ padding: 14 }}>

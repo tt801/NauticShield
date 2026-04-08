@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
@@ -14,8 +14,12 @@ import {
   Calendar,
   Mail,
   TrendingUp,
+  Cpu,
+  FileText,
 } from 'lucide-react';
 import { useVesselData } from '@/context/VesselDataProvider';
+import { agentApi } from '@/api/client';
+import type { CyberAssessment, CyberFinding } from '@/api/client';
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -75,6 +79,19 @@ function ScoreRing({ score }: { score: number }) {
 export default function Report() {
   const { alerts, devices, internetStatus, networkHealth } = useVesselData();
   const [period, setPeriod] = useState<'live' | 'daily' | 'weekly' | 'monthly'>('live');
+
+  // ── Cyber DB data ─────────────────────────────────────────────
+  const [latestAssessment, setLatestAssessment] = useState<CyberAssessment | null>(null);
+  const [openFindings,     setOpenFindings]     = useState<CyberFinding[]>([]);
+
+  useEffect(() => {
+    agentApi.cyber.listAssessments().then(list => {
+      if (list.length > 0) setLatestAssessment(list[0]);
+    }).catch(() => {});
+    agentApi.cyber.listFindings().then(list => {
+      setOpenFindings(list.filter(f => f.findingStatus !== 'remediated'));
+    }).catch(() => {});
+  }, []);
 
   const now     = new Date();
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -867,6 +884,54 @@ export default function Report() {
     });
     y = (doc as any).lastAutoTable.finalY + 8;
 
+    // ── Cyber Assessment ──
+    if (latestAssessment) {
+      chk(30);
+      sectionHeading('Cyber Security Assessment');
+      const cs = latestAssessment.score;
+      const cyberRGB = cs >= 80 ? [39,174,96] as const : cs >= 60 ? [211,84,0] as const : [192,57,43] as const;
+      const cyberLbl = cs >= 80 ? 'Good Posture' : cs >= 60 ? 'Fair' : 'At Risk';
+      sc3(cyberRGB);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.text(String(cs), M, y + 8);
+      doc.setFontSize(7.5);
+      doc.setTextColor(130, 140, 150);
+      doc.text('/100', M + 9, y + 8);
+      doc.setFontSize(10);
+      sc3(cyberRGB);
+      doc.text(cyberLbl, M + 22, y + 4);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(90, 100, 115);
+      doc.text(`Last scan: ${new Date(latestAssessment.runAt).toLocaleDateString('en-GB')}  ·  BIMCO / IMO MSC-FAL.1 mapped`, M + 22, y + 10);
+      y += 18;
+      if (openFindings.length > 0) {
+        autoTable(doc, {
+          startY: y, margin: { left: M, right: M },
+          head: [['Category', 'Finding', 'Status']],
+          body: openFindings.map(f => [f.category, f.check_name, f.status.toUpperCase()]),
+          headStyles: { fillColor: [...HEADER] as [number,number,number], textColor: [255,255,255], fontSize: 7.5, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 8, textColor: [50, 60, 70] },
+          alternateRowStyles: { fillColor: [248,249,250] },
+          columnStyles: { 0: { cellWidth: 40, fontStyle: 'bold' }, 2: { cellWidth: 26 } },
+          didParseCell: (data: any) => {
+            if (data.section === 'body' && data.column.index === 2) {
+              data.cell.styles.textColor = openFindings[data.row.index]?.status === 'flagged' ? [192,57,43] : [211,84,0];
+              data.cell.styles.fontStyle = 'bold';
+            }
+          },
+        });
+        y = (doc as any).lastAutoTable.finalY + 8;
+      } else {
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(8.5);
+        doc.setTextColor(39, 174, 96);
+        doc.text('All findings remediated — no open items.', M, y + 4);
+        y += 10;
+      }
+    }
+
     // ── Scheduled Reports ──
     chk(20);
     sectionHeading('Scheduled Reports');
@@ -1160,6 +1225,93 @@ export default function Report() {
           </div>
         </Card>
       )}
+
+      {/* Cyber Security Assessment */}
+      <Card>
+        <SectionTitle>Cyber Security Assessment</SectionTitle>
+        {latestAssessment ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Score row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              {(() => {
+                const s = latestAssessment.score;
+                const c2 = s >= 80 ? '#22c55e' : s >= 60 ? '#f59e0b' : '#ef4444';
+                const lbl = s >= 80 ? 'Good Posture' : s >= 60 ? 'Fair' : 'At Risk';
+                return (
+                  <>
+                    <div style={{
+                      width: 64, height: 64, borderRadius: '50%', flexShrink: 0,
+                      background: `conic-gradient(${c2} ${s}%, #1a2535 0%)`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      boxShadow: `0 0 12px ${c2}40`,
+                    }}>
+                      <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#0d1421', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                        <div style={{ color: c2, fontSize: 16, fontWeight: 800, lineHeight: 1 }}>{s}</div>
+                        <div style={{ color: '#4a5a6a', fontSize: 8 }}>/ 100</div>
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: c2, fontSize: 16, fontWeight: 800 }}>{lbl}</div>
+                      <div style={{ color: '#6b7f92', fontSize: 12, marginTop: 2 }}>
+                        Last scan: {new Date(latestAssessment.runAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(212,168,71,0.08)', border: '1px solid rgba(212,168,71,0.2)', borderRadius: 8, padding: '6px 12px' }}>
+                <Cpu size={13} color="#d4a847" />
+                <span style={{ color: '#d4a847', fontSize: 12, fontWeight: 600 }}>BIMCO / IMO MSC-FAL.1 Mapped</span>
+              </div>
+            </div>
+
+            {/* Open findings */}
+            {openFindings.length > 0 && (
+              <div>
+                <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 }}>
+                  {openFindings.length} Open Finding{openFindings.length !== 1 ? 's' : ''}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {openFindings.slice(0, 5).map(f => {
+                    const fc = f.status === 'flagged' ? '#ef4444' : '#f59e0b';
+                    return (
+                      <div key={f.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        background: '#0a0f18', border: `1px solid ${fc}33`, borderLeft: `3px solid ${fc}`,
+                        borderRadius: 8, padding: '8px 12px',
+                      }}>
+                        <FileText size={12} color={fc} style={{ flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.check_name}</div>
+                          <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 1 }}>{f.category}</div>
+                        </div>
+                        <span style={{ background: fc + '18', color: fc, borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 700, flexShrink: 0, textTransform: 'uppercase' }}>
+                          {f.status}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {openFindings.length > 5 && (
+                    <div style={{ color: '#4a5a6a', fontSize: 12, textAlign: 'center', paddingTop: 4 }}>
+                      + {openFindings.length - 5} more — see Cyber Management for full list
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {openFindings.length === 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, padding: '10px 14px', color: '#22c55e', fontSize: 13 }}>
+                <CheckCircle2 size={14} /> All pen test findings remediated — no open items.
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ color: '#4a5a6a', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
+            No cyber assessment on record. Run a Quick Security Scan from the Cyber Management page.
+          </div>
+        )}
+      </Card>
 
       {/* Scheduled Reports */}
       <Card>
