@@ -4,6 +4,7 @@
   "private": true,
   "description": "NauticShield cloud API — receives vessel sync payloads and serves data to the frontend",
   "scripts": {
+    "build": "tsc --noEmit",
     "dev": "vercel dev",
     "deploy": "vercel --prod"
   },
