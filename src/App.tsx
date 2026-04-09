@@ -21,7 +21,7 @@ import Settings     from '@/pages/Settings'
 
 // ── Error Boundary ────────────────────────────────────────────────
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state = { error: null };
+  state: { error: Error | null } = { error: null };
   static getDerivedStateFromError(error: Error) { return { error } as { error: Error }; }
   render() {
     const { error } = this.state;
