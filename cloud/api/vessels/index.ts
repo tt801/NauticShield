@@ -8,8 +8,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { randomUUID }         from 'crypto';
 import { supabase }           from '../../lib/supabase';
 import { verifyClerkJWT, hashApiKey } from '../../lib/auth';
+import { cors } from '../../lib/cors';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (cors(req, res)) return;
   const auth = await verifyClerkJWT(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
