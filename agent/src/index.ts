@@ -19,6 +19,7 @@ import voyageRouter        from './routes/voyage';
 import cyberRouter         from './routes/cyber';
 import notificationsRouter from './routes/notifications';
 import vesselsRouter       from './routes/vessels';
+import { startCloudSync, getLastSyncAt } from './sync';
 import type { VesselSnapshot, WsClientMessage } from './types';
 
 const PORT    = parseInt(process.env.PORT    ?? '3000', 10);
@@ -81,11 +82,12 @@ app.use('/api', (req: AuthedRequest, res, next) => {
 // Public endpoint — no auth required
 app.get('/api/health', (_req, res) => {
   res.json({
-    status:  'ok',
-    version: '1.0.0',
-    vessel:  process.env.VESSEL_ID   ?? 'UNKNOWN',
-    name:    process.env.VESSEL_NAME ?? 'My Vessel',
-    uptime:  process.uptime(),
+    status:      'ok',
+    version:     '1.0.0',
+    vessel:      process.env.VESSEL_ID   ?? 'UNKNOWN',
+    name:        process.env.VESSEL_NAME ?? 'My Vessel',
+    uptime:      process.uptime(),
+    lastSyncAt:  getLastSyncAt(),
   });
 });
 
@@ -190,39 +192,6 @@ async function runCycle(): Promise<void> {
   }
 }
 
-// ── Cloud sync (optional) ─────────────────────────────────────────
-// When CLOUD_SYNC_URL and CLOUD_API_KEY are set, push a snapshot
-// after each successful scan cycle.
-
-async function syncToCloud(): Promise<void> {
-  const { CLOUD_SYNC_URL, CLOUD_API_KEY, VESSEL_ID } = process.env;
-  if (!CLOUD_SYNC_URL || !CLOUD_API_KEY || !VESSEL_ID) return;
-
-  const snapshot: VesselSnapshot = {
-    devices:        db.getDevices(),
-    alerts:         db.getAlerts(),
-    internetStatus: db.getInternetStatus()!,
-    networkHealth:  db.getNetworkHealth()!,
-    timestamp:      new Date().toISOString(),
-  };
-
-  try {
-    const resp = await fetch(`${CLOUD_SYNC_URL}/v1/vessels/${VESSEL_ID}/sync`, {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${CLOUD_API_KEY}`,
-      },
-      body: JSON.stringify(snapshot),
-    });
-    if (!resp.ok) {
-      console.warn(`[Sync] Cloud sync failed: HTTP ${resp.status}`);
-    }
-  } catch (err) {
-    console.warn('[Sync] Could not reach cloud endpoint:', (err as Error).message);
-  }
-}
-
 // ── Start ─────────────────────────────────────────────────────────
 
 server.listen(PORT, () => {
@@ -231,7 +200,10 @@ server.listen(PORT, () => {
   console.log(`    WS   → ws://localhost:${PORT}`);
   console.log(`    Subnet: ${SUBNET}.0/24   Interval: ${SCAN_MS / 1000}s\n`);
 
-  // Run immediately, then on interval
-  runCycle().then(() => syncToCloud());
-  setInterval(() => runCycle().then(() => syncToCloud()), SCAN_MS);
+  // Start cloud sync timer (no-op if env vars not set)
+  startCloudSync();
+
+  // Run monitoring immediately, then on interval
+  runCycle();
+  setInterval(() => runCycle(), SCAN_MS);
 });

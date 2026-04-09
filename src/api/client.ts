@@ -1,4 +1,4 @@
-import { AGENT_URL, API_TIMEOUT } from './config';
+import { AGENT_URL, CLOUD_API_URL, API_TIMEOUT } from './config';
 import type { Device, Alert, InternetStatus, NetworkHealth } from '@/data/mock';
 
 export type { Device, Alert, InternetStatus, NetworkHealth };
@@ -85,6 +85,63 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
     return await res.json() as T;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// ── Connection mode ───────────────────────────────────────────────
+// 'local'  = talking to the vessel mini PC directly
+// 'cloud'  = local agent unreachable, falling back to cloud API
+// 'offline' = both unreachable
+
+export type ConnectionMode = 'local' | 'cloud' | 'offline';
+let _connectionMode: ConnectionMode = 'local';
+export const getConnectionMode = () => _connectionMode;
+
+// Callbacks registered by the UI to react to mode changes
+const _modeListeners: Array<(mode: ConnectionMode) => void> = [];
+export function onConnectionModeChange(fn: (mode: ConnectionMode) => void) {
+  _modeListeners.push(fn);
+}
+function setMode(m: ConnectionMode) {
+  if (m !== _connectionMode) {
+    _connectionMode = m;
+    _modeListeners.forEach(fn => fn(m));
+  }
+}
+
+/**
+ * Like fetchJSON but automatically tries the local agent first,
+ * then substitutes CLOUD_API_URL if the local agent is unreachable.
+ * Pass a relative path like "/api/snapshot".
+ */
+export async function fetchWithFallback<T>(path: string, init?: RequestInit): Promise<T> {
+  // Always try local agent first
+  const localUrl = `${AGENT_URL}${path}`;
+  try {
+    const result = await fetchJSON<T>(localUrl, init);
+    setMode('local');
+    return result;
+  } catch (localErr) {
+    // Only try cloud fallback for network errors (not 4xx/5xx from the agent)
+    const isNetworkError = localErr instanceof Error &&
+      (localErr.name === 'AbortError' || localErr.message.startsWith('Failed to fetch') ||
+       localErr.message.startsWith('NetworkError') || localErr.message.includes('fetch'));
+
+    if (!isNetworkError || !CLOUD_API_URL) {
+      setMode(_connectionMode === 'cloud' ? 'cloud' : 'offline');
+      throw localErr;
+    }
+
+    // Try cloud fallback
+    try {
+      const cloudUrl = `${CLOUD_API_URL}${path}`;
+      const result = await fetchJSON<T>(cloudUrl, init);
+      setMode('cloud');
+      return result;
+    } catch {
+      setMode('offline');
+      throw localErr; // surface the original local error
+    }
   }
 }
 

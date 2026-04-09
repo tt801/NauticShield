@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -14,10 +14,13 @@ import {
   HelpCircle,
   ShieldCheck,
   LogOut,
+  Cloud,
+  WifiOff,
 } from 'lucide-react';
 import { useClerk } from '@clerk/clerk-react';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 import { useAuthOptional } from '@/context/AuthContext';
+import { getConnectionMode, onConnectionModeChange, type ConnectionMode } from '@/api/client';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
@@ -33,6 +36,33 @@ function SignOutButton() {
     >
       <LogOut size={14} />
     </button>
+  );
+}
+
+function ConnectionBadge({ collapsed }: { collapsed: boolean }) {
+  const [mode, setMode] = useState<ConnectionMode>(getConnectionMode());
+  useEffect(() => onConnectionModeChange(setMode), []);
+
+  if (mode === 'local') return null; // normal state — no badge needed
+
+  const isCloud   = mode === 'cloud';
+  const color     = isCloud ? '#d4a847' : '#ef4444';
+  const Icon      = isCloud ? Cloud : WifiOff;
+  const label     = isCloud ? 'Cloud mode' : 'Offline';
+  const tipText   = isCloud
+    ? 'Vessel agent unreachable — showing cloud data'
+    : 'No connection — data may be stale';
+
+  return (
+    <div title={tipText} style={{
+      display: 'flex', alignItems: 'center', gap: 6,
+      padding: collapsed ? '4px 0' : '4px 12px',
+      justifyContent: collapsed ? 'center' : 'flex-start',
+      color, fontSize: 11, fontWeight: 600,
+    }}>
+      <Icon size={12} />
+      {!collapsed && label}
+    </div>
   );
 }
 
@@ -272,6 +302,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Vessel footer */}
         {!collapsed ? (
           <div style={{ padding: '12px 16px', borderTop: '1px solid #1a2535' }}>
+            <ConnectionBadge collapsed={false} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e', flexShrink: 0 }} />
@@ -285,6 +316,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         ) : (
           <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, borderTop: '1px solid #1a2535' }}>
+            <ConnectionBadge collapsed={true} />
             <div title={`${auth?.vesselName ?? 'M/Y Aurora'} — connected`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
             {hasClerk && <SignOutButton />}
           </div>
