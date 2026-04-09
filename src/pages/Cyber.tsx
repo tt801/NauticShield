@@ -26,10 +26,8 @@ import {
   Eye,
   EyeOff,
   Flame,
-  Wifi,
   WifiOff,
   Cpu,
-  Activity,
   X,
   Info,
   Ban,
@@ -779,7 +777,7 @@ function scoreScanResults(
   checks.push({
     category: 'Connectivity Resilience',
     check:    'Multi-provider failover configured',
-    status:   devices.some(d => d.provider !== devices[0]?.provider) ? 'pass' : 'warn',
+    status:   devices.some(d => (d as any).provider !== (devices[0] as any)?.provider) ? 'pass' : 'warn',
     detail:   'Verify dual-provider (Starlink + LTE) failover is tested regularly.',
     weight:   1,
     bimcoRef: 'BIMCO §3.3',
@@ -952,7 +950,7 @@ function exportEngagementBrief(
   const GREY   = [74,  90,106] as [number,number,number];
   const GREEN  = [34, 197, 94] as [number,number,number];
   const RED    = [239, 68, 68] as [number,number,number];
-  const BLUE   = [14, 165,233] as [number,number,number];
+  // const BLUE   = [14, 165,233] as [number,number,number];
   const pageW  = 210;
   const today  = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -1076,7 +1074,7 @@ function exportEngagementBrief(
       startY: y,
       margin: { left: 14, right: 14 },
       head:   [['Category', 'Check', 'Status', 'Detail', 'BIMCO', 'IMO']],
-      body:   openFindings.map(f => [f.category, f.check_name, f.status.toUpperCase(), f.detail, '', f.imoRef ?? '']),
+      body:   openFindings.map(f => [f.category, f.check_name, f.status.toUpperCase(), f.detail, '', (f as any).imoRef ?? '']),
       styles:     { font: 'helvetica', fontSize: 7, cellPadding: 2.5, textColor: WHITE, fillColor: PANEL },
       headStyles: { fillColor: [22, 33, 52] as [number,number,number], textColor: GOLD_C, fontStyle: 'bold', fontSize: 7 },
       alternateRowStyles: { fillColor: [10, 15, 24] as [number,number,number] },
@@ -1213,7 +1211,7 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
   async function markRemediated(id: string) {
     setRemediatingId(id);
     try {
-      await agentApi.cyber.updateFinding(id, { findingStatus: 'remediated', remediatedAt: new Date().toISOString() });
+      await agentApi.cyber.updateFinding(id, { findingStatus: 'remediated' });
       setDbFindings(prev => prev.map(f => f.id === id ? { ...f, findingStatus: 'remediated', remediatedAt: new Date().toISOString() } : f));
     } catch { /* ignore */ } finally {
       setRemediatingId(null);
@@ -1984,7 +1982,7 @@ function LiveThreatPulse({
   onDeviceClick: (d: Device) => void;
   isolatedIps:   Set<string>;
 }) {
-  const [tick, setTick]   = useState(0);
+  const [, setTick]   = useState(0);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
@@ -2004,7 +2002,7 @@ function LiveThreatPulse({
 
   const critical = assessed.filter(a => a.maxCvss >= 9 && !a.isolated);
   const high     = assessed.filter(a => a.maxCvss >= 7 && a.maxCvss < 9 && !a.isolated);
-  const clear    = assessed.filter(a => a.maxCvss < 4 || a.cves.length === 0);
+  const _clear   = assessed.filter(a => a.maxCvss < 4 || a.cves.length === 0); void _clear;
 
   return (
     <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 14, padding: '16px 20px' }}>

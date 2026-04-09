@@ -20,6 +20,7 @@ import {
   Cloud,
   Copy,
   RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { fetchJSON } from '@/api/client';
@@ -453,7 +454,7 @@ export default function Settings() {
                     <div style={{ color: '#4a5a6a', fontSize: 11, fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       Pending invitations
                     </div>
-                    {invitations!.data.map(inv => (
+                    {(invitations?.data ?? []).map(inv => (
                       <div key={inv.id} style={{
                         display: 'flex', alignItems: 'center', gap: 12,
                         background: '#0a0f18', border: '1px solid #1a2535',
