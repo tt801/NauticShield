@@ -1,0 +1,18 @@
+{
+  "name": "nauticshield-cloud-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NauticShield cloud API — receives vessel sync payloads and serves data to the frontend",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@clerk/backend": "^3.2.7",
+    "@supabase/supabase-js": "^2.43.4"
+  },
+  "devDependencies": {
+    "@vercel/node": "^5.0.1",
+    "typescript": "^5.4.5"
+  }
+}

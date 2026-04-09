@@ -1,4 +1,4 @@
-import { AGENT_URL, CLOUD_API_URL, API_TIMEOUT } from './config';
+import { AGENT_URL, CLOUD_API_URL, VESSEL_ID, API_TIMEOUT } from './config';
 import type { Device, Alert, InternetStatus, NetworkHealth } from '@/data/mock';
 
 export type { Device, Alert, InternetStatus, NetworkHealth };
@@ -132,9 +132,12 @@ export async function fetchWithFallback<T>(path: string, init?: RequestInit): Pr
       throw localErr;
     }
 
-    // Try cloud fallback
+    // Try cloud fallback — map /api/foo → /api/vessels/:vesselId/foo
     try {
-      const cloudUrl = `${CLOUD_API_URL}${path}`;
+      const cloudPath = VESSEL_ID
+        ? path.replace(/^\/api\//, `/api/vessels/${VESSEL_ID}/`)
+        : path;
+      const cloudUrl = `${CLOUD_API_URL}${cloudPath}`;
       const result = await fetchJSON<T>(cloudUrl, init);
       setMode('cloud');
       return result;

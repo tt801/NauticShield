@@ -17,10 +17,13 @@ import {
   Bell,
   Mail,
   MessageSquare,
+  Cloud,
+  Copy,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { fetchJSON } from '@/api/client';
-import { AGENT_URL } from '@/api/config';
+import { AGENT_URL, CLOUD_API_URL, VESSEL_ID } from '@/api/config';
 
 // ── Plan definitions ─────────────────────────────────────────────
 
@@ -122,7 +125,7 @@ export default function Settings() {
   const { organization, memberships, invitations } = useOrganization({ memberships: true, invitations: true });
   const { signOut, openUserProfile }  = useClerk();
 
-  const [activeTab, setActiveTab]     = useState<'account' | 'users' | 'subscription' | 'security' | 'notifications'>('account');
+  const [activeTab, setActiveTab]     = useState<'account' | 'users' | 'subscription' | 'security' | 'notifications' | 'cloud'>('account');
 
   // ── Notification prefs ────────────────────────────────────────
   type CategoryPref = { email: boolean; sms: boolean };
@@ -165,12 +168,59 @@ export default function Settings() {
 
   const currentPlan = PLANS.find(p => p.id === CURRENT_PLAN_ID) ?? PLANS[2];
 
+  // ── Cloud Sync ────────────────────────────────────────────────────
+  const [cloudVesselId,    setCloudVesselId]    = useState(VESSEL_ID);
+  const [cloudName,        setCloudName]        = useState('');
+  const [cloudApiKey,      setCloudApiKey]      = useState('');
+  const [cloudRegistering, setCloudRegistering] = useState(false);
+  const [cloudMsg,         setCloudMsg]         = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [cloudVessels,     setCloudVessels]     = useState<Array<{ id: string; name: string; last_synced_at: string | null }> | null>(null);
+  const [cloudCopied,      setCloudCopied]      = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'cloud' || !CLOUD_API_URL) return;
+    fetchJSON<Array<{ id: string; name: string; last_synced_at: string | null }>>(`${CLOUD_API_URL}/api/vessels`)
+      .then(setCloudVessels)
+      .catch(() => setCloudVessels([]));
+  }, [activeTab]);
+
+  async function handleRegisterVessel() {
+    if (!cloudVesselId.trim() || !CLOUD_API_URL) return;
+    setCloudRegistering(true);
+    setCloudMsg(null);
+    setCloudApiKey('');
+    try {
+      const result = await fetchJSON<{ vesselId: string; apiKey: string }>(
+        `${CLOUD_API_URL}/api/vessels`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vesselId: cloudVesselId.trim(), name: cloudName.trim() || cloudVesselId.trim() }) },
+      );
+      setCloudApiKey(result.apiKey);
+      setCloudMsg({ type: 'ok', text: 'Vessel registered! Copy the API key below to your mini PC .env.' });
+      // refresh list
+      fetchJSON<Array<{ id: string; name: string; last_synced_at: string | null }>>(`${CLOUD_API_URL}/api/vessels`)
+        .then(setCloudVessels).catch(() => {});
+    } catch (e: unknown) {
+      setCloudMsg({ type: 'err', text: e instanceof Error ? e.message : 'Registration failed' });
+    } finally {
+      setCloudRegistering(false);
+    }
+  }
+
+  function copyApiKey() {
+    if (!cloudApiKey) return;
+    navigator.clipboard.writeText(cloudApiKey);
+    setCloudCopied(true);
+    setTimeout(() => setCloudCopied(false), 2000);
+  }
+
   const tabs: { id: typeof activeTab; label: string; icon: React.ElementType; require?: boolean }[] = [
     { id: 'account',       label: 'Account',       icon: ShieldCheck },
     { id: 'users',         label: 'Users & Roles',  icon: Users,      require: auth.can('settings:manage_users') },
     { id: 'subscription',  label: 'Subscription',   icon: CreditCard, require: auth.can('settings:manage_billing') },
     { id: 'security',      label: 'Security',       icon: Lock },
     { id: 'notifications', label: 'Notifications',  icon: Bell },
+    { id: 'cloud',         label: 'Cloud Sync',     icon: Cloud },
   ];
 
   return (
@@ -833,6 +883,164 @@ export default function Settings() {
         <div style={{ color: '#4a5a6a', fontSize: 13, padding: 40, textAlign: 'center' }}>
           Loading notification preferences…
         </div>
+      )}
+
+      {/* ── Cloud Sync tab ──────────────────────────────────────── */}
+      {activeTab === 'cloud' && (
+        <>
+          {!CLOUD_API_URL && (
+            <Card>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                <AlertTriangle size={20} color="#d4a847" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <div style={{ color: '#f0f4f8', fontSize: 14, fontWeight: 700, marginBottom: 6 }}>
+                    Cloud API not configured
+                  </div>
+                  <div style={{ color: '#6b7f92', fontSize: 13, lineHeight: 1.7 }}>
+                    Add <code style={{ background: '#1a2535', padding: '1px 6px', borderRadius: 4 }}>VITE_CLOUD_API_URL=https://your-app.vercel.app</code> and{' '}
+                    <code style={{ background: '#1a2535', padding: '1px 6px', borderRadius: 4 }}>VITE_VESSEL_ID=MY_VESSEL</code> to your <code style={{ background: '#1a2535', padding: '1px 6px', borderRadius: 4 }}>.env.local</code> then restart the dev server.
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Register vessel */}
+          <Card>
+            <SectionTitle icon={Cloud} label="Register Vessel with Cloud" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ color: '#6b7f92', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                    Vessel ID (matches VITE_VESSEL_ID on mini PC)
+                  </label>
+                  <input
+                    value={cloudVesselId}
+                    onChange={e => setCloudVesselId(e.target.value)}
+                    placeholder="e.g. MY_AURORA"
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      background: '#111827', border: '1px solid #1a2535', borderRadius: 8,
+                      color: '#f0f4f8', padding: '10px 12px', fontSize: 13,
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ color: '#6b7f92', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                    Display Name (optional)
+                  </label>
+                  <input
+                    value={cloudName}
+                    onChange={e => setCloudName(e.target.value)}
+                    placeholder="e.g. M/Y Aurora"
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      background: '#111827', border: '1px solid #1a2535', borderRadius: 8,
+                      color: '#f0f4f8', padding: '10px 12px', fontSize: 13,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <button
+                  onClick={handleRegisterVessel}
+                  disabled={!cloudVesselId.trim() || !CLOUD_API_URL || cloudRegistering}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: 'linear-gradient(135deg, #d4a847, #b8922f)',
+                    color: '#080b10', border: 'none', borderRadius: 10,
+                    padding: '11px 22px', fontSize: 13, fontWeight: 700,
+                    cursor: (!cloudVesselId.trim() || !CLOUD_API_URL || cloudRegistering) ? 'not-allowed' : 'pointer',
+                    opacity: (!cloudVesselId.trim() || !CLOUD_API_URL || cloudRegistering) ? 0.6 : 1,
+                  }}
+                >
+                  <RefreshCw size={14} /> {cloudRegistering ? 'Registering…' : 'Register / Re-register Vessel'}
+                </button>
+                {cloudMsg && (
+                  <span style={{ fontSize: 13, color: cloudMsg.type === 'ok' ? '#22c55e' : '#ef4444' }}>
+                    {cloudMsg.text}
+                  </span>
+                )}
+              </div>
+
+              {cloudApiKey && (
+                <div style={{ background: '#050912', border: '1px solid #22c55e33', borderRadius: 10, padding: 16 }}>
+                  <div style={{ color: '#22c55e', fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
+                    API key — copy this now, it will not be shown again
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <code style={{
+                      flex: 1, fontFamily: 'monospace', fontSize: 13, color: '#f0f4f8',
+                      background: '#0d1421', padding: '10px 14px', borderRadius: 8,
+                      wordBreak: 'break-all',
+                    }}>
+                      {cloudApiKey}
+                    </code>
+                    <button
+                      onClick={copyApiKey}
+                      style={{
+                        flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
+                        background: cloudCopied ? '#22c55e22' : '#1a2535',
+                        color: cloudCopied ? '#22c55e' : '#f0f4f8',
+                        border: 'none', borderRadius: 8, padding: '10px 14px',
+                        fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >
+                      <Copy size={13} /> {cloudCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <div style={{ color: '#4a5a6a', fontSize: 12, marginTop: 10, lineHeight: 1.7 }}>
+                    On your mini PC, add to <code style={{ background: '#1a2535', padding: '1px 5px', borderRadius: 3 }}>agent/.env</code>:
+                    <br />
+                    <code style={{ color: '#d4a847' }}>CLOUD_API_KEY={cloudApiKey}</code>
+                    <br />
+                    <code style={{ color: '#d4a847' }}>CLOUD_SYNC_URL={CLOUD_API_URL}</code>
+                    <br />
+                    Then run <code style={{ background: '#1a2535', padding: '1px 5px', borderRadius: 3 }}>docker compose up -d</code> to apply.
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Registered vessels */}
+          <Card>
+            <SectionTitle icon={Cloud} label="Registered Vessels" />
+            {cloudVessels === null && CLOUD_API_URL ? (
+              <div style={{ color: '#4a5a6a', fontSize: 13 }}>Loading…</div>
+            ) : !cloudVessels?.length ? (
+              <div style={{ color: '#4a5a6a', fontSize: 13 }}>No vessels registered yet.</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    {(['Vessel ID', 'Name', 'Last Synced'] as const).map(h => (
+                      <th key={h} style={{ textAlign: 'left', color: '#4a5a6a', fontSize: 11, fontWeight: 700, letterSpacing: 0.8, paddingBottom: 12, textTransform: 'uppercase' }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {cloudVessels.map((v, i) => (
+                    <tr key={v.id} style={{ borderTop: i > 0 ? '1px solid #1a2535' : undefined }}>
+                      <td style={{ padding: '12px 0' }}>
+                        <code style={{ color: '#d4a847', fontSize: 13 }}>{v.id}</code>
+                      </td>
+                      <td style={{ padding: '12px 0', color: '#f0f4f8', fontSize: 13 }}>{v.name}</td>
+                      <td style={{ padding: '12px 0', color: '#6b7f92', fontSize: 12 }}>
+                        {v.last_synced_at
+                          ? new Date(v.last_synced_at).toLocaleString()
+                          : <span style={{ color: '#4a5a6a' }}>Never</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </Card>
+        </>
       )}
     </div>
   );
