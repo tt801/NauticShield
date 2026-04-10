@@ -4,6 +4,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:4173',
   'https://nautic-shield.vercel.app',
+  'https://nautic-shield-app.vercel.app',
 ];
 
 /**
