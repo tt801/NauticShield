@@ -9,11 +9,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { supabase }            from '../lib/supabase';
 import { verifyVesselApiKey }  from '../lib/auth';
+import { writeAudit }          from '../lib/audit';
+import { rateLimit }           from '../lib/rateLimit';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  // 20 syncs/min per IP — prevents accidental hammering
+  if (rateLimit(req, res, 20, 60_000)) return;
 
   const vessel = await verifyVesselApiKey(req);
   if (!vessel) return res.status(401).json({ error: 'Invalid API key' });
@@ -86,6 +91,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         { onConflict: 'id,vessel_id' },
       );
   }
+
+  await writeAudit({
+    org_id:   vessel.org_id,
+    actor:    'agent',
+    action:   'sync.push',
+    resource: vessel.id,
+    metadata: { deviceCount: (devices ?? []).length, alertCount: (alerts ?? []).length },
+  }, req);
 
   return res.status(200).json({ ok: true, syncedAt });
 }

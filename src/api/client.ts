@@ -115,6 +115,20 @@ function setMode(m: ConnectionMode) {
  * Pass a relative path like "/api/snapshot".
  */
 export async function fetchWithFallback<T>(path: string, init?: RequestInit): Promise<T> {
+  // If no local agent is configured, go straight to cloud
+  if (!AGENT_URL) {
+    if (!CLOUD_API_URL) { setMode('offline'); throw new Error('No agent or cloud URL configured'); }
+    try {
+      const cloudPath = VESSEL_ID ? path.replace(/^\/api\//, `/api/vessels/${VESSEL_ID}/`) : path;
+      const result = await fetchJSON<T>(`${CLOUD_API_URL}${cloudPath}`, init);
+      setMode('cloud');
+      return result;
+    } catch {
+      setMode('offline');
+      throw new Error('Cloud API unreachable');
+    }
+  }
+
   // Always try local agent first
   const localUrl = `${AGENT_URL}${path}`;
   try {

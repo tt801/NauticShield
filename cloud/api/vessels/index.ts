@@ -8,7 +8,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { randomUUID }         from 'crypto';
 import { supabase }           from '../../lib/supabase';
 import { verifyClerkJWT, hashApiKey } from '../../lib/auth';
-import { cors } from '../../lib/cors';
+import { cors }               from '../../lib/cors';
+import { writeAudit }         from '../../lib/audit';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -50,6 +51,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }, { onConflict: 'id' });
 
     if (error) return res.status(500).json({ error: error.message });
+
+    await writeAudit({
+      org_id:   orgId,
+      actor:    auth.userId,
+      action:   'vessel.register',
+      resource: vesselId,
+      metadata: { name: name ?? vesselId },
+    }, req);
 
     // The plain API key is returned once — store it in the vessel .env immediately.
     return res.status(201).json({ vesselId, apiKey });

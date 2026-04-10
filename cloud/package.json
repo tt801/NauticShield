@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@clerk/backend": "^3.2.7",
+    "@sentry/node": "^10.48.0",
     "@supabase/supabase-js": "^2.43.4"
   },
   "devDependencies": {
