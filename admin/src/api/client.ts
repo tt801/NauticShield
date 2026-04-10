@@ -44,6 +44,7 @@ export interface AdminUser {
   role:       string;
   createdAt:  string;
   lastSignIn: string | null;
+  banned:     boolean;
 }
 
 export interface AuditRow {
@@ -79,6 +80,16 @@ export const adminApi = {
   team: {
     setRole: (userId: string, role: string) =>
       apiCall<{ ok: boolean }>('/api/admin/team', { method: 'PATCH', body: JSON.stringify({ userId, role }) }),
+    invite: (email: string, role: string) =>
+      apiCall<{ ok: boolean; message?: string }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'invite', email, role }) }),
+    deleteUser: (userId: string) =>
+      apiCall<{ ok: boolean }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'delete', userId }) }),
+    ban: (userId: string) =>
+      apiCall<{ ok: boolean }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'ban', userId }) }),
+    unban: (userId: string) =>
+      apiCall<{ ok: boolean }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'unban', userId }) }),
+    resetPassword: (userId: string) =>
+      apiCall<{ ok: boolean; message?: string }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'reset_password', userId }) }),
   },
   shell: {
     getToken: (vesselId: string) =>

@@ -45,13 +45,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(502).json({ error: `Clerk API error: ${text}` });
   }
 
-  await writeAudit(req, {
-    orgId:    null,
+  await writeAudit({
     actor:    admin.userId,
     action:   'team.role_change',
     resource: userId,
     metadata: { newRole: role },
-  });
+  }, req);
 
   return res.json({ ok: true });
 }

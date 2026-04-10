@@ -39,6 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     public_metadata: Record<string, unknown>;
     created_at:  number;
     last_sign_in_at: number | null;
+    banned:      boolean;
   }>;
 
   return res.json(
@@ -50,6 +51,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       role:        (u.public_metadata?.role as string | undefined) ?? 'user',
       createdAt:   new Date(u.created_at).toISOString(),
       lastSignIn:  u.last_sign_in_at ? new Date(u.last_sign_in_at).toISOString() : null,
+      banned:      u.banned ?? false,
     })),
   );
 }
