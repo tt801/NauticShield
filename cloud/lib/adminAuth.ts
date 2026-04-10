@@ -35,7 +35,8 @@ export async function verifyAdminJWT(req: VercelRequest): Promise<AdminAuth | nu
       orgId:  (payload as Record<string, unknown>).org_id as string | null ?? null,
       role,
     };
-  } catch {
+  } catch (err) {
+    console.error('[adminAuth] verifyToken failed:', (err as Error).message);
     return null;
   }
 }
