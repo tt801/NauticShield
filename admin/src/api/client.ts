@@ -76,4 +76,12 @@ export const adminApi = {
       return apiCall<{ total: number; rows: AuditRow[] }>(`/api/admin/audit?${qs}`);
     },
   },
+  team: {
+    setRole: (userId: string, role: string) =>
+      apiCall<{ ok: boolean }>('/api/admin/team', { method: 'PATCH', body: JSON.stringify({ userId, role }) }),
+  },
+  shell: {
+    getToken: (vesselId: string) =>
+      apiCall<{ token: string; vesselId: string; expiresIn: number }>('/api/admin/shell-token', { method: 'POST', body: JSON.stringify({ vesselId }) }),
+  },
 };

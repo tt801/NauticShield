@@ -1,0 +1,16 @@
+{
+  "name": "nauticshield-relay",
+  "version": "1.0.0",
+  "description": "WebSocket relay server — proxies shell sessions between ship agents and admin portal",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev":   "node --watch server.js"
+  },
+  "dependencies": {
+    "ws": "^8.17.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

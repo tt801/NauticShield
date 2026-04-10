@@ -3,11 +3,13 @@ import { dark } from '@clerk/themes'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { setTokenProvider } from '@/api/client'
-import Layout            from '@/components/Layout'
-import FleetOverview     from '@/pages/FleetOverview'
+import Layout             from '@/components/Layout'
+import FleetOverview      from '@/pages/FleetOverview'
 import CustomerManagement from '@/pages/CustomerManagement'
-import PaymentsDashboard from '@/pages/PaymentsDashboard'
-import AuditLog          from '@/pages/AuditLog'
+import PaymentsDashboard  from '@/pages/PaymentsDashboard'
+import AuditLog           from '@/pages/AuditLog'
+import TeamAccess         from '@/pages/TeamAccess'
+import Shell              from '@/pages/Shell'
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 
@@ -60,6 +62,8 @@ export default function App() {
                 <Route path="/customers"  element={<CustomerManagement />} />
                 <Route path="/payments"   element={<PaymentsDashboard />} />
                 <Route path="/audit"      element={<AuditLog />} />
+                <Route path="/team"       element={<TeamAccess />} />
+                <Route path="/shell"      element={<Shell />} />
                 <Route path="*"           element={<Navigate to="/fleet" replace />} />
               </Routes>
             </Layout>

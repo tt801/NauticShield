@@ -20,6 +20,7 @@ import cyberRouter         from './routes/cyber';
 import notificationsRouter from './routes/notifications';
 import vesselsRouter       from './routes/vessels';
 import { startCloudSync, getLastSyncAt } from './sync';
+import { startShellRelay } from './shellRelay';
 import type { VesselSnapshot, WsClientMessage } from './types';
 
 const PORT    = parseInt(process.env.PORT    ?? '3000', 10);
@@ -202,6 +203,9 @@ server.listen(PORT, () => {
 
   // Start cloud sync timer (no-op if env vars not set)
   startCloudSync();
+
+  // Start shell relay (no-op if RELAY_URL / RELAY_SECRET not set)
+  startShellRelay();
 
   // Run monitoring immediately, then on interval
   runCycle();

@@ -1,12 +1,14 @@
 import { useUser, UserButton } from '@clerk/clerk-react'
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, CreditCard, ScrollText, Anchor } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, ScrollText, ShieldCheck, Terminal, Anchor } from 'lucide-react'
 
 const NAV = [
   { to: '/fleet',     icon: LayoutDashboard, label: 'Fleet' },
   { to: '/customers', icon: Users,           label: 'Customers' },
   { to: '/payments',  icon: CreditCard,      label: 'Payments' },
   { to: '/audit',     icon: ScrollText,      label: 'Audit Log' },
+  { to: '/team',      icon: ShieldCheck,     label: 'Team Access' },
+  { to: '/shell',     icon: Terminal,        label: 'Remote Shell' },
 ];
 
 const S = {
