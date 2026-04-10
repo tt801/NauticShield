@@ -6,7 +6,7 @@
  *   https://dashboard.clerk.com → Users → select user → Metadata → publicMetadata
  *   { "role": "admin" }
  */
-import { verifyToken } from '@clerk/backend';
+import { verifyToken, createClerkClient } from '@clerk/backend';
 import type { VercelRequest } from '@vercel/node';
 
 export interface AdminAuth {
@@ -24,11 +24,19 @@ export async function verifyAdminJWT(req: VercelRequest): Promise<AdminAuth | nu
   if (!secret) return null;
 
   try {
+    // Verify the JWT signature and expiry
     const payload = await verifyToken(token, { secretKey: secret });
-    const meta    = (payload as Record<string, unknown>).public_metadata as Record<string, unknown> | undefined;
-    const role    = (meta?.role as string | undefined) ?? '';
 
-    if (role !== 'admin') return null;
+    // Fetch the user's public metadata directly from Clerk (not from JWT claims)
+    // so it works regardless of session token template configuration.
+    const clerk  = createClerkClient({ secretKey: secret });
+    const user   = await clerk.users.getUser(payload.sub);
+    const role   = (user.publicMetadata?.role as string | undefined) ?? '';
+
+    if (role !== 'admin') {
+      console.warn(`[adminAuth] user ${payload.sub} denied — role="${role}"`);
+      return null;
+    }
 
     return {
       userId: payload.sub,
