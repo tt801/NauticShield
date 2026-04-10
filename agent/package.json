@@ -17,6 +17,7 @@
     "resend": "^6.10.0",
     "twilio": "^5.13.1",
     "uuid": "^9.0.0",
+    "node-pty": "^1.0.0",
     "ws": "^8.17.0"
   },
   "devDependencies": {

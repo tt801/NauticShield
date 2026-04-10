@@ -2,14 +2,13 @@
  * Shell Relay Client — runs on the vessel agent
  *
  * On startup (if RELAY_URL + RELAY_SECRET are set), connects to the relay
- * server and spawns a /bin/sh session. Shell output is streamed to the relay;
+ * server and spawns a PTY shell session. Shell output is streamed to the relay;
  * keystrokes from the admin browser are written to the shell stdin.
  *
  * Reconnects automatically on disconnect (10 second backoff).
  */
 import crypto from 'crypto';
-import { spawn } from 'child_process';
-import type { ChildProcessWithoutNullStreams } from 'child_process';
+import * as pty from 'node-pty';
 import WebSocket from 'ws';
 
 const RELAY_URL    = process.env.RELAY_URL;
@@ -31,40 +30,40 @@ function connect(): void {
   const url   = `${RELAY_URL}/ws?type=agent&vesselId=${encodeURIComponent(VESSEL_ID)}&token=${token}`;
 
   const ws = new WebSocket(url);
-  let shell: ChildProcessWithoutNullStreams | null = null;
+  let shell: pty.IPty | null = null;
 
   ws.on('open', () => {
     console.log('[shell-relay] Connected to relay');
 
-    // Use /bin/sh — always available on Alpine/Linux Docker images
-    shell = spawn('/bin/sh', [], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env:   { ...process.env, TERM: 'xterm-256color', PS1: '$ ' },
+    shell = pty.spawn('/bin/bash', [], {
+      name: 'xterm-256color',
+      cols: 220,
+      rows: 50,
+      env:  { ...process.env as Record<string, string> },
     });
 
-    shell.stdout.on('data', (data: Buffer) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data);
-    });
-    shell.stderr.on('data', (data: Buffer) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data);
+    shell.onData((data: string) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(Buffer.from(data, 'binary'));
     });
 
-    shell.on('close', code => {
-      console.log(`[shell-relay] Shell exited (code ${code})`);
+    shell.onExit(({ exitCode }) => {
+      console.log(`[shell-relay] Shell exited (code ${exitCode})`);
       ws.close();
     });
   });
 
   ws.on('message', (data: Buffer | string) => {
     // Control messages are JSON strings; raw terminal input is binary
-    if (typeof data === 'string' || (data instanceof Buffer && data[0] === 0x7b)) {
+    if (typeof data === 'string') {
       try {
-        const msg = JSON.parse(data.toString()) as { __ctrl?: string };
+        const msg = JSON.parse(data) as { __ctrl?: string };
         if (msg.__ctrl) return; // ignore relay control frames
-      } catch { /* not JSON — fall through to write to shell */ }
+      } catch { /* not JSON — fall through */ }
+      shell?.write(data);
+      return;
     }
-    if (shell && !shell.killed) {
-      shell.stdin.write(data);
+    if (shell) {
+      shell.write(data.toString('binary'));
     }
   });
 
@@ -77,7 +76,6 @@ function connect(): void {
   });
 
   ws.on('error', (err: Error) => {
-    // Don't log ECONNREFUSED spam — relay may not be deployed yet
     if (!err.message.includes('ECONNREFUSED')) {
       console.error('[shell-relay] Error:', err.message);
     }
