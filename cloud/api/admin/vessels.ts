@@ -1,5 +1,6 @@
 /**
  * GET  /api/admin/vessels          — list all vessels across all orgs
+ * POST /api/admin/vessels          — manually create a vessel (trial/test)
  * PATCH /api/admin/vessels/:id     — update subscription fields
  *
  * Requires admin Clerk JWT (publicMetadata.role === "admin").
@@ -25,6 +26,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (error) return res.status(500).json({ error: error.message });
     return res.json(data ?? []);
+  }
+
+  // ── POST /api/admin/vessels ───────────────────────────────────────
+  if (req.method === 'POST') {
+    const { org_id, name, plan, subscription_status, trial_ends_at } = req.body as {
+      org_id?: string;
+      name?: string;
+      plan?: string;
+      subscription_status?: string;
+      trial_ends_at?: string;
+    };
+
+    if (!org_id || !name) return res.status(400).json({ error: 'org_id and name are required' });
+
+    const { data, error } = await supabase
+      .from('vessels')
+      .insert({
+        org_id,
+        name,
+        plan:                plan                ?? 'trial',
+        subscription_status: subscription_status ?? 'trialing',
+        trial_ends_at:       trial_ends_at       ?? new Date(Date.now() + 14 * 86400_000).toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    await writeAudit({ actor: admin.userId, action: 'admin.vessel.create', resource: data.id, metadata: { org_id, name, plan } }, req);
+    return res.status(201).json(data);
   }
 
   // ── PATCH /api/admin/vessels/:id ──────────────────────────────────

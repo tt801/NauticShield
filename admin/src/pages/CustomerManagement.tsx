@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { adminApi, type AdminUser } from '../api/client'
+import { UserPlus } from 'lucide-react'
 
 const S = {
   header:  { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 } as React.CSSProperties,
@@ -36,6 +37,12 @@ export default function CustomerManagement() {
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
 
+  // Invite modal
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviting, setInviting] = useState(false)
+  const [inviteMsg, setInviteMsg] = useState('')
+
   async function load() {
     setLoading(true)
     try {
@@ -50,6 +57,24 @@ export default function CustomerManagement() {
 
   useEffect(() => { load() }, [])
 
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault()
+    if (!inviteEmail.trim()) return
+    setInviting(true)
+    setInviteMsg('')
+    try {
+      await adminApi.users.invite(inviteEmail.trim())
+      setInviteMsg(`Invitation sent to ${inviteEmail}`)
+      setInviteEmail('')
+      setTimeout(() => { setInviteOpen(false); setInviteMsg('') }, 2000)
+      load()
+    } catch (err) {
+      setInviteMsg(err instanceof Error ? err.message : 'Failed to invite')
+    } finally {
+      setInviting(false)
+    }
+  }
+
   const filtered = users.filter(u => {
     const q = query.toLowerCase()
     return !q ||
@@ -59,6 +84,36 @@ export default function CustomerManagement() {
 
   return (
     <div style={{ flex: 1 }}>
+      {/* Invite modal */}
+      {inviteOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#0a0f18', border: '1px solid #1e2d3d', borderRadius: 14, padding: '32px', width: 400 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: '#e8edf2', marginBottom: 20 }}>Invite Customer</h2>
+            <form onSubmit={handleInvite} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <input
+                type="email"
+                required
+                placeholder="customer@example.com"
+                value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)}
+                style={{ padding: '10px 14px', background: '#07090e', border: '1px solid #1e2d3d', borderRadius: 8, color: '#e8edf2', fontSize: 14, outline: 'none' }}
+              />
+              {inviteMsg && (
+                <p style={{ fontSize: 13, color: inviteMsg.startsWith('Inv') ? '#22c55e' : '#f87171' }}>{inviteMsg}</p>
+              )}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="submit" disabled={inviting} style={{ flex: 1, padding: '9px', borderRadius: 8, background: '#0ea5e9', color: '#fff', fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer' }}>
+                  {inviting ? 'Sending…' : 'Send Invitation'}
+                </button>
+                <button type="button" onClick={() => { setInviteOpen(false); setInviteMsg('') }} style={{ padding: '9px 16px', borderRadius: 8, background: 'transparent', color: '#6b7280', fontWeight: 600, fontSize: 13, border: '1px solid #1e2d3d', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div style={S.header}>
         <div>
           <h1 style={S.h1}>Customers</h1>
@@ -71,6 +126,9 @@ export default function CustomerManagement() {
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
+          <button style={{ ...S.btn, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => setInviteOpen(true)}>
+            <UserPlus size={13} /> Invite Customer
+          </button>
           <button style={S.btn} onClick={load}>Refresh</button>
         </div>
       </div>

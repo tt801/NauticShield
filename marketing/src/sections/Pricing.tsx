@@ -1,16 +1,37 @@
+import { useState } from 'react'
 import { Check, Anchor } from 'lucide-react'
 
-const CLERK_SIGNUP_URL = 'https://accounts.nautic-shield.vercel.app/sign-up'
+const CLOUD_API = 'https://nautic-shield.vercel.app'
+
+async function startCheckout(plan: string) {
+  try {
+    const res = await fetch(`${CLOUD_API}/api/stripe/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan }),
+    })
+    const data = await res.json() as { url?: string; error?: string }
+    if (data.url) {
+      window.location.href = data.url
+    } else {
+      alert(data.error ?? 'Could not start checkout. Please try again.')
+    }
+  } catch {
+    alert('Connection error. Please try again.')
+  }
+}
 
 const PLANS = [
   {
     name: 'Coastal',
+    checkoutPlan: 'coastal',
     tagline: 'For day-sailers & coastal cruisers',
     price: '2,400',
     period: '/year',
     vessels: '1 vessel',
     highlight: false,
     features: [
+      '14-day free trial included',
       'Continuous network monitoring',
       'Automated threat alerts',
       'Monthly vulnerability scan',
@@ -22,6 +43,7 @@ const PLANS = [
   },
   {
     name: 'Superyacht',
+    checkoutPlan: 'superyacht',
     tagline: 'For private superyachts & expedition vessels',
     price: '9,600',
     period: '/year',
@@ -41,6 +63,7 @@ const PLANS = [
   },
   {
     name: 'Fleet',
+    checkoutPlan: null,
     tagline: 'For family offices, fleets & charter ops',
     price: 'Custom',
     period: '',
@@ -58,7 +81,7 @@ const PLANS = [
     ],
     cta: 'Contact Sales',
   },
-]
+] as const
 
 const S: Record<string, React.CSSProperties> = {
   section: {
@@ -119,6 +142,18 @@ const S: Record<string, React.CSSProperties> = {
 }
 
 function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
+  const [loading, setLoading] = useState(false)
+
+  async function handleCta() {
+    if (plan.checkoutPlan === null) {
+      window.location.href = '#contact'
+      return
+    }
+    setLoading(true)
+    await startCheckout(plan.checkoutPlan)
+    setLoading(false)
+  }
+
   const card: React.CSSProperties = {
     borderRadius: 16,
     padding: '36px 32px',
@@ -170,10 +205,12 @@ function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
         ))}
       </ul>
 
-      <a
-        href={plan.name === 'Fleet' ? '#contact' : CLERK_SIGNUP_URL}
+      <button
+        onClick={handleCta}
+        disabled={loading}
         style={{
           display: 'block',
+          width: '100%',
           textAlign: 'center',
           padding: '13px 0',
           borderRadius: 10,
@@ -184,8 +221,12 @@ function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
           color: plan.highlight ? '#fff' : '#6b7f90',
           border: plan.highlight ? '1px solid transparent' : '1px solid #1e2d3d',
           boxShadow: plan.highlight ? '0 0 24px #0ea5e930' : 'none',
+          cursor: loading ? 'wait' : 'pointer',
+          opacity: loading ? 0.7 : 1,
+          fontFamily: 'inherit',
         }}
         onMouseEnter={e => {
+          if (loading) return
           const el = e.currentTarget as HTMLElement
           if (plan.highlight) { el.style.boxShadow = '0 0 40px #0ea5e960'; el.style.transform = 'translateY(-1px)' }
           else { el.style.borderColor = '#0ea5e950'; el.style.color = '#e8edf2' }
@@ -196,8 +237,8 @@ function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
           else { el.style.borderColor = '#1e2d3d'; el.style.color = '#6b7f90' }
         }}
       >
-        {plan.cta}
-      </a>
+        {loading ? 'Redirecting…' : plan.cta}
+      </button>
     </div>
   )
 }

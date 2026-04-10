@@ -63,10 +63,13 @@ export interface AuditRow {
 export const adminApi = {
   vessels: {
     list:   ()                                              => apiCall<AdminVessel[]>('/api/admin/vessels'),
+    create: (body: { org_id: string; name: string; plan?: string; subscription_status?: string; trial_ends_at?: string }) =>
+      apiCall<AdminVessel>('/api/admin/vessels', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, patch: Partial<AdminVessel>)      => apiCall<{ ok: boolean }>(`/api/admin/vessels?id=${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   },
   users: {
-    list: (limit = 100, offset = 0) => apiCall<AdminUser[]>(`/api/admin/users?limit=${limit}&offset=${offset}`),
+    list:   (limit = 100, offset = 0) => apiCall<AdminUser[]>(`/api/admin/users?limit=${limit}&offset=${offset}`),
+    invite: (email: string)           => apiCall<{ ok: boolean; message?: string }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'invite', email, role: 'user' }) }),
   },
   audit: {
     list: (params?: { limit?: number; offset?: number; action?: string }) => {
