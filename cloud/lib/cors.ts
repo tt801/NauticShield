@@ -3,8 +3,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:4173',
+  'http://localhost:5174',
   'https://nautic-shield.vercel.app',
   'https://nautic-shield-app.vercel.app',
+  'https://nautic-shield-admin.vercel.app',
 ];
 
 /**
