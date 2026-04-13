@@ -22,7 +22,7 @@ const S: Record<string, React.CSSProperties> = {
     display: 'grid',
     gridTemplateColumns: 'minmax(0, 1.02fr) minmax(380px, 0.98fr)',
     gap: 48,
-    alignItems: 'center',
+    alignItems: 'start',
   },
   content: {
     display: 'flex',
@@ -126,13 +126,13 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 44,
     flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     borderTop: '1px solid #0f1923',
     paddingTop: 28,
     paddingBottom: 28,
-    marginTop: 0,
+    marginTop: 24,
     width: '100%',
-    maxWidth: 780,
+    maxWidth: 1180,
   },
   stat: {
     display: 'flex',
@@ -154,10 +154,11 @@ const S: Record<string, React.CSSProperties> = {
   },
   visualWrap: {
     position: 'relative',
-    minHeight: 500,
+    minHeight: 420,
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
+    paddingTop: 8,
   },
   visualHalo: {
     position: 'absolute',
@@ -171,8 +172,8 @@ const S: Record<string, React.CSSProperties> = {
   visualPanel: {
     position: 'relative',
     width: '100%',
-    maxWidth: 520,
-    minHeight: 470,
+    maxWidth: 470,
+    minHeight: 420,
     borderRadius: 28,
     border: '1px solid rgba(42, 80, 113, 0.7)',
     background: 'linear-gradient(180deg, rgba(8,18,30,0.96) 0%, rgba(7,14,24,0.98) 100%)',
@@ -190,7 +191,7 @@ const S: Record<string, React.CSSProperties> = {
   panelBody: {
     position: 'relative',
     padding: '20px 18px 18px',
-    minHeight: 414,
+    minHeight: 364,
     backgroundImage: 'linear-gradient(to right, rgba(14,165,233,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(14,165,233,0.05) 1px, transparent 1px)',
     backgroundSize: '42px 42px',
   },
@@ -208,7 +209,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   vesselCanvas: {
     position: 'relative',
-    height: 240,
+    height: 215,
     borderRadius: 24,
     border: '1px solid rgba(25, 47, 67, 0.9)',
     background: 'radial-gradient(circle at 50% 22%, rgba(56,189,248,0.12), transparent 34%), linear-gradient(180deg, rgba(10,17,28,0.95), rgba(7,13,22,0.98))',
@@ -381,22 +382,25 @@ export default function Hero() {
             </a>
           </div>
 
-          <div style={S.statsRow}>
-            {[
-              { num: '99.97%', label: 'Uptime SLA' },
-              { num: '<4s', label: 'Threat Response' },
-              { num: '256-bit', label: 'AES Encryption' },
-              { num: 'Zero', label: 'Data Breaches' },
-            ].map(({ num, label }) => (
-              <div key={label} style={S.stat}>
-                <span style={S.statNum}>{num}</span>
-                <span style={S.statLabel}>{label}</span>
-              </div>
-            ))}
-          </div>
         </div>
 
         <HeroVisual />
+      </div>
+
+      <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 1180 }}>
+        <div style={S.statsRow}>
+          {[
+            { num: '99.97%', label: 'Uptime SLA' },
+            { num: '<4s', label: 'Threat Response' },
+            { num: '256-bit', label: 'AES Encryption' },
+            { num: 'Zero', label: 'Data Breaches' },
+          ].map(({ num, label }) => (
+            <div key={label} style={S.stat}>
+              <span style={S.statNum}>{num}</span>
+              <span style={S.statLabel}>{label}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       <style>{`
