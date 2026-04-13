@@ -85,7 +85,7 @@ const PLANS = [
 
 const S: Record<string, React.CSSProperties> = {
   section: {
-    padding: '100px 24px',
+    padding: '64px 24px',
     background: '#05080f',
     position: 'relative',
     overflow: 'hidden',
@@ -109,7 +109,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   header: {
     textAlign: 'center',
-    marginBottom: 64,
+    marginBottom: 44,
   },
   eyebrow: {
     fontSize: 11,

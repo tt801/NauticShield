@@ -11,7 +11,7 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    padding: '88px 24px 28px',
+    padding: '80px 24px 0',
   },
   grid: {
     position: 'absolute',
@@ -112,7 +112,8 @@ const S: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
     justifyContent: 'center',
     borderTop: '1px solid #0f1923',
-    paddingTop: 34,
+    paddingTop: 28,
+    paddingBottom: 28,
     marginTop: 0,
     width: '100%',
     maxWidth: 780,

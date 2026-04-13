@@ -54,7 +54,7 @@ export default function Contact() {
   })
 
   return (
-    <section id="contact" style={{ background: '#05080f', padding: '100px 24px', position: 'relative', overflow: 'hidden' }}>
+    <section id="contact" style={{ background: '#05080f', padding: '64px 24px', position: 'relative', overflow: 'hidden' }}>
       <div style={{
         position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
         width: 600, height: 600, borderRadius: '50%',

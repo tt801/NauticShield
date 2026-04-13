@@ -77,11 +77,11 @@ const S: Record<string, React.CSSProperties> = {
   inner: {
     maxWidth: 1200,
     margin: '0 auto',
-    padding: '52px 0 88px',
+    padding: '40px 0 64px',
   },
   header: {
     textAlign: 'center',
-    marginBottom: 52,
+    marginBottom: 36,
   },
   eyebrow: {
     fontSize: 11,
