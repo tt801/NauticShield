@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Menu, X } from 'lucide-react'
 import Hero from './sections/Hero'
-import Screenshots from './sections/Screenshots'
 import Features from './sections/Features'
+import Screenshots from './sections/Screenshots'
 import Pricing from './sections/Pricing'
 import Testimonials from './sections/Testimonials'
 import Contact from './sections/Contact'
@@ -183,8 +183,8 @@ export default function App() {
       <Nav />
       <main>
         <Hero />
-        <Screenshots />
         <Features />
+        <Screenshots />
         <Pricing />
         <Testimonials />
         <Contact />
