@@ -11,6 +11,7 @@ const CLERK_SIGNUP_URL = 'https://accounts.nautic-shield.vercel.app/sign-up'
 
 const NAV_LINKS = [
   { href: '#features', label: 'Features' },
+  { href: '#platform', label: 'Platform' },
   { href: '#pricing', label: 'Pricing' },
   { href: '#testimonials', label: 'Testimonials' },
   { href: '#contact', label: 'Contact' },
