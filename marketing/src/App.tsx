@@ -36,10 +36,14 @@ function Nav() {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    transition: 'background 0.3s, border-color 0.3s, backdrop-filter 0.3s',
-    background: scrolled ? 'rgba(8,12,18,0.92)' : 'transparent',
-    borderBottom: scrolled ? '1px solid #131e2d' : '1px solid transparent',
-    backdropFilter: scrolled ? 'blur(12px)' : 'none',
+    transition: 'box-shadow 0.3s',
+    background: 'rgba(3, 8, 18, 0.97)',
+    borderBottom: '1px solid #0d1f35',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    boxShadow: scrolled
+      ? '0 2px 32px rgba(0,0,0,0.55)'
+      : '0 1px 16px rgba(0,0,0,0.35)',
   }
 
   return (
