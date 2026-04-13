@@ -161,7 +161,7 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'center',
-    paddingTop: 44,
+    paddingTop: 58,
     marginTop: 0,
   },
   visualHalo: {
@@ -249,7 +249,7 @@ function HeroVisual() {
             ))}
           </div>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#cfe5f3' }}>
-            Vessel Cyber Command
+            Endpoint and cyber protection
           </div>
           <div style={{ fontSize: 10, color: '#7fb2d6', fontWeight: 700 }}>Satcom linked</div>
         </div>
