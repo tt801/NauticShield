@@ -1,4 +1,4 @@
-import { Anchor, Shield, Wifi } from 'lucide-react'
+import { Shield, Wifi } from 'lucide-react'
 
 const CLERK_SIGNUP_URL = 'https://accounts.nautic-shield.vercel.app/sign-up'
 
@@ -164,11 +164,11 @@ export default function Hero() {
         <div style={S.ctas}>
           <a
             href={CLERK_SIGNUP_URL}
-            style={S.ctaPrimary}
+            style={{ ...S.ctaPrimary }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 50px #0ea5e960'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 30px #0ea5e930'; (e.currentTarget as HTMLElement).style.transform = 'translateY(0)' }}
           >
-            <Anchor size={15} />
+            <img src="/logo.png" alt="" style={{ width: 16, height: 16, objectFit: 'contain' }} />
             Get Protected
           </a>
           <a

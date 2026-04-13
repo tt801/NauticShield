@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Anchor } from 'lucide-react'
+import { Check } from 'lucide-react'
 
 const CLOUD_API = 'https://nautic-shield.vercel.app'
 
@@ -179,7 +179,7 @@ function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
 
       <div style={{ marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <Anchor size={14} color={plan.highlight ? '#0ea5e9' : '#4a5568'} />
+          <img src="/logo.png" alt="" style={{ width: 14, height: 14, objectFit: 'contain', opacity: plan.highlight ? 1 : 0.4 }} />
           <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em', color: plan.highlight ? '#0ea5e9' : '#6b7f90', textTransform: 'uppercase' }}>
             {plan.name}
           </span>

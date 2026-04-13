@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Anchor, Menu, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import Hero from './sections/Hero'
 import Features from './sections/Features'
 import Pricing from './sections/Pricing'
@@ -45,8 +45,8 @@ function Nav() {
   return (
     <>
       <nav style={bar}>
-        <a href="#home" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none' }}>
-          <Anchor size={18} color="#0ea5e9" />
+        <a href="#home" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
+          <img src="/logo.png" alt="NauticShield" style={{ width: 28, height: 28, objectFit: 'contain' }} />
           <span style={{ fontWeight: 800, fontSize: 15, color: '#e8edf2', letterSpacing: '-0.02em' }}>
             NauticShield
           </span>
@@ -127,7 +127,7 @@ function Footer() {
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 32, marginBottom: 48 }}>
           <div style={{ maxWidth: 280 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
-              <Anchor size={16} color="#0ea5e9" />
+              <img src="/logo.png" alt="NauticShield" style={{ width: 24, height: 24, objectFit: 'contain' }} />
               <span style={{ fontWeight: 800, fontSize: 14, color: '#e8edf2' }}>NauticShield</span>
             </div>
             <p style={{ fontSize: 13, color: '#4a5568', lineHeight: 1.65 }}>
