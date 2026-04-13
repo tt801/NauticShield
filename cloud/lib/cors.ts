@@ -7,6 +7,15 @@ const ALLOWED_ORIGINS = [
   'https://nautic-shield.vercel.app',
   'https://nautic-shield-app.vercel.app',
   'https://nautic-shield-admin.vercel.app',
+  // Marketing site — add exact Vercel URL and custom domain when known
+  'https://nautic-shield-marketing.vercel.app',
+  'https://nauticshield.com',
+  'https://www.nauticshield.com',
+];
+
+// Allow any Vercel preview deployment for the NauticShield org
+const ALLOWED_ORIGIN_PATTERNS = [
+  /^https:\/\/nautic-shield[a-z0-9-]*\.vercel\.app$/,
 ];
 
 /**
@@ -15,7 +24,8 @@ const ALLOWED_ORIGINS = [
  */
 export function cors(req: VercelRequest, res: VercelResponse): boolean {
   const origin = req.headers.origin ?? '';
-  const allow  = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const isAllowed = ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGIN_PATTERNS.some(p => p.test(origin));
+  const allow = isAllowed ? origin : ALLOWED_ORIGINS[0];
 
   res.setHeader('Access-Control-Allow-Origin',  allow);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
