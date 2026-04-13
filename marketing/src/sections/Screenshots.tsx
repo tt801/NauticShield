@@ -156,9 +156,9 @@ function PostureMockup() {
 
 // ─── Browser chrome wrapper ───────────────────────────────────────────────────
 
-function BrowserFrame({ url, children }: { url: string; children: React.ReactNode }) {
+function BrowserFrame({ url, children, minHeight = 360 }: { url: string; children: React.ReactNode; minHeight?: number }) {
   return (
-    <div style={{ background: '#060c18', borderRadius: 10, border: '1px solid #151f30', overflow: 'hidden', boxShadow: '0 16px 48px rgba(0,0,0,0.5)', minHeight: 360 }}>
+    <div style={{ background: '#060c18', borderRadius: 10, border: '1px solid #151f30', overflow: 'hidden', boxShadow: '0 16px 48px rgba(0,0,0,0.5)', minHeight }}>
       {/* Chrome bar */}
       <div style={{ background: '#0a1020', borderBottom: '1px solid #151f30', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ display: 'flex', gap: 5 }}>
@@ -195,6 +195,7 @@ const SLIDES = [
     detail: 'Anomalous traffic, rogue devices, and brute-force attempts flagged instantly with full context — severity, device identity, and timestamp.',
     url: 'app.nauticshield.com/alerts',
     Mockup: AlertMockup,
+    frameMinHeight: 408,
   },
   {
     tag: 'Penetration Testing', tagColor: '#f59e0b',
@@ -202,6 +203,7 @@ const SLIDES = [
     detail: 'CVSS-scored vulnerabilities, remediation status, and proof-of-concept evidence — drill down to technical detail or stay at the summary.',
     url: 'app.nauticshield.com/cyber/pentest',
     Mockup: PenTestMockup,
+    frameMinHeight: 360,
   },
   {
     tag: 'Vessel Endpoint Posture', tagColor: '#0ea5e9',
@@ -209,6 +211,7 @@ const SLIDES = [
     detail: 'Live inventory across navigation, comms, and guest networks — with patch status, open ports, and individual risk scores per device.',
     url: 'app.nauticshield.com/devices',
     Mockup: PostureMockup,
+    frameMinHeight: 360,
   },
 ]
 
@@ -240,9 +243,9 @@ export default function Screenshots() {
 
         {/* Desktop: 3-column grid */}
         <div className="ss-desktop" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 28, alignItems: 'start' }}>
-          {SLIDES.map(({ tag, tagColor, headline, detail, url, Mockup }, i) => (
+          {SLIDES.map(({ tag, tagColor, headline, detail, url, Mockup, frameMinHeight }, i) => (
             <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              <BrowserFrame url={url}><Mockup /></BrowserFrame>
+              <BrowserFrame url={url} minHeight={frameMinHeight}><Mockup /></BrowserFrame>
               <div>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: `${tagColor}15`, border: `1px solid ${tagColor}35`, color: tagColor, borderRadius: 6, padding: '3px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
                   {tag}
@@ -267,10 +270,10 @@ export default function Screenshots() {
           }}
         >
           {(() => {
-            const { tag, tagColor, headline, detail, url, Mockup } = SLIDES[active]
+            const { tag, tagColor, headline, detail, url, Mockup, frameMinHeight } = SLIDES[active]
             return (
               <div style={{ position: 'relative' }}>
-                <BrowserFrame url={url}><Mockup /></BrowserFrame>
+                <BrowserFrame url={url} minHeight={frameMinHeight}><Mockup /></BrowserFrame>
                 <button onClick={prev} aria-label="Previous" style={{ position: 'absolute', left: -14, top: '35%', background: '#0d1f35', border: '1px solid #1e3350', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#7fb2d6' }}>
                   <ChevronLeft size={16} />
                 </button>

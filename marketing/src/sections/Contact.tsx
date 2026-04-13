@@ -61,7 +61,7 @@ export default function Contact() {
         background: 'radial-gradient(circle, #0ea5e908 0%, transparent 70%)', pointerEvents: 'none',
       }} />
 
-      <div style={{ maxWidth: 680, margin: '0 auto', position: 'relative', zIndex: 1 }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', position: 'relative', zIndex: 1 }}>
         <div style={{ textAlign: 'center', marginBottom: 56 }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#0ea5e9', marginBottom: 16 }}>
             Contact
@@ -75,23 +75,52 @@ export default function Contact() {
           </p>
         </div>
 
-        {status === 'sent' ? (
-          <div style={{
-            background: '#0a1a10', border: '1px solid #22c55e30', borderRadius: 16, padding: '48px 32px',
-            textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+        <div className="contact-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 22, alignItems: 'start' }}>
+          <aside style={{
+            background: '#09111b', border: '1px solid #173047', borderRadius: 16, padding: '24px 22px',
+            display: 'flex', flexDirection: 'column', gap: 16,
           }}>
-            <CheckCircle size={48} color="#22c55e" />
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#e8edf2' }}>Message received.</div>
-            <p style={{ fontSize: 14, color: '#9cb1c2', maxWidth: 360 }}>
-              A member of our security team will contact you within 24 hours via your preferred channel.
-              All communications are end-to-end encrypted.
-            </p>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} style={{
-            background: '#0a0f18', border: '1px solid #131e2d', borderRadius: 16, padding: '40px 36px',
-            display: 'flex', flexDirection: 'column', gap: 20,
-          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#7fb2d6' }}>
+              What Happens Next
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {[
+                { title: '1. Initial review', text: 'We assess your vessel profile, topology, and current security posture from your submission.' },
+                { title: '2. Private overview call', text: 'A senior specialist walks you through likely risks, practical coverage options, and rollout timing.' },
+                { title: '3. Tailored proposal', text: 'You receive a clear phased plan with commercial options and operational responsibilities.' },
+              ].map(step => (
+                <div key={step.title} style={{ borderLeft: '2px solid #1e4f73', paddingLeft: 10 }}>
+                  <div style={{ fontSize: 13, color: '#d5e6f2', fontWeight: 700, marginBottom: 4 }}>{step.title}</div>
+                  <div style={{ fontSize: 12, color: '#9cb1c2', lineHeight: 1.6 }}>{step.text}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ borderTop: '1px solid #173047', paddingTop: 14 }}>
+              <div style={{ fontSize: 12, color: '#e8edf2', fontWeight: 700, marginBottom: 6 }}>Confidentiality by default</div>
+              <p style={{ fontSize: 12, color: '#9cb1c2', lineHeight: 1.6 }}>
+                Enquiries are handled under strict confidentiality, shared only with the core delivery team,
+                and never used for external marketing or reference without explicit approval.
+              </p>
+            </div>
+          </aside>
+
+          {status === 'sent' ? (
+            <div style={{
+              background: '#0a1a10', border: '1px solid #22c55e30', borderRadius: 16, padding: '48px 32px',
+              textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+            }}>
+              <CheckCircle size={48} color="#22c55e" />
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#e8edf2' }}>Message received.</div>
+              <p style={{ fontSize: 14, color: '#9cb1c2', maxWidth: 420 }}>
+                A member of our security team will contact you within 24 hours via your preferred channel.
+                All communications are handled in strict confidence.
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} style={{
+              background: '#0a0f18', border: '1px solid #131e2d', borderRadius: 16, padding: '40px 36px',
+              display: 'flex', flexDirection: 'column', gap: 20,
+            }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#9cb1c2', letterSpacing: '0.05em' }}>Full Name *</label>
@@ -184,8 +213,11 @@ export default function Contact() {
               All enquiries treated with strict confidence.
               We never share your details with third parties.
             </p>
-          </form>
-        )}
+            </form>
+          )}
+        </div>
+
+        <style>{`@media (max-width: 860px){.contact-grid{grid-template-columns:1fr!important;}}`}</style>
       </div>
     </section>
   )
