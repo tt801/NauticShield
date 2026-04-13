@@ -52,15 +52,12 @@ const PLANS = [
     features: [
       'Everything in Coastal',
       'Always-on on-board management node included',
-      'Brand-new Lenovo ThinkCentre pre-configured for local operations when cloud is unavailable',
-      'One-time upfront hardware and installation cost applies',
-      'Quarterly penetration testing',
+      'One-time upfront cost*',
+      'Automated penetration testing',
       'Dedicated security analyst',
       'Encrypted remote shell access',
       'Zero-log architecture guarantee',
-      '24/7 incident response hotline',
       'Priority patch deployment',
-      'Annual on-site assessment',
     ],
     cta: 'Start Superyacht',
   },
@@ -266,6 +263,8 @@ export default function Pricing() {
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#7f95a8', marginTop: 32 }}>
           All prices in GBP. Monthly subscription. VAT may apply. Fleet pricing available on request.
+          {' '}
+          *One-time upfront cost applies for on-board management node hardware and installation.
         </p>
       </div>
     </section>
