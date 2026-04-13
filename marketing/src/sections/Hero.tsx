@@ -127,10 +127,12 @@ const S: Record<string, React.CSSProperties> = {
     gap: 44,
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    borderTop: '1px solid #0f1923',
-    paddingTop: 28,
-    paddingBottom: 28,
-    marginTop: 24,
+    border: '1px solid #173047',
+    borderRadius: 20,
+    background: 'linear-gradient(180deg, rgba(8,16,27,0.92), rgba(6,12,21,0.98))',
+    boxShadow: '0 20px 40px rgba(0,0,0,0.28)',
+    padding: '24px 28px',
+    marginTop: -12,
     width: '100%',
     maxWidth: 1180,
   },
@@ -154,11 +156,12 @@ const S: Record<string, React.CSSProperties> = {
   },
   visualWrap: {
     position: 'relative',
-    minHeight: 420,
+    minHeight: 380,
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'center',
-    paddingTop: 8,
+    paddingTop: 0,
+    marginTop: -34,
   },
   visualHalo: {
     position: 'absolute',
@@ -172,8 +175,8 @@ const S: Record<string, React.CSSProperties> = {
   visualPanel: {
     position: 'relative',
     width: '100%',
-    maxWidth: 470,
-    minHeight: 420,
+    maxWidth: 420,
+    minHeight: 382,
     borderRadius: 28,
     border: '1px solid rgba(42, 80, 113, 0.7)',
     background: 'linear-gradient(180deg, rgba(8,18,30,0.96) 0%, rgba(7,14,24,0.98) 100%)',
@@ -190,26 +193,26 @@ const S: Record<string, React.CSSProperties> = {
   },
   panelBody: {
     position: 'relative',
-    padding: '20px 18px 18px',
-    minHeight: 364,
+    padding: '16px 16px 16px',
+    minHeight: 326,
     backgroundImage: 'linear-gradient(to right, rgba(14,165,233,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(14,165,233,0.05) 1px, transparent 1px)',
     backgroundSize: '42px 42px',
   },
   metricRow: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: 10,
-    marginBottom: 18,
+    gap: 8,
+    marginBottom: 14,
   },
   metricCard: {
     borderRadius: 14,
     border: '1px solid rgba(28, 51, 72, 0.95)',
     background: 'linear-gradient(180deg, rgba(11, 20, 31, 0.98), rgba(9, 16, 26, 0.98))',
-    padding: '12px 12px 11px',
+    padding: '10px 10px 9px',
   },
   vesselCanvas: {
     position: 'relative',
-    height: 215,
+    height: 190,
     borderRadius: 24,
     border: '1px solid rgba(25, 47, 67, 0.9)',
     background: 'radial-gradient(circle at 50% 22%, rgba(56,189,248,0.12), transparent 34%), linear-gradient(180deg, rgba(10,17,28,0.95), rgba(7,13,22,0.98))',
@@ -408,6 +411,11 @@ export default function Hero() {
           .hero-layout {
             grid-template-columns: 1fr !important;
             gap: 30px !important;
+          }
+        }
+        @media (max-width: 920px) {
+          .hero-layout + div > div {
+            margin-top: 18px !important;
           }
         }
       `}</style>
