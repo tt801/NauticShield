@@ -49,7 +49,7 @@ function Nav() {
   return (
     <>
       <nav style={bar}>
-        <a href="#home" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
+        <a href="#home" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', alignSelf: 'flex-start', paddingTop: 16 }}>
           <img src="/icons.png" alt="NauticShield" style={{ height: 72, width: 'auto', objectFit: 'contain' }} />
         </a>
 
@@ -125,9 +125,6 @@ function Footer() {
   return (
     <footer style={{ background: '#03060b', borderTop: '1px solid #1e3145', padding: '56px 24px 36px', boxShadow: 'inset 0 18px 40px rgba(0,0,0,0.35)' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#7fb2d6', marginBottom: 20 }}>
-          NauticShield Platform Footer
-        </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 32, marginBottom: 48 }}>
           <div style={{ maxWidth: 280 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>

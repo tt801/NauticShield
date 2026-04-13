@@ -35,22 +35,6 @@ const S: Record<string, React.CSSProperties> = {
     background: 'radial-gradient(circle, #0ea5e912 0%, transparent 70%)',
     pointerEvents: 'none',
   },
-  heroMark: {
-    position: 'absolute',
-    zIndex: 0,
-    pointerEvents: 'none',
-    userSelect: 'none',
-    opacity: 0.12,
-    filter: 'drop-shadow(0 18px 36px rgba(1, 10, 20, 0.55))',
-  },
-  heroMarkSecondary: {
-    position: 'absolute',
-    zIndex: 0,
-    pointerEvents: 'none',
-    userSelect: 'none',
-    opacity: 0.06,
-    transform: 'rotate(-18deg)',
-  },
   badge: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -160,8 +144,6 @@ export default function Hero() {
     <section id="home" style={S.section}>
       <div style={S.grid} />
       <div style={S.glow} />
-      <img src="/favicon.png" alt="" aria-hidden="true" style={{ ...S.heroMark, width: 'min(44vw, 420px)', right: '-96px', top: '84px' }} />
-      <img src="/favicon.png" alt="" aria-hidden="true" style={{ ...S.heroMarkSecondary, width: 'min(28vw, 220px)', left: '-64px', bottom: '48px' }} />
 
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <div style={S.badge}>
