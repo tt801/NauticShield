@@ -5,13 +5,12 @@ const CLERK_SIGNUP_URL = 'https://accounts.nautic-shield.vercel.app/sign-up'
 const S: Record<string, React.CSSProperties> = {
   section: {
     position: 'relative',
-    minHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     overflow: 'hidden',
-    padding: '80px 24px 0',
+    padding: '100px 24px 0',
   },
   grid: {
     position: 'absolute',
@@ -77,7 +76,7 @@ const S: Record<string, React.CSSProperties> = {
     gap: 16,
     flexWrap: 'wrap',
     justifyContent: 'center',
-    marginBottom: 72,
+    marginBottom: 44,
   },
   ctaPrimary: {
     display: 'inline-flex',
