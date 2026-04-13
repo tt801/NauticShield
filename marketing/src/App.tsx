@@ -7,7 +7,8 @@ import Pricing from './sections/Pricing'
 import Testimonials from './sections/Testimonials'
 import Contact from './sections/Contact'
 
-const CLERK_SIGNUP_URL = 'https://accounts.nautic-shield.vercel.app/sign-up'
+const SIGN_UP_URL = 'https://accounts.nauticshield.io/sign-up'
+const SIGN_IN_URL = 'https://accounts.nauticshield.io/sign-in'
 
 const NAV_LINKS = [
   { href: '#features', label: 'Features' },
@@ -72,7 +73,29 @@ function Nav() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <a
-            href={CLERK_SIGNUP_URL}
+            href={SIGN_IN_URL}
+            style={{
+              padding: '8px 14px', borderRadius: 8,
+              border: '1px solid #1f3347', color: '#a8bed0',
+              fontWeight: 600, fontSize: 13, transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => {
+              const el = e.currentTarget as HTMLElement
+              el.style.borderColor = '#0ea5e950'
+              el.style.color = '#e8edf2'
+              el.style.background = 'rgba(14,165,233,0.08)'
+            }}
+            onMouseLeave={e => {
+              const el = e.currentTarget as HTMLElement
+              el.style.borderColor = '#1f3347'
+              el.style.color = '#a8bed0'
+              el.style.background = 'transparent'
+            }}
+          >
+            Sign In
+          </a>
+          <a
+            href={SIGN_UP_URL}
             style={{
               padding: '8px 18px', borderRadius: 8,
               background: '#0ea5e9', color: '#fff',
