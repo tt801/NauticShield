@@ -10,6 +10,8 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'flex-start',
     overflow: 'hidden',
+    background: 'linear-gradient(180deg, #071423 0%, #06101c 55%, #05080f 100%)',
+    borderBottom: '1px solid #0f2237',
     padding: '100px 24px 0',
   },
   grid: {
@@ -81,7 +83,7 @@ const S: Record<string, React.CSSProperties> = {
   ctaPrimary: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 0,
     padding: '14px 28px',
     borderRadius: 10,
     background: '#0ea5e9',
@@ -168,7 +170,6 @@ export default function Hero() {
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 50px #0ea5e960'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 30px #0ea5e930'; (e.currentTarget as HTMLElement).style.transform = 'translateY(0)' }}
           >
-            <img src="/icons.png" alt="" style={{ height: 36, width: 'auto', objectFit: 'contain' }} />
             Get Protected
           </a>
           <a
