@@ -168,7 +168,7 @@ export default function Hero() {
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 50px #0ea5e960'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 30px #0ea5e930'; (e.currentTarget as HTMLElement).style.transform = 'translateY(0)' }}
           >
-            <img src="/logo.png" alt="" style={{ width: 16, height: 16, objectFit: 'contain' }} />
+            <img src="/icons.png" alt="" style={{ height: 18, width: 'auto', objectFit: 'contain' }} />
             Get Protected
           </a>
           <a

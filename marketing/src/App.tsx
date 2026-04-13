@@ -46,10 +46,7 @@ function Nav() {
     <>
       <nav style={bar}>
         <a href="#home" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
-          <img src="/logo.png" alt="NauticShield" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-          <span style={{ fontWeight: 800, fontSize: 15, color: '#e8edf2', letterSpacing: '-0.02em' }}>
-            NauticShield
-          </span>
+          <img src="/icons.png" alt="NauticShield" style={{ height: 24, width: 'auto', objectFit: 'contain' }} />
         </a>
 
         {/* Nav links */}
@@ -130,8 +127,7 @@ function Footer() {
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 32, marginBottom: 48 }}>
           <div style={{ maxWidth: 280 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
-              <img src="/logo.png" alt="NauticShield" style={{ width: 24, height: 24, objectFit: 'contain' }} />
-              <span style={{ fontWeight: 800, fontSize: 14, color: '#e8edf2' }}>NauticShield</span>
+              <img src="/icons.png" alt="NauticShield" style={{ height: 20, width: 'auto', objectFit: 'contain' }} />
             </div>
             <p style={{ fontSize: 13, color: '#91a7b8', lineHeight: 1.65 }}>
               Enterprise maritime cybersecurity for principals who demand absolute protection,
