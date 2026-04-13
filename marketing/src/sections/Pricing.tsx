@@ -26,8 +26,8 @@ const PLANS = [
     name: 'Coastal',
     checkoutPlan: 'coastal',
     tagline: 'For day-sailers & coastal cruisers',
-    price: '2,400',
-    period: '/year',
+    price: '200',
+    period: '/month',
     vessels: '1 vessel',
     highlight: false,
     features: [
@@ -45,8 +45,8 @@ const PLANS = [
     name: 'Superyacht',
     checkoutPlan: 'superyacht',
     tagline: 'For private superyachts & expedition vessels',
-    price: '9,600',
-    period: '/year',
+    price: '800',
+    period: '/month',
     vessels: 'Up to 3 vessels',
     highlight: true,
     features: [
@@ -129,7 +129,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   subtext: {
     fontSize: 16,
-    color: '#6b7f90',
+    color: '#9cb1c2',
     maxWidth: 460,
     margin: '0 auto',
     lineHeight: 1.7,
@@ -180,25 +180,25 @@ function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
       <div style={{ marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <img src="/logo.png" alt="" style={{ width: 14, height: 14, objectFit: 'contain', opacity: plan.highlight ? 1 : 0.4 }} />
-          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em', color: plan.highlight ? '#0ea5e9' : '#6b7f90', textTransform: 'uppercase' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em', color: plan.highlight ? '#0ea5e9' : '#98aec0', textTransform: 'uppercase' }}>
             {plan.name}
           </span>
         </div>
-        <p style={{ fontSize: 13, color: '#4a5568', marginBottom: 24 }}>{plan.tagline}</p>
+        <p style={{ fontSize: 13, color: '#8ea4b6', marginBottom: 24 }}>{plan.tagline}</p>
 
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
-          {plan.price !== 'Custom' && <span style={{ fontSize: 16, color: '#6b7f90', fontWeight: 500 }}>£</span>}
+          {plan.price !== 'Custom' && <span style={{ fontSize: 16, color: '#91a7b9', fontWeight: 500 }}>£</span>}
           <span style={{ fontSize: plan.price === 'Custom' ? 34 : 42, fontWeight: 800, letterSpacing: '-0.04em', color: '#e8edf2' }}>
             {plan.price}
           </span>
-          {plan.period && <span style={{ fontSize: 14, color: '#4a5568' }}>{plan.period}</span>}
+          {plan.period && <span style={{ fontSize: 14, color: '#89a0b3' }}>{plan.period}</span>}
         </div>
-        <div style={{ fontSize: 12, color: '#4a5568', marginBottom: 32 }}>{plan.vessels}</div>
+        <div style={{ fontSize: 12, color: '#89a0b3', marginBottom: 32 }}>{plan.vessels}</div>
       </div>
 
       <ul style={{ listStyle: 'none', flex: 1, marginBottom: 32 }}>
         {plan.features.map(f => (
-          <li key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: '#8899aa', lineHeight: 1.5, marginBottom: 10 }}>
+          <li key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: '#a8bed0', lineHeight: 1.5, marginBottom: 10 }}>
             <Check size={14} color='#0ea5e9' style={{ flexShrink: 0, marginTop: 2 }} />
             {f}
           </li>
@@ -218,7 +218,7 @@ function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
           fontSize: 14,
           transition: 'all 0.2s',
           background: plan.highlight ? '#0ea5e9' : 'transparent',
-          color: plan.highlight ? '#fff' : '#6b7f90',
+          color: plan.highlight ? '#fff' : '#9cb1c2',
           border: plan.highlight ? '1px solid transparent' : '1px solid #1e2d3d',
           boxShadow: plan.highlight ? '0 0 24px #0ea5e930' : 'none',
           cursor: loading ? 'wait' : 'pointer',
@@ -234,7 +234,7 @@ function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
         onMouseLeave={e => {
           const el = e.currentTarget as HTMLElement
           if (plan.highlight) { el.style.boxShadow = '0 0 24px #0ea5e930'; el.style.transform = 'translateY(0)' }
-          else { el.style.borderColor = '#1e2d3d'; el.style.color = '#6b7f90' }
+          else { el.style.borderColor = '#1e2d3d'; el.style.color = '#9cb1c2' }
         }}
       >
         {loading ? 'Redirecting…' : plan.cta}
@@ -261,8 +261,8 @@ export default function Pricing() {
           {PLANS.map(plan => <PlanCard key={plan.name} plan={plan} />)}
         </div>
 
-        <p style={{ textAlign: 'center', fontSize: 13, color: '#354555', marginTop: 32 }}>
-          All prices in GBP. Annual subscription. VAT may apply. Fleet pricing available on request.
+        <p style={{ textAlign: 'center', fontSize: 13, color: '#7f95a8', marginTop: 32 }}>
+          All prices in GBP. Monthly subscription. VAT may apply. Fleet pricing available on request.
         </p>
       </div>
     </section>

@@ -11,7 +11,7 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    padding: '120px 24px 80px',
+    padding: '88px 24px 28px',
   },
   grid: {
     position: 'absolute',
@@ -65,11 +65,11 @@ const S: Record<string, React.CSSProperties> = {
   },
   sub: {
     fontSize: 18,
-    color: '#8899aa',
+    color: '#a8bed0',
     textAlign: 'center',
     maxWidth: 600,
     lineHeight: 1.7,
-    marginBottom: 44,
+    marginBottom: 36,
     fontWeight: 400,
   },
   ctas: {
@@ -101,19 +101,19 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 10,
     background: 'transparent',
     border: '1px solid #1e2d3d',
-    color: '#8899aa',
+    color: '#a8bed0',
     fontWeight: 600,
     fontSize: 15,
     transition: 'all 0.2s',
   },
   statsRow: {
     display: 'flex',
-    gap: 48,
+    gap: 44,
     flexWrap: 'wrap',
     justifyContent: 'center',
     borderTop: '1px solid #0f1923',
-    paddingTop: 48,
-    marginTop: 8,
+    paddingTop: 34,
+    marginTop: 0,
     width: '100%',
     maxWidth: 780,
   },
@@ -131,7 +131,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   statLabel: {
     fontSize: 13,
-    color: '#4a5568',
+    color: '#7f95a8',
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
   },
@@ -146,7 +146,7 @@ export default function Hero() {
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <div style={S.badge}>
           <Shield size={11} />
-          Enterprise Maritime Cyber Defence
+          Maritime endpoint and cyber defence
         </div>
 
         <h1 style={S.headline}>
@@ -175,7 +175,7 @@ export default function Hero() {
             href="#contact"
             style={S.ctaSecondary}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#0ea5e950'; (e.currentTarget as HTMLElement).style.color = '#e8edf2' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1e2d3d'; (e.currentTarget as HTMLElement).style.color = '#8899aa' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1e2d3d'; (e.currentTarget as HTMLElement).style.color = '#a8bed0' }}
           >
             <Wifi size={15} />
             Request a Demo

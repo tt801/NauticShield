@@ -58,9 +58,9 @@ function Nav() {
             <a
               key={href}
               href={href}
-              style={{ fontSize: 13, fontWeight: 500, color: '#6b7f90', transition: 'color 0.15s' }}
+              style={{ fontSize: 13, fontWeight: 500, color: '#96adbf', transition: 'color 0.15s' }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#e8edf2' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#6b7f90' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#96adbf' }}
             >
               {label}
             </a>
@@ -122,15 +122,18 @@ function Nav() {
 
 function Footer() {
   return (
-    <footer style={{ background: '#05080f', borderTop: '1px solid #0d1520', padding: '48px 24px 32px' }}>
+    <footer style={{ background: '#03060b', borderTop: '1px solid #1e3145', padding: '56px 24px 36px', boxShadow: 'inset 0 18px 40px rgba(0,0,0,0.35)' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#7fb2d6', marginBottom: 20 }}>
+          NauticShield Platform Footer
+        </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 32, marginBottom: 48 }}>
           <div style={{ maxWidth: 280 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
               <img src="/logo.png" alt="NauticShield" style={{ width: 24, height: 24, objectFit: 'contain' }} />
               <span style={{ fontWeight: 800, fontSize: 14, color: '#e8edf2' }}>NauticShield</span>
             </div>
-            <p style={{ fontSize: 13, color: '#4a5568', lineHeight: 1.65 }}>
+            <p style={{ fontSize: 13, color: '#91a7b8', lineHeight: 1.65 }}>
               Enterprise maritime cybersecurity for principals who demand absolute protection,
               confidentiality, and control.
             </p>
@@ -142,7 +145,7 @@ function Footer() {
               { heading: 'Company', links: [{ label: 'Contact', href: '#contact' }, { label: 'Privacy', href: '#' }, { label: 'Terms', href: '#' }] },
             ].map(({ heading, links }) => (
               <div key={heading}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#354555', marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#7a95aa', marginBottom: 14 }}>
                   {heading}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -150,9 +153,9 @@ function Footer() {
                     <a
                       key={label}
                       href={href}
-                      style={{ fontSize: 13, color: '#4a5568', transition: 'color 0.15s' }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#8899aa' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#4a5568' }}
+                      style={{ fontSize: 13, color: '#91a7b8', transition: 'color 0.15s' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#d5e4ef' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#91a7b8' }}
                     >
                       {label}
                     </a>
@@ -163,11 +166,11 @@ function Footer() {
           </div>
         </div>
 
-        <div style={{ borderTop: '1px solid #0d1520', paddingTop: 24, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <span style={{ fontSize: 12, color: '#354555' }}>
+        <div style={{ borderTop: '1px solid #1a2a3b', paddingTop: 24, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <span style={{ fontSize: 12, color: '#7a95aa' }}>
             © {new Date().getFullYear()} NauticShield Ltd. All rights reserved.
           </span>
-          <span style={{ fontSize: 12, color: '#354555' }}>
+          <span style={{ fontSize: 12, color: '#7a95aa' }}>
             ISO 27001 aligned · IMO MSC-FAL.1/Circ.3 compliant
           </span>
         </div>

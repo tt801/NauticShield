@@ -87,7 +87,7 @@ const S: Record<string, React.CSSProperties> = {
   quoteText: {
     fontSize: 15,
     lineHeight: 1.75,
-    color: '#8899aa',
+    color: '#a8bed0',
     fontStyle: 'italic',
     flex: 1,
   },
@@ -138,9 +138,9 @@ export default function Testimonials() {
                 <div style={S.avatar}>{name[0]}</div>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#e8edf2' }}>{name}</div>
-                  <div style={{ fontSize: 12, color: '#4a5568' }}>{title}</div>
+                  <div style={{ fontSize: 12, color: '#8ea4b6' }}>{title}</div>
                 </div>
-                <div style={{ marginLeft: 'auto', fontSize: 11, color: '#354555', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                <div style={{ marginLeft: 'auto', fontSize: 11, color: '#7b92a6', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
                   {region}
                 </div>
               </div>

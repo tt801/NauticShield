@@ -69,7 +69,7 @@ export default function Contact() {
           <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.15, color: '#e8edf2', marginBottom: 16 }}>
             Request a private briefing.
           </h2>
-          <p style={{ fontSize: 16, color: '#6b7f90', lineHeight: 1.7 }}>
+          <p style={{ fontSize: 16, color: '#9cb1c2', lineHeight: 1.7 }}>
             Tell us about your fleet and security requirements. Our team will respond within 24 hours
             via encrypted channel.
           </p>
@@ -82,7 +82,7 @@ export default function Contact() {
           }}>
             <CheckCircle size={48} color="#22c55e" />
             <div style={{ fontSize: 20, fontWeight: 700, color: '#e8edf2' }}>Message received.</div>
-            <p style={{ fontSize: 14, color: '#6b7f90', maxWidth: 360 }}>
+            <p style={{ fontSize: 14, color: '#9cb1c2', maxWidth: 360 }}>
               A member of our security team will contact you within 24 hours via your preferred channel.
               All communications are end-to-end encrypted.
             </p>
@@ -94,7 +94,7 @@ export default function Contact() {
           }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7f90', letterSpacing: '0.05em' }}>Full Name *</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#9cb1c2', letterSpacing: '0.05em' }}>Full Name *</label>
                 <input
                   name="name"
                   value={form.name}
@@ -107,7 +107,7 @@ export default function Contact() {
                 />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7f90', letterSpacing: '0.05em' }}>Email Address *</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#9cb1c2', letterSpacing: '0.05em' }}>Email Address *</label>
                 <input
                   name="email"
                   type="email"
@@ -123,7 +123,7 @@ export default function Contact() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7f90', letterSpacing: '0.05em' }}>Fleet Size</label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#9cb1c2', letterSpacing: '0.05em' }}>Fleet Size</label>
               <select
                 name="vessels"
                 value={form.vessels}
@@ -141,7 +141,7 @@ export default function Contact() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7f90', letterSpacing: '0.05em' }}>How can we help? *</label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#9cb1c2', letterSpacing: '0.05em' }}>How can we help? *</label>
               <textarea
                 name="message"
                 value={form.message}
@@ -180,7 +180,7 @@ export default function Contact() {
               {status === 'sending' ? 'Sending…' : (<><Send size={15} /> Send Briefing Request</>)}
             </button>
 
-            <p style={{ fontSize: 12, color: '#354555', textAlign: 'center' }}>
+            <p style={{ fontSize: 12, color: '#7f95a8', textAlign: 'center' }}>
               All enquiries treated with strict confidence.
               We never share your details with third parties.
             </p>
