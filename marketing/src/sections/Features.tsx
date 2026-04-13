@@ -262,6 +262,7 @@ function Card({ icon: Icon, title, description, color }: Feature) {
 
 export default function Features() {
   const [hoveredStep, setHoveredStep] = useState<number | null>(null)
+  const [activeStep, setActiveStep] = useState<number | null>(null)
 
   return (
     <section id="features" style={S.section}>
@@ -284,20 +285,20 @@ export default function Features() {
           <div style={S.bridgeTitle}>How The Protection Stack Flows</div>
           <div style={S.diagram}>
             {FLOW_STEPS.map((step, index) => (
-              <>
+              <div key={step.title} style={{ display: 'contents' }}>
                 <div
-                  key={step.title}
                   style={S.flowCell}
                   onMouseEnter={() => setHoveredStep(index)}
                   onMouseLeave={() => setHoveredStep(null)}
+                  onClick={() => setActiveStep(prev => (prev === index ? null : index))}
                 >
                   <div style={{ ...S.node, border: `1px solid ${step.border}`, background: step.bg, color: '#e8edf2', boxShadow: `0 0 24px ${step.color}25` }}>
                     {step.title.split('\n').map(part => <div key={part}>{part}</div>)}
                   </div>
-                  {hoveredStep === index && <div style={S.popout}>{step.info}</div>}
+                  {(hoveredStep === index || activeStep === index) && <div style={S.popout}>{step.info}</div>}
                 </div>
                 {index < FLOW_STEPS.length - 1 && <div key={`pipe-${step.title}`} style={{ ...S.pipe, background: `linear-gradient(90deg, ${step.color}55, ${FLOW_STEPS[index + 1].color}80)` }} />}
-              </>
+              </div>
             ))}
           </div>
         </div>
