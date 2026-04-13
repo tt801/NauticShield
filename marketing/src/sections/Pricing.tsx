@@ -44,13 +44,16 @@ const PLANS = [
   {
     name: 'Superyacht',
     checkoutPlan: 'superyacht',
-    tagline: 'For private superyachts & expedition vessels',
+    tagline: 'For private superyachts & expedition vessels (hybrid cloud + on-board resilience)',
     price: '800',
     period: '/month',
     vessels: 'Up to 3 vessels',
     highlight: true,
     features: [
       'Everything in Coastal',
+      'Always-on on-board management node included',
+      'Brand-new Lenovo ThinkCentre pre-configured for local operations when cloud is unavailable',
+      'One-time upfront hardware and installation cost applies',
       'Quarterly penetration testing',
       'Dedicated security analyst',
       'Encrypted remote shell access',

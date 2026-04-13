@@ -67,11 +67,11 @@ export default function Contact() {
             Contact
           </div>
           <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.15, color: '#e8edf2', marginBottom: 16 }}>
-            Request a private briefing.
+            Request a private overview.
           </h2>
           <p style={{ fontSize: 16, color: '#9cb1c2', lineHeight: 1.7 }}>
             Tell us about your fleet and security requirements. Our team will respond within 24 hours
-            via encrypted channel.
+            with a tailored response plan.
           </p>
         </div>
 
@@ -177,7 +177,7 @@ export default function Contact() {
               onMouseEnter={e => { if (status !== 'sending') (e.currentTarget as HTMLElement).style.boxShadow = '0 0 50px #0ea5e960' }}
               onMouseLeave={e => { if (status !== 'sending') (e.currentTarget as HTMLElement).style.boxShadow = '0 0 30px #0ea5e930' }}
             >
-              {status === 'sending' ? 'Sending…' : (<><Send size={15} /> Send Briefing Request</>)}
+              {status === 'sending' ? 'Sending…' : (<><Send size={15} /> Send Overview Request</>)}
             </button>
 
             <p style={{ fontSize: 12, color: '#7f95a8', textAlign: 'center' }}>

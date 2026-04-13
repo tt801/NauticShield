@@ -1,4 +1,5 @@
 import { Shield, Eye, Cpu, Lock, ScanSearch, Zap, BarChart3, Globe } from 'lucide-react'
+import { useState } from 'react'
 
 type Feature = {
   icon: typeof Shield
@@ -68,6 +69,37 @@ const FEATURES: Feature[] = [
 
 const KEY_CAPABILITIES = FEATURES.slice(0, 4)
 const EXTENDED_CAPABILITIES = FEATURES.slice(4)
+
+const FLOW_STEPS = [
+  {
+    title: 'Continuous\nMonitoring',
+    color: '#0ea5e9',
+    bg: 'linear-gradient(160deg, #0a1a2a, #0d2236)',
+    border: '#1e5a85',
+    info: 'Telemetry from onboard endpoints, satcom, guest network, and bridge systems is ingested continuously.',
+  },
+  {
+    title: 'Threat\nDetection',
+    color: '#f59e0b',
+    bg: 'linear-gradient(160deg, #20180b, #2a1f0d)',
+    border: '#7a5312',
+    info: 'Behavioral rules and maritime threat intelligence flag anomalies, known CVEs, scans, and credential abuse.',
+  },
+  {
+    title: 'Instant\nContainment',
+    color: '#ef4444',
+    bg: 'linear-gradient(160deg, #2a1010, #341515)',
+    border: '#7e2323',
+    info: 'Compromised zones are segmented in seconds, suspicious devices quarantined, and forensic evidence preserved.',
+  },
+  {
+    title: 'Owner\nVisibility',
+    color: '#22c55e',
+    bg: 'linear-gradient(160deg, #0d1f14, #11261a)',
+    border: '#2c6a44',
+    info: 'Principals receive concise status and risk updates, with direct control paths for escalation and response.',
+  },
+]
 
 const S: Record<string, React.CSSProperties> = {
   section: {
@@ -174,8 +206,6 @@ const S: Record<string, React.CSSProperties> = {
   node: {
     height: 84,
     borderRadius: 12,
-    border: '1px solid #225071',
-    background: 'linear-gradient(160deg, #0b1825, #0d2130)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -191,6 +221,25 @@ const S: Record<string, React.CSSProperties> = {
     height: 2,
     background: 'linear-gradient(90deg, #1b3d57, #3b8fbe)',
     borderRadius: 999,
+  },
+  flowCell: {
+    position: 'relative',
+  },
+  popout: {
+    position: 'absolute',
+    left: '50%',
+    top: 92,
+    transform: 'translateX(-50%)',
+    width: 220,
+    background: '#0b1622',
+    border: '1px solid #1f3850',
+    borderRadius: 10,
+    padding: '10px 12px',
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: '#b8cfde',
+    boxShadow: '0 12px 28px rgba(0,0,0,0.4)',
+    zIndex: 3,
   },
 }
 
@@ -212,6 +261,8 @@ function Card({ icon: Icon, title, description, color }: Feature) {
 }
 
 export default function Features() {
+  const [hoveredStep, setHoveredStep] = useState<number | null>(null)
+
   return (
     <section id="features" style={S.section}>
       <div style={S.inner}>
@@ -232,13 +283,22 @@ export default function Features() {
         <div style={S.bridge}>
           <div style={S.bridgeTitle}>How The Protection Stack Flows</div>
           <div style={S.diagram}>
-            <div style={S.node}>Continuous<br />Monitoring</div>
-            <div style={S.pipe} />
-            <div style={S.node}>Threat<br />Detection</div>
-            <div style={S.pipe} />
-            <div style={S.node}>Instant<br />Containment</div>
-            <div style={S.pipe} />
-            <div style={S.node}>Owner<br />Visibility</div>
+            {FLOW_STEPS.map((step, index) => (
+              <>
+                <div
+                  key={step.title}
+                  style={S.flowCell}
+                  onMouseEnter={() => setHoveredStep(index)}
+                  onMouseLeave={() => setHoveredStep(null)}
+                >
+                  <div style={{ ...S.node, border: `1px solid ${step.border}`, background: step.bg, color: '#e8edf2', boxShadow: `0 0 24px ${step.color}25` }}>
+                    {step.title.split('\n').map(part => <div key={part}>{part}</div>)}
+                  </div>
+                  {hoveredStep === index && <div style={S.popout}>{step.info}</div>}
+                </div>
+                {index < FLOW_STEPS.length - 1 && <div key={`pipe-${step.title}`} style={{ ...S.pipe, background: `linear-gradient(90deg, ${step.color}55, ${FLOW_STEPS[index + 1].color}80)` }} />}
+              </>
+            ))}
           </div>
         </div>
 

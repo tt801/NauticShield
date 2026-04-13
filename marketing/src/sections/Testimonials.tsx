@@ -68,6 +68,7 @@ export default function Testimonials() {
   function handleNext() { resetTimer(); goTo(active + 1) }
 
   const t = TESTIMONIALS[active]
+  const t2 = TESTIMONIALS[(active + 1) % TESTIMONIALS.length]
 
   return (
     <section id="testimonials" style={{ background: '#080c12', padding: '64px 24px', position: 'relative' }}>
@@ -77,7 +78,7 @@ export default function Testimonials() {
         backgroundSize: '120px', pointerEvents: 'none',
       }} />
 
-      <div style={{ maxWidth: 780, margin: '0 auto', position: 'relative', zIndex: 1 }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', position: 'relative', zIndex: 1 }}>
         <div style={{ textAlign: 'center', marginBottom: 44 }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#0ea5e9', marginBottom: 16 }}>
             Testimonials
@@ -87,44 +88,55 @@ export default function Testimonials() {
           </h2>
         </div>
 
-        {/* Card */}
+        {/* Cards */}
         <div style={{
-          background: '#0a0f18',
-          border: '1px solid #1a2c3d',
-          borderRadius: 20,
-          padding: '44px 48px',
-          minHeight: 260,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 24,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: 20,
           opacity: fading ? 0 : 1,
           transform: fading ? 'translateY(6px)' : 'translateY(0)',
           transition: 'opacity 0.28s ease, transform 0.28s ease',
         }}>
-          <Quote size={22} color="#0ea5e930" />
-          <p style={{ fontSize: 16, lineHeight: 1.8, color: '#b8cfd e', fontStyle: 'italic', flex: 1 }}>
-            "{t.quote}"
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 20, borderTop: '1px solid #0f1923' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: '50%',
-                background: 'linear-gradient(135deg, #0ea5e920, #0ea5e940)',
-                border: '1px solid #0ea5e930',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 14, fontWeight: 700, color: '#0ea5e9', flexShrink: 0,
-              }}>
-                {t.name[0]}
-              </div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#e8edf2' }}>{t.name}</div>
-                <div style={{ fontSize: 12, color: '#8ea4b6' }}>{t.title}</div>
+          {[t, t2].map((item, idx) => (
+            <div
+              key={`${item.name}-${idx}`}
+              style={{
+                background: '#0a0f18',
+                border: '1px solid #1a2c3d',
+                borderRadius: 20,
+                padding: '40px 40px',
+                minHeight: 280,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 24,
+              }}
+            >
+              <Quote size={22} color="#0ea5e930" />
+              <p style={{ fontSize: 16, lineHeight: 1.8, color: '#b8cfde', fontStyle: 'italic', flex: 1 }}>
+                "{item.quote}"
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 20, borderTop: '1px solid #0f1923' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #0ea5e920, #0ea5e940)',
+                    border: '1px solid #0ea5e930',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 14, fontWeight: 700, color: '#0ea5e9', flexShrink: 0,
+                  }}>
+                    {item.name[0]}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#e8edf2' }}>{item.name}</div>
+                    <div style={{ fontSize: 12, color: '#8ea4b6' }}>{item.title}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: '#7b92a6', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  {item.region}
+                </div>
               </div>
             </div>
-            <div style={{ fontSize: 11, color: '#7b92a6', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-              {t.region}
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Controls */}

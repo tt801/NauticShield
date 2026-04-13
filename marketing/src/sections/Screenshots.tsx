@@ -42,6 +42,10 @@ function AlertMockup() {
           </div>
         ))}
       </div>
+      <div style={{ borderTop: '1px solid #151f30', padding: '7px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 9, color: '#4a6070' }}>Threat response SLA</span>
+        <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>3.8s mean contain time</span>
+      </div>
     </div>
   )
 }
@@ -154,7 +158,7 @@ function PostureMockup() {
 
 function BrowserFrame({ url, children }: { url: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#060c18', borderRadius: 10, border: '1px solid #151f30', overflow: 'hidden', boxShadow: '0 16px 48px rgba(0,0,0,0.5)' }}>
+    <div style={{ background: '#060c18', borderRadius: 10, border: '1px solid #151f30', overflow: 'hidden', boxShadow: '0 16px 48px rgba(0,0,0,0.5)', minHeight: 360 }}>
       {/* Chrome bar */}
       <div style={{ background: '#0a1020', borderBottom: '1px solid #151f30', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ display: 'flex', gap: 5 }}>
@@ -227,7 +231,7 @@ export default function Screenshots() {
             Platform In Action
           </div>
           <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 40px)', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.15, color: '#e8edf2', marginBottom: 14 }}>
-            See exactly what your security team sees
+            See exactly what a security team sees
           </h2>
           <p style={{ fontSize: 16, color: '#8aa4b8', maxWidth: 520, margin: '0 auto', lineHeight: 1.7 }}>
             Every alert, pen test finding, and vessel posture report — in a dashboard built for principals who demand clarity without noise.
