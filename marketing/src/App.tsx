@@ -7,8 +7,10 @@ import Pricing from './sections/Pricing'
 import Testimonials from './sections/Testimonials'
 import Contact from './sections/Contact'
 
-const SIGN_UP_URL = 'https://accounts.nauticshield.io/sign-up'
-const SIGN_IN_URL = 'https://accounts.nauticshield.io/sign-in'
+const APP_HOME_URL = 'https://app.nauticshield.io/'
+const APP_ONBOARDING_URL = 'https://app.nauticshield.io/onboarding'
+const SIGN_UP_URL = `https://accounts.nauticshield.io/sign-up?redirect_url=${encodeURIComponent(APP_ONBOARDING_URL)}`
+const SIGN_IN_URL = `https://accounts.nauticshield.io/sign-in?redirect_url=${encodeURIComponent(APP_HOME_URL)}`
 
 const NAV_LINKS = [
   { href: '#features', label: 'Features' },

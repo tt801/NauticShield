@@ -62,7 +62,8 @@ export default function SignInPage() {
             footerActionLink:   { color: '#d4a847' },
           },
         }}
-        redirectUrl="/"
+        fallbackRedirectUrl="/"
+        forceRedirectUrl="/"
       />
 
       {/* Security notice */}

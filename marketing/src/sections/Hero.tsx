@@ -1,6 +1,7 @@
 import { Shield, Wifi, Lock, Activity, Globe } from 'lucide-react'
 
-const SIGN_UP_URL = 'https://accounts.nauticshield.io/sign-up'
+const APP_ONBOARDING_URL = 'https://app.nauticshield.io/onboarding'
+const SIGN_UP_URL = `https://accounts.nauticshield.io/sign-up?redirect_url=${encodeURIComponent(APP_ONBOARDING_URL)}`
 
 const S: Record<string, React.CSSProperties> = {
   section: {
