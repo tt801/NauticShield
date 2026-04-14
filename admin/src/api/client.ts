@@ -70,6 +70,19 @@ export const adminApi = {
   users: {
     list:   (limit = 100, offset = 0) => apiCall<AdminUser[]>(`/api/admin/users?limit=${limit}&offset=${offset}`),
     invite: (email: string)           => apiCall<{ ok: boolean; message?: string }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'invite', email, role: 'user' }) }),
+    add: (body: { email: string; role: string; password: string; firstName?: string; lastName?: string }) =>
+      apiCall<{ ok: boolean; message?: string; userId?: string }>('/api/admin/user-actions', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'add', ...body }),
+      }),
+    pause: (userId: string) =>
+      apiCall<{ ok: boolean }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'ban', userId }) }),
+    unpause: (userId: string) =>
+      apiCall<{ ok: boolean }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'unban', userId }) }),
+    delete: (userId: string) =>
+      apiCall<{ ok: boolean }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'delete', userId }) }),
+    resetPassword: (userId: string) =>
+      apiCall<{ ok: boolean; message?: string }>('/api/admin/user-actions', { method: 'POST', body: JSON.stringify({ action: 'reset_password', userId }) }),
   },
   audit: {
     list: (params?: { limit?: number; offset?: number; action?: string }) => {

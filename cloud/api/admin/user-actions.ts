@@ -3,6 +3,7 @@
  *
  * POST body: { action, ...params }
  *   action: 'invite'  — { email, role }
+ *   action: 'add'     — { email, role, password, firstName?, lastName? }
  *   action: 'delete'  — { userId }
  *   action: 'ban'     — { userId }
  *   action: 'unban'   — { userId }
@@ -17,10 +18,16 @@ import { writeAudit }     from '../../lib/audit';
 
 type ActionBody =
   | { action: 'invite';         email: string; role: string }
+  | { action: 'add';            email: string; role: string; password: string; firstName?: string; lastName?: string }
   | { action: 'delete';         userId: string }
   | { action: 'ban';            userId: string }
   | { action: 'unban';          userId: string }
   | { action: 'reset_password'; userId: string };
+
+type ClerkUser = {
+  id: string;
+  public_metadata?: Record<string, unknown>;
+};
 
 async function clerkRequest(secretKey: string, method: string, path: string, body?: unknown) {
   const res = await fetch(`https://api.clerk.com/v1${path}`, {
@@ -36,6 +43,19 @@ async function clerkRequest(secretKey: string, method: string, path: string, bod
     throw new Error(`Clerk API error (${res.status}): ${text}`);
   }
   return res.status === 204 ? {} : res.json();
+}
+
+function getRole(user: ClerkUser): string {
+  return (user.public_metadata?.role as string | undefined) ?? 'user';
+}
+
+async function getClerkUser(secretKey: string, userId: string): Promise<ClerkUser> {
+  return await clerkRequest(secretKey, 'GET', `/users/${userId}`) as ClerkUser;
+}
+
+async function countAdmins(secretKey: string): Promise<number> {
+  const users = await clerkRequest(secretKey, 'GET', '/users?limit=500') as ClerkUser[];
+  return users.filter(u => getRole(u) === 'admin').length;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -57,8 +77,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'invite': {
         const { email, role } = body;
         if (!email) return res.status(400).json({ error: 'email required' });
-        const validRoles = ['admin', 'support'];
-        if (!validRoles.includes(role)) return res.status(400).json({ error: `role must be admin or support` });
+        const validRoles = ['admin', 'support', 'user'];
+        if (!validRoles.includes(role)) return res.status(400).json({ error: `role must be admin, support, or user` });
 
         await clerkRequest(secretKey, 'POST', '/invitations', {
           email_address:   email,
@@ -70,10 +90,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ ok: true, message: `Invitation sent to ${email}` });
       }
 
+      case 'add': {
+        const { email, role, password, firstName, lastName } = body;
+        if (!email) return res.status(400).json({ error: 'email required' });
+        if (!password || password.length < 8) return res.status(400).json({ error: 'password must be at least 8 characters' });
+
+        const validRoles = ['admin', 'support', 'user'];
+        if (!validRoles.includes(role)) return res.status(400).json({ error: `role must be admin, support, or user` });
+
+        const created = await clerkRequest(secretKey, 'POST', '/users', {
+          email_address: [email],
+          password,
+          first_name: firstName?.trim() || undefined,
+          last_name:  lastName?.trim()  || undefined,
+          public_metadata: { role },
+        }) as { id: string; email_addresses?: Array<{ email_address: string }> };
+
+        await writeAudit({
+          actor: admin.userId,
+          action: 'team.add',
+          resource: created.id,
+          metadata: { email, role },
+        }, req);
+
+        return res.status(201).json({ ok: true, userId: created.id, message: `User created: ${email}` });
+      }
+
       case 'delete': {
         const { userId } = body;
         if (!userId) return res.status(400).json({ error: 'userId required' });
         if (userId === admin.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
+
+        const target = await getClerkUser(secretKey, userId);
+        if (getRole(target) === 'admin') {
+          const adminCount = await countAdmins(secretKey);
+          if (adminCount <= 1) {
+            return res.status(400).json({ error: 'Cannot delete the last admin account' });
+          }
+        }
 
         await clerkRequest(secretKey, 'DELETE', `/users/${userId}`);
         await writeAudit({ actor: admin.userId, action: 'team.delete', resource: userId, metadata: {} }, req);
@@ -84,6 +138,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { userId } = body;
         if (!userId) return res.status(400).json({ error: 'userId required' });
         if (userId === admin.userId) return res.status(400).json({ error: 'Cannot ban yourself' });
+
+        const target = await getClerkUser(secretKey, userId);
+        if (getRole(target) === 'admin') {
+          const adminCount = await countAdmins(secretKey);
+          if (adminCount <= 1) {
+            return res.status(400).json({ error: 'Cannot pause the last admin account' });
+          }
+        }
 
         await clerkRequest(secretKey, 'POST', `/users/${userId}/ban`);
         await writeAudit({ actor: admin.userId, action: 'team.ban', resource: userId, metadata: {} }, req);
