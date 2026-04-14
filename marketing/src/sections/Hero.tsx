@@ -1,6 +1,6 @@
 import { Shield, Wifi, Lock, Activity, Globe } from 'lucide-react'
 
-const SIGN_UP_URL = 'https://accounts.nauticshield.io/sign-up'
+const GET_STARTED_URL = '#pricing'
 
 const S: Record<string, React.CSSProperties> = {
   section: {
@@ -368,7 +368,7 @@ export default function Hero() {
 
           <div style={S.ctas}>
             <a
-              href={SIGN_UP_URL}
+              href={GET_STARTED_URL}
               style={{ ...S.ctaPrimary }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 50px #0ea5e960'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)' }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 30px #0ea5e930'; (e.currentTarget as HTMLElement).style.transform = 'translateY(0)' }}

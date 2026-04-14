@@ -7,8 +7,8 @@ import Pricing from './sections/Pricing'
 import Testimonials from './sections/Testimonials'
 import Contact from './sections/Contact'
 
-const SIGN_UP_URL = 'https://accounts.nauticshield.io/sign-up'
 const SIGN_IN_URL = 'https://accounts.nauticshield.io/sign-in'
+const GET_STARTED_URL = '#pricing'
 
 const NAV_LINKS = [
   { href: '#features', label: 'Features' },
@@ -95,7 +95,7 @@ function Nav() {
             Sign In
           </a>
           <a
-            href={SIGN_UP_URL}
+            href={GET_STARTED_URL}
             style={{
               padding: '8px 18px', borderRadius: 8,
               background: '#0ea5e9', color: '#fff',
