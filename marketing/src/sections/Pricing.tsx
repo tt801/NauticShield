@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check } from 'lucide-react'
 
 const CLOUD_API = 'https://nautic-shield.vercel.app'
@@ -10,11 +10,11 @@ function buildSignUpUrl(plan: string) {
   return `${AUTH_DOMAIN}/sign-up?redirect_url=${encodeURIComponent(returnUrl)}`
 }
 
-function getAuthReturnPlan(): string | null {
-  if (typeof window === 'undefined') return null
+function getAuthReturnState(): { plan: string | null; fromAuth: boolean } {
+  if (typeof window === 'undefined') return { plan: null, fromAuth: false }
   const params = new URLSearchParams(window.location.search)
-  if (params.get('ns_auth') !== '1') return null
-  return params.get('ns_plan')
+  const fromAuth = params.get('ns_auth') === '1'
+  return { plan: fromAuth ? params.get('ns_plan') : null, fromAuth }
 }
 
 async function startCheckout(plan: string) {
@@ -155,10 +155,9 @@ const S: Record<string, React.CSSProperties> = {
   },
 }
 
-function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
+function PlanCard({ plan, selectedPlan }: { plan: typeof PLANS[number]; selectedPlan: string | null }) {
   const [loading, setLoading] = useState(false)
-  const authReturnPlan = getAuthReturnPlan()
-  const canCheckoutNow = authReturnPlan === plan.checkoutPlan && plan.checkoutPlan !== null
+  const canCheckoutNow = selectedPlan === plan.checkoutPlan && plan.checkoutPlan !== null
 
   async function handleCta() {
     if (plan.checkoutPlan === null) {
@@ -259,17 +258,35 @@ function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
       >
         {loading ? 'Redirecting…' : (canCheckoutNow ? 'Continue to Checkout' : plan.cta)}
       </button>
-
-      {canCheckoutNow && (
-        <p style={{ marginTop: 10, fontSize: 11, color: '#d4a847', textAlign: 'center' }}>
-          Plan selected. Continue to Stripe checkout.
-        </p>
-      )}
     </div>
   )
 }
 
 export default function Pricing() {
+  const authReturn = useMemo(() => getAuthReturnState(), [])
+  const [selectedPlan] = useState<string | null>(authReturn?.plan ?? null)
+  const [autoCheckoutAttempted, setAutoCheckoutAttempted] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!authReturn?.fromAuth) return
+
+    const url = new URL(window.location.href)
+    url.searchParams.delete('ns_plan')
+    url.searchParams.delete('ns_auth')
+    if (!url.hash) url.hash = 'pricing'
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [authReturn])
+
+  useEffect(() => {
+    if (!authReturn?.fromAuth) return
+    if (!selectedPlan) return
+    if (autoCheckoutAttempted) return
+
+    setAutoCheckoutAttempted(true)
+    void startCheckout(selectedPlan)
+  }, [authReturn, selectedPlan, autoCheckoutAttempted])
+
   return (
     <section id="pricing" style={S.section}>
       <div style={S.glow} />
@@ -284,7 +301,7 @@ export default function Pricing() {
         </div>
 
         <div style={S.grid}>
-          {PLANS.map(plan => <PlanCard key={plan.name} plan={plan} />)}
+          {PLANS.map(plan => <PlanCard key={plan.name} plan={plan} selectedPlan={selectedPlan} />)}
         </div>
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#7f95a8', marginTop: 32 }}>

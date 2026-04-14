@@ -7,7 +7,7 @@ import Pricing from './sections/Pricing'
 import Testimonials from './sections/Testimonials'
 import Contact from './sections/Contact'
 
-const SIGN_IN_URL = 'https://accounts.nauticshield.io/sign-in'
+const SIGN_IN_URL = 'https://app.nauticshield.io/sign-in'
 const GET_STARTED_URL = '#pricing'
 
 const NAV_LINKS = [
