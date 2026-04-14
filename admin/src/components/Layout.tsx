@@ -1,6 +1,6 @@
 import { useUser, UserButton } from '@clerk/clerk-react'
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, CreditCard, ScrollText, ShieldCheck, Terminal, Anchor } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, ScrollText, ShieldCheck, Terminal } from 'lucide-react'
 
 const NAV = [
   { to: '/fleet',     icon: LayoutDashboard, label: 'Fleet' },
@@ -31,7 +31,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <div style={S.shell}>
       <aside style={S.sidebar}>
         <div style={S.logo}>
-          <Anchor size={20} color="#0ea5e9" />
+          <img src="/logo.png" alt="NauticShield" style={{ height: 42, width: 'auto', objectFit: 'contain' }} />
           <div>
             <div style={{ fontWeight: 700, fontSize: 13, color: '#e8edf2' }}>NauticShield</div>
             <div style={{ fontSize: 10, color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Admin Portal</div>
