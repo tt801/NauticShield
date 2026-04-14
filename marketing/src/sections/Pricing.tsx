@@ -2,6 +2,20 @@ import { useState } from 'react'
 import { Check } from 'lucide-react'
 
 const CLOUD_API = 'https://nautic-shield.vercel.app'
+const AUTH_DOMAIN = 'https://accounts.nauticshield.io'
+const MARKETING_RETURN_BASE = 'https://nauticshield.io/'
+
+function buildSignUpUrl(plan: string) {
+  const returnUrl = `${MARKETING_RETURN_BASE}?ns_plan=${encodeURIComponent(plan)}&ns_auth=1#pricing`
+  return `${AUTH_DOMAIN}/sign-up?redirect_url=${encodeURIComponent(returnUrl)}`
+}
+
+function getAuthReturnPlan(): string | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('ns_auth') !== '1') return null
+  return params.get('ns_plan')
+}
 
 async function startCheckout(plan: string) {
   try {
@@ -143,10 +157,16 @@ const S: Record<string, React.CSSProperties> = {
 
 function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
   const [loading, setLoading] = useState(false)
+  const authReturnPlan = getAuthReturnPlan()
+  const canCheckoutNow = authReturnPlan === plan.checkoutPlan && plan.checkoutPlan !== null
 
   async function handleCta() {
     if (plan.checkoutPlan === null) {
       window.location.href = '#contact'
+      return
+    }
+    if (!canCheckoutNow) {
+      window.location.href = buildSignUpUrl(plan.checkoutPlan)
       return
     }
     setLoading(true)
@@ -160,7 +180,7 @@ function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
     display: 'flex',
     flexDirection: 'column',
     background: plan.highlight ? 'linear-gradient(160deg, #0a1a2a 0%, #06121e 100%)' : '#0a0f18',
-    border: plan.highlight ? '1px solid #0ea5e940' : '1px solid #131e2d',
+    border: canCheckoutNow ? '1px solid #d4a847' : (plan.highlight ? '1px solid #0ea5e940' : '1px solid #131e2d'),
     boxShadow: plan.highlight ? '0 0 60px #0ea5e912, inset 0 1px 0 #0ea5e920' : 'none',
     position: 'relative',
   }
@@ -237,8 +257,14 @@ function PlanCard({ plan }: { plan: typeof PLANS[number] }) {
           else { el.style.borderColor = '#1e2d3d'; el.style.color = '#9cb1c2' }
         }}
       >
-        {loading ? 'Redirecting…' : plan.cta}
+        {loading ? 'Redirecting…' : (canCheckoutNow ? 'Continue to Checkout' : plan.cta)}
       </button>
+
+      {canCheckoutNow && (
+        <p style={{ marginTop: 10, fontSize: 11, color: '#d4a847', textAlign: 'center' }}>
+          Plan selected. Continue to Stripe checkout.
+        </p>
+      )}
     </div>
   )
 }
