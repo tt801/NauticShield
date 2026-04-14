@@ -3,7 +3,7 @@ import { useOrganizationList, useClerk } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { Anchor, ShieldCheck, AlertTriangle, ExternalLink } from 'lucide-react';
 import { fetchJSON } from '@/api/client';
-import { AGENT_URL } from '@/api/config';
+import { AGENT_URL, CLOUD_API_URL } from '@/api/config';
 
 const S: Record<string, React.CSSProperties> = {
   page: {
@@ -52,7 +52,7 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function Onboarding() {
-  const { setActive, userMemberships, isLoaded } = useOrganizationList({ userMemberships: true });
+  const { setActive, userMemberships, isLoaded, createOrganization } = useOrganizationList({ userMemberships: true });
   const { signOut } = useClerk();
   const navigate = useNavigate();
   const [vesselName, setVesselName] = useState('');
@@ -86,10 +86,11 @@ export default function Onboarding() {
     setLoading(true);
     setError(null);
     try {
+      const vesselCreateBase = CLOUD_API_URL || AGENT_URL;
       // Server-side creation enforces the vessel quota from publicMetadata.
       // If the user has hit their plan limit the backend returns 402.
       const result = await fetchJSON<{ orgId: string; orgName: string; message?: string }>(
-        `${AGENT_URL}/api/vessels`,
+        `${vesselCreateBase}/api/vessels`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -101,6 +102,20 @@ export default function Onboarding() {
       navigate('/', { replace: true });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
+
+      // Backward-compatibility fallback: if a stale cloud deployment returns 405,
+      // create the organization client-side so onboarding is not blocked.
+      if (msg.includes('HTTP 405') && createOrganization && setActive) {
+        try {
+          const org = await createOrganization({ name });
+          await setActive({ organization: org.id });
+          navigate('/', { replace: true });
+          return;
+        } catch {
+          // Fall through to normal error handling below
+        }
+      }
+
       // 402 = vessel quota reached — show upgrade prompt instead of generic error
       if (msg.includes('vessel_limit_reached') || msg.includes('plan allows')) {
         setLimitHit(true);
