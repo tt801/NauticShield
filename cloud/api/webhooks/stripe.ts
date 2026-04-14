@@ -6,7 +6,7 @@
  * Setup:
  *  1. Add STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET to Vercel env vars
  *  2. In Stripe dashboard → Webhooks → Add endpoint:
- *       URL:    https://nautic-shield.vercel.app/api/webhooks/stripe
+ *       URL:    https://api.nauticshield.io/api/webhooks/stripe
  *       Events: customer.subscription.created
  *               customer.subscription.updated
  *               customer.subscription.deleted

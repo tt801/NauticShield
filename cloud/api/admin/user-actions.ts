@@ -63,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await clerkRequest(secretKey, 'POST', '/invitations', {
           email_address:   email,
           public_metadata: { role },
-          redirect_url:    process.env.ADMIN_URL ?? 'https://nautic-shield-admin.vercel.app',
+          redirect_url:    process.env.ADMIN_URL ?? 'https://admin.nauticshield.io',
         });
 
         await writeAudit({ actor: admin.userId, action: 'team.invite', resource: email, metadata: { role } }, req);
