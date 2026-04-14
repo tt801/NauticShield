@@ -1,4 +1,4 @@
-import { ClerkProvider, SignedIn, SignedOut, RedirectToSignIn, useAuth, useUser } from '@clerk/clerk-react'
+import { ClerkProvider, SignedIn, SignedOut, RedirectToSignIn, useAuth, useUser, useClerk, UserButton } from '@clerk/clerk-react'
 import { dark } from '@clerk/themes'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
@@ -23,6 +23,7 @@ function TokenBridge() {
 // Blocks access if the user doesn't have role="admin" in publicMetadata
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoaded } = useUser();
+  const { signOut } = useClerk();
   if (!isLoaded) return <Spinner />;
   const role = (user?.publicMetadata?.role as string | undefined) ?? '';
   if (role !== 'admin') {
@@ -31,7 +32,24 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
         <div style={{ background: '#0d1421', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 12, padding: 40, textAlign: 'center', maxWidth: 400 }}>
           <div style={{ fontSize: 32, marginBottom: 16 }}>🔒</div>
           <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Admin Access Required</div>
-          <div style={{ color: '#6b7280', fontSize: 13 }}>Your account does not have admin privileges.</div>
+          <div style={{ color: '#6b7280', fontSize: 13, marginBottom: 16 }}>Your account does not have admin privileges.</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+            <UserButton appearance={{ elements: { avatarBox: { width: 32, height: 32 } } }} />
+          </div>
+          <button
+            onClick={() => signOut({ redirectUrl: 'https://accounts.nauticshield.io/sign-in' })}
+            style={{
+              background: '#131e2d',
+              border: '1px solid #1f2d3d',
+              color: '#cbd5e1',
+              borderRadius: 8,
+              padding: '8px 12px',
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
+          >
+            Sign out and switch account
+          </button>
         </div>
       </div>
     );
