@@ -47,7 +47,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const stripe = new Stripe(stripeKey, { apiVersion: '2026-03-25.dahlia' });
 
-  const defaultSuccess = 'https://app.nauticshield.io/?checkout=success';
+  const defaultSuccess = 'https://app.nauticshield.io/onboarding?checkout=success';
   const defaultCancel  = 'https://nauticshield.io/#pricing';
 
   try {
