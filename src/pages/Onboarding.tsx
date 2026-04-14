@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react';
 import { useOrganizationList, useClerk } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { Anchor, ShieldCheck, AlertTriangle, ExternalLink } from 'lucide-react';
-import { fetchJSON } from '@/api/client';
-import { AGENT_URL, CLOUD_API_URL } from '@/api/config';
 
 const S: Record<string, React.CSSProperties> = {
   page: {
@@ -86,55 +84,16 @@ export default function Onboarding() {
     setLoading(true);
     setError(null);
     try {
-      const endpoints = Array.from(new Set([
-        CLOUD_API_URL,
-        'https://nautic-shield.vercel.app',
-        AGENT_URL,
-      ].filter(Boolean)));
-
-      let result: { orgId: string; orgName: string; message?: string } | null = null;
-      let lastErr: Error | null = null;
-
-      for (const base of endpoints) {
-        try {
-          result = await fetchJSON<{ orgId: string; orgName: string; message?: string }>(
-            `${base}/api/vessels`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name }),
-            },
-          );
-          break;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Unknown error';
-          if (msg.includes('vessel_limit_reached') || msg.includes('plan allows')) {
-            throw new Error(msg);
-          }
-          lastErr = err instanceof Error ? err : new Error(msg);
-        }
+      if (!createOrganization || !setActive) {
+        throw new Error('Onboarding service unavailable. Please refresh and try again.');
       }
 
-      if (!result) throw lastErr ?? new Error('Failed to create vessel. Please try again.');
-
-      // Activate the newly created org in Clerk's client session
-      await setActive!({ organization: result.orgId });
+      // Clerk-first creation avoids blocking on cloud/network fetch failures.
+      const org = await createOrganization({ name });
+      await setActive({ organization: org.id });
       navigate('/', { replace: true });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
-
-      // Backward-compatibility fallback: if a stale cloud deployment returns 405,
-      // create the organization client-side so onboarding is not blocked.
-      if ((msg.includes('HTTP 405') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) && createOrganization && setActive) {
-        try {
-          const org = await createOrganization({ name });
-          await setActive({ organization: org.id });
-          navigate('/', { replace: true });
-          return;
-        } catch {
-          // Fall through to normal error handling below
-        }
-      }
 
       // 402 = vessel quota reached — show upgrade prompt instead of generic error
       if (msg.includes('vessel_limit_reached') || msg.includes('plan allows')) {
