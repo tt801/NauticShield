@@ -14,7 +14,7 @@ const NAV = [
 const S = {
   shell:   { display: 'flex', height: '100vh', background: '#080c12' } as React.CSSProperties,
   sidebar: { width: 220, background: '#0a0f18', borderRight: '1px solid #131e2d', display: 'flex', flexDirection: 'column' as const, flexShrink: 0 },
-  logo:    { padding: '20px 20px 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #131e2d' },
+  logo:    { padding: '20px 20px 16px', display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-start', gap: 10, borderBottom: '1px solid #131e2d' },
   nav:     { padding: '12px 8px', flex: 1 },
   link:    (active: boolean): React.CSSProperties => ({
     display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8,
@@ -31,7 +31,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <div style={S.shell}>
       <aside style={S.sidebar}>
         <div style={S.logo}>
-          <img src="/logo.png" alt="NauticShield" style={{ height: 42, width: 'auto', objectFit: 'contain' }} />
+          <img src="/logo.png" alt="NauticShield" style={{ height: 126, width: 'auto', maxWidth: '100%', objectFit: 'contain' }} />
           <div>
             <div style={{ fontWeight: 700, fontSize: 13, color: '#e8edf2' }}>NauticShield</div>
             <div style={{ fontSize: 10, color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Admin Portal</div>
