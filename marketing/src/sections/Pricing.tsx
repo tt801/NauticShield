@@ -265,7 +265,6 @@ function PlanCard({ plan, selectedPlan }: { plan: typeof PLANS[number]; selected
 export default function Pricing() {
   const authReturn = useMemo(() => getAuthReturnState(), [])
   const [selectedPlan] = useState<string | null>(authReturn?.plan ?? null)
-  const [autoCheckoutAttempted, setAutoCheckoutAttempted] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -277,15 +276,6 @@ export default function Pricing() {
     if (!url.hash) url.hash = 'pricing'
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
   }, [authReturn])
-
-  useEffect(() => {
-    if (!authReturn?.fromAuth) return
-    if (!selectedPlan) return
-    if (autoCheckoutAttempted) return
-
-    setAutoCheckoutAttempted(true)
-    void startCheckout(selectedPlan)
-  }, [authReturn, selectedPlan, autoCheckoutAttempted])
 
   return (
     <section id="pricing" style={S.section}>
