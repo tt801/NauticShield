@@ -155,7 +155,7 @@ const S: Record<string, React.CSSProperties> = {
   },
 }
 
-function PlanCard({ plan, selectedPlan }: { plan: typeof PLANS[number]; selectedPlan: string | null }) {
+function PlanCard({ plan, selectedPlan, isSignedIn }: { plan: typeof PLANS[number]; selectedPlan: string | null; isSignedIn: boolean }) {
   const [loading, setLoading] = useState(false)
   const canCheckoutNow = selectedPlan === plan.checkoutPlan && plan.checkoutPlan !== null
 
@@ -165,6 +165,13 @@ function PlanCard({ plan, selectedPlan }: { plan: typeof PLANS[number]; selected
       return
     }
     if (!canCheckoutNow) {
+      if (isSignedIn) {
+        window.alert('You are already signed in. Continuing to Stripe checkout for your selected plan.')
+        setLoading(true)
+        await startCheckout(plan.checkoutPlan)
+        setLoading(false)
+        return
+      }
       window.location.href = buildSignUpUrl(plan.checkoutPlan)
       return
     }
@@ -262,7 +269,7 @@ function PlanCard({ plan, selectedPlan }: { plan: typeof PLANS[number]; selected
   )
 }
 
-export default function Pricing() {
+export default function Pricing({ isSignedIn = false }: { isSignedIn?: boolean }) {
   const authReturn = useMemo(() => getAuthReturnState(), [])
   const [selectedPlan] = useState<string | null>(authReturn?.plan ?? null)
   const [autoCheckoutStarted, setAutoCheckoutStarted] = useState(false)
@@ -301,7 +308,7 @@ export default function Pricing() {
         </div>
 
         <div style={S.grid}>
-          {PLANS.map(plan => <PlanCard key={plan.name} plan={plan} selectedPlan={selectedPlan} />)}
+          {PLANS.map(plan => <PlanCard key={plan.name} plan={plan} selectedPlan={selectedPlan} isSignedIn={isSignedIn} />)}
         </div>
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#7f95a8', marginTop: 32 }}>

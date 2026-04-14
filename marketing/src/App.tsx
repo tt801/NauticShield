@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ClerkProvider, SignedIn, SignedOut, UserButton, useUser } from '@clerk/clerk-react'
 import { Menu, X } from 'lucide-react'
 import Hero from './sections/Hero'
 import Features from './sections/Features'
@@ -9,6 +10,7 @@ import Contact from './sections/Contact'
 
 const SIGN_IN_URL = 'https://app.nauticshield.io/sign-in'
 const GET_STARTED_URL = '#pricing'
+const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined
 
 const NAV_LINKS = [
   { href: '#features', label: 'Features' },
@@ -18,7 +20,7 @@ const NAV_LINKS = [
   { href: '#contact', label: 'Contact' },
 ]
 
-function Nav() {
+function Nav({ isSignedIn, userLabel }: { isSignedIn: boolean; userLabel: string }) {
   const [scrolled, setScrolled] = useState(false)
   const [open, setOpen] = useState(false)
 
@@ -49,6 +51,13 @@ function Nav() {
       : '0 1px 16px rgba(0,0,0,0.35)',
   }
 
+  function handleSignInClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (!isSignedIn) return
+    e.preventDefault()
+    window.alert('You are already signed in. Taking you to the app dashboard.')
+    window.location.href = 'https://app.nauticshield.io/'
+  }
+
   return (
     <>
       <nav style={bar}>
@@ -72,28 +81,43 @@ function Nav() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <a
-            href={SIGN_IN_URL}
-            style={{
-              padding: '8px 14px', borderRadius: 8,
-              border: '1px solid #1f3347', color: '#a8bed0',
-              fontWeight: 600, fontSize: 13, transition: 'all 0.2s',
-            }}
-            onMouseEnter={e => {
-              const el = e.currentTarget as HTMLElement
-              el.style.borderColor = '#0ea5e950'
-              el.style.color = '#e8edf2'
-              el.style.background = 'rgba(14,165,233,0.08)'
-            }}
-            onMouseLeave={e => {
-              const el = e.currentTarget as HTMLElement
-              el.style.borderColor = '#1f3347'
-              el.style.color = '#a8bed0'
-              el.style.background = 'transparent'
-            }}
-          >
-            Sign In
-          </a>
+          <SignedOut>
+            <a
+              href={SIGN_IN_URL}
+              onClick={handleSignInClick}
+              style={{
+                padding: '8px 14px', borderRadius: 8,
+                border: '1px solid #1f3347', color: '#a8bed0',
+                fontWeight: 600, fontSize: 13, transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => {
+                const el = e.currentTarget as HTMLElement
+                el.style.borderColor = '#0ea5e950'
+                el.style.color = '#e8edf2'
+                el.style.background = 'rgba(14,165,233,0.08)'
+              }}
+              onMouseLeave={e => {
+                const el = e.currentTarget as HTMLElement
+                el.style.borderColor = '#1f3347'
+                el.style.color = '#a8bed0'
+                el.style.background = 'transparent'
+              }}
+            >
+              Sign In
+            </a>
+          </SignedOut>
+
+          <SignedIn>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #1f3347', borderRadius: 10, padding: '5px 8px' }}>
+              <UserButton
+                afterSignOutUrl="https://nauticshield.io"
+                appearance={{ elements: { avatarBox: { width: 24, height: 24 } } }}
+              />
+              <span style={{ color: '#9cb1c2', fontSize: 12, maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {userLabel}
+              </span>
+            </div>
+          </SignedIn>
           <a
             href={GET_STARTED_URL}
             style={{
@@ -202,14 +226,42 @@ function Footer() {
 }
 
 export default function App() {
+  if (!CLERK_KEY) {
+    return (
+      <>
+        <Nav isSignedIn={false} userLabel="" />
+        <main>
+          <Hero />
+          <Features />
+          <Screenshots />
+          <Pricing isSignedIn={false} />
+          <Testimonials />
+          <Contact />
+        </main>
+        <Footer />
+      </>
+    )
+  }
+
+  return (
+    <ClerkProvider publishableKey={CLERK_KEY} signInUrl="https://accounts.nauticshield.io/sign-in" signUpUrl="https://accounts.nauticshield.io/sign-up">
+      <MarketingShell />
+    </ClerkProvider>
+  )
+}
+
+function MarketingShell() {
+  const { user, isSignedIn } = useUser()
+  const userLabel = user?.firstName ?? user?.primaryEmailAddress?.emailAddress ?? 'Signed in'
+
   return (
     <>
-      <Nav />
+      <Nav isSignedIn={Boolean(isSignedIn)} userLabel={userLabel} />
       <main>
         <Hero />
         <Features />
         <Screenshots />
-        <Pricing />
+        <Pricing isSignedIn={Boolean(isSignedIn)} />
         <Testimonials />
         <Contact />
       </main>
