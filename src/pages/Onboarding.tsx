@@ -86,17 +86,37 @@ export default function Onboarding() {
     setLoading(true);
     setError(null);
     try {
-      const vesselCreateBase = CLOUD_API_URL || AGENT_URL;
-      // Server-side creation enforces the vessel quota from publicMetadata.
-      // If the user has hit their plan limit the backend returns 402.
-      const result = await fetchJSON<{ orgId: string; orgName: string; message?: string }>(
-        `${vesselCreateBase}/api/vessels`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        },
-      );
+      const endpoints = Array.from(new Set([
+        CLOUD_API_URL,
+        'https://nautic-shield.vercel.app',
+        AGENT_URL,
+      ].filter(Boolean)));
+
+      let result: { orgId: string; orgName: string; message?: string } | null = null;
+      let lastErr: Error | null = null;
+
+      for (const base of endpoints) {
+        try {
+          result = await fetchJSON<{ orgId: string; orgName: string; message?: string }>(
+            `${base}/api/vessels`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name }),
+            },
+          );
+          break;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Unknown error';
+          if (msg.includes('vessel_limit_reached') || msg.includes('plan allows')) {
+            throw new Error(msg);
+          }
+          lastErr = err instanceof Error ? err : new Error(msg);
+        }
+      }
+
+      if (!result) throw lastErr ?? new Error('Failed to create vessel. Please try again.');
+
       // Activate the newly created org in Clerk's client session
       await setActive!({ organization: result.orgId });
       navigate('/', { replace: true });
@@ -105,7 +125,7 @@ export default function Onboarding() {
 
       // Backward-compatibility fallback: if a stale cloud deployment returns 405,
       // create the organization client-side so onboarding is not blocked.
-      if (msg.includes('HTTP 405') && createOrganization && setActive) {
+      if ((msg.includes('HTTP 405') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) && createOrganization && setActive) {
         try {
           const org = await createOrganization({ name });
           await setActive({ organization: org.id });
