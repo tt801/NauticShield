@@ -12,6 +12,15 @@ import TeamAccess         from '@/pages/TeamAccess'
 import Shell              from '@/pages/Shell'
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
+const ADMIN_USER_ID_ALLOWLIST = (import.meta.env.VITE_ADMIN_USER_ID_ALLOWLIST as string | undefined) ?? '';
+const ADMIN_EMAIL_ALLOWLIST = (import.meta.env.VITE_ADMIN_EMAIL_ALLOWLIST as string | undefined) ?? '';
+
+function parseCsv(value: string): string[] {
+  return value.split(',').map(v => v.trim()).filter(Boolean);
+}
+
+const BOOTSTRAP_ADMIN_IDS = parseCsv(ADMIN_USER_ID_ALLOWLIST);
+const BOOTSTRAP_ADMIN_EMAILS = parseCsv(ADMIN_EMAIL_ALLOWLIST).map(v => v.toLowerCase());
 
 // Sets the Clerk JWT as the Bearer token for all API calls
 function TokenBridge() {
@@ -26,7 +35,10 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   const { signOut } = useClerk();
   if (!isLoaded) return <Spinner />;
   const role = (user?.publicMetadata?.role as string | undefined) ?? '';
-  if (role !== 'admin') {
+  const userId = user?.id ?? '';
+  const userEmail = user?.primaryEmailAddress?.emailAddress?.toLowerCase() ?? '';
+  const isBootstrapAdmin = BOOTSTRAP_ADMIN_IDS.includes(userId) || (userEmail !== '' && BOOTSTRAP_ADMIN_EMAILS.includes(userEmail));
+  if (role !== 'admin' && !isBootstrapAdmin) {
     return (
       <div style={{ minHeight: '100vh', background: '#080c12', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ background: '#0d1421', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 12, padding: 40, textAlign: 'center', maxWidth: 400 }}>

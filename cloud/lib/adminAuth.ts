@@ -15,6 +15,13 @@ export interface AdminAuth {
   role:   string;
 }
 
+function parseCsv(value?: string): string[] {
+  return (value ?? '')
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+
 export async function verifyAdminJWT(req: VercelRequest): Promise<AdminAuth | null> {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return null;
@@ -32,16 +39,21 @@ export async function verifyAdminJWT(req: VercelRequest): Promise<AdminAuth | nu
     const clerk  = createClerkClient({ secretKey: secret });
     const user   = await clerk.users.getUser(payload.sub);
     const role   = (user.publicMetadata?.role as string | undefined) ?? '';
+    const userEmail = user.primaryEmailAddress?.emailAddress?.toLowerCase() ?? '';
 
-    if (role !== 'admin') {
-      console.warn(`[adminAuth] user ${payload.sub} denied — role="${role}"`);
+    const adminUserIds = parseCsv(process.env.ADMIN_USER_ID_ALLOWLIST);
+    const adminEmails  = parseCsv(process.env.ADMIN_EMAIL_ALLOWLIST).map(v => v.toLowerCase());
+    const isBootstrapAdmin = adminUserIds.includes(payload.sub) || (userEmail !== '' && adminEmails.includes(userEmail));
+
+    if (role !== 'admin' && !isBootstrapAdmin) {
+      console.warn(`[adminAuth] user ${payload.sub} denied — role="${role}" email="${userEmail}"`);
       return null;
     }
 
     return {
       userId: payload.sub,
       orgId:  (payload as Record<string, unknown>).org_id as string | null ?? null,
-      role,
+      role: role || 'admin',
     };
   } catch (err) {
     console.error('[adminAuth] verifyToken failed:', (err as Error).message);
