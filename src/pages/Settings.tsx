@@ -146,6 +146,38 @@ export default function Settings() {
   useEffect(() => {
     fetchJSON<VesselQuota>(`${AGENT_URL}/api/vessels/quota`).then(setVesselQuota).catch(() => {});
   }, []);
+
+  // ── Subscription cancellation ───────────────────────────────────
+  const [cancelingSub, setCancelingSub] = useState(false);
+  const [cancelMsg, setCancelMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  async function handleCancelSubscription() {
+    if (!CLOUD_API_URL) {
+      setCancelMsg({ type: 'err', text: 'Cloud billing API is not configured.' });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Cancel subscription at period end? Trial cancellations are free within 14 days. Paid plans retain access until the current billing period ends.'
+    );
+    if (!confirmed) return;
+
+    setCancelingSub(true);
+    setCancelMsg(null);
+    try {
+      const result = await fetchJSON<{ ok: boolean; message: string; currentPeriodEnd?: string | null; trialEnd?: string | null }>(
+        `${CLOUD_API_URL}/api/stripe/cancel`,
+        { method: 'POST' },
+      );
+      const endDate = result.trialEnd ?? result.currentPeriodEnd;
+      const suffix = endDate ? ` Access remains until ${new Date(endDate).toLocaleDateString('en-GB')}.` : '';
+      setCancelMsg({ type: 'ok', text: `${result.message}${suffix}` });
+    } catch (e: unknown) {
+      setCancelMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed to cancel subscription' });
+    } finally {
+      setCancelingSub(false);
+    }
+  }
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole]   = useState('org:member');
   const [inviting, setInviting]       = useState(false);
@@ -633,6 +665,37 @@ export default function Settings() {
                 }}>
                   <CreditCard size={13} /> Update Payment
                 </button>
+                <button
+                  onClick={handleCancelSubscription}
+                  disabled={cancelingSub}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    background: 'rgba(239,68,68,0.08)', color: '#ef4444',
+                    border: '1px solid rgba(239,68,68,0.25)', borderRadius: 9,
+                    padding: '8px 16px', fontSize: 13, fontWeight: 600,
+                    cursor: cancelingSub ? 'wait' : 'pointer', opacity: cancelingSub ? 0.7 : 1,
+                  }}
+                >
+                  {cancelingSub ? 'Canceling…' : 'Cancel Subscription'}
+                </button>
+              </div>
+              {cancelMsg && (
+                <div style={{
+                  marginTop: 8,
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  border: cancelMsg.type === 'ok' ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(239,68,68,0.35)',
+                  background: cancelMsg.type === 'ok' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                  color: cancelMsg.type === 'ok' ? '#22c55e' : '#f87171',
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}>
+                  {cancelMsg.text}
+                </div>
+              )}
+              <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.7, marginTop: 6 }}>
+                Trial cancellation within the first 14 days is free of charge.
+                Paid subscriptions can be canceled anytime and remain active until the current 30-day billing period ends.
               </div>
             </div>
           </Card>

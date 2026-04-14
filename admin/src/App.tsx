@@ -12,6 +12,7 @@ import TeamAccess         from '@/pages/TeamAccess'
 import Shell              from '@/pages/Shell'
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
+const ADMIN_PORTAL_URL = 'https://admin.nauticshield.io/fleet';
 const ADMIN_USER_ID_ALLOWLIST = (import.meta.env.VITE_ADMIN_USER_ID_ALLOWLIST as string | undefined) ?? '';
 const ADMIN_EMAIL_ALLOWLIST = (import.meta.env.VITE_ADMIN_EMAIL_ALLOWLIST as string | undefined) ?? '';
 
@@ -80,7 +81,16 @@ function Spinner() {
 
 export default function App() {
   return (
-    <ClerkProvider publishableKey={CLERK_KEY} appearance={{ baseTheme: dark, variables: { colorPrimary: '#0ea5e9', colorBackground: '#080c12' } }}>
+    <ClerkProvider
+      publishableKey={CLERK_KEY}
+      signInUrl="https://accounts.nauticshield.io/sign-in"
+      signUpUrl="https://accounts.nauticshield.io/sign-up"
+      signInFallbackRedirectUrl={ADMIN_PORTAL_URL}
+      signInForceRedirectUrl={ADMIN_PORTAL_URL}
+      signUpFallbackRedirectUrl={ADMIN_PORTAL_URL}
+      signUpForceRedirectUrl={ADMIN_PORTAL_URL}
+      appearance={{ baseTheme: dark, variables: { colorPrimary: '#0ea5e9', colorBackground: '#080c12' } }}
+    >
       <BrowserRouter>
         <SignedIn>
           <TokenBridge />
@@ -100,7 +110,7 @@ export default function App() {
           </AdminGuard>
         </SignedIn>
         <SignedOut>
-          <RedirectToSignIn />
+          <RedirectToSignIn redirectUrl={ADMIN_PORTAL_URL} />
         </SignedOut>
       </BrowserRouter>
     </ClerkProvider>

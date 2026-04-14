@@ -79,21 +79,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const status     = sub.status   as string;
         const plan       = planFromMetadata(sub.metadata as Record<string, string>);
         const periodEnd  = new Date((sub.current_period_end as number) * 1000).toISOString();
+        const trialEnd   = (sub.trial_end as number | null)
+          ? new Date((sub.trial_end as number) * 1000).toISOString()
+          : null;
+        const cancelAtPeriodEnd = Boolean(sub.cancel_at_period_end);
 
         await supabase
           .from('vessels')
           .update({
             stripe_subscription_id: sub.id,
-            subscription_status:    status,
+            subscription_status:    cancelAtPeriodEnd ? 'canceling' : status,
             plan,
             current_period_end:     periodEnd,
+            trial_ends_at:          trialEnd,
           })
           .eq('stripe_customer_id', customerId);
 
         await writeAudit({
           actor:    'stripe',
           action:   `subscription.${event.type === 'customer.subscription.created' ? 'created' : 'updated'}`,
-          metadata: { customerId, status, plan, periodEnd },
+          metadata: { customerId, status, plan, periodEnd, trialEnd, cancelAtPeriodEnd },
         });
         break;
       }

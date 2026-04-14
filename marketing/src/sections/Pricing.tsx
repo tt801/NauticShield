@@ -6,15 +6,15 @@ const AUTH_DOMAIN = 'https://accounts.nauticshield.io'
 const MARKETING_RETURN_BASE = 'https://nauticshield.io/'
 
 function buildSignUpUrl(plan: string) {
-  const returnUrl = `${MARKETING_RETURN_BASE}?ns_plan=${encodeURIComponent(plan)}&ns_auth=1#pricing`
+  const returnUrl = `${MARKETING_RETURN_BASE}?ns_plan=${encodeURIComponent(plan)}&ns_auth=1&ns_flow=plan-signup#pricing`
   return `${AUTH_DOMAIN}/sign-up?redirect_url=${encodeURIComponent(returnUrl)}`
 }
 
-function getAuthReturnState(): { plan: string | null; fromAuth: boolean } {
-  if (typeof window === 'undefined') return { plan: null, fromAuth: false }
+function getAuthReturnState(): { plan: string | null; fromPricingSignup: boolean } {
+  if (typeof window === 'undefined') return { plan: null, fromPricingSignup: false }
   const params = new URLSearchParams(window.location.search)
-  const fromAuth = params.get('ns_auth') === '1'
-  return { plan: fromAuth ? params.get('ns_plan') : null, fromAuth }
+  const fromPricingSignup = params.get('ns_auth') === '1' && params.get('ns_flow') === 'plan-signup'
+  return { plan: fromPricingSignup ? params.get('ns_plan') : null, fromPricingSignup }
 }
 
 async function startCheckout(plan: string) {
@@ -265,17 +265,27 @@ function PlanCard({ plan, selectedPlan }: { plan: typeof PLANS[number]; selected
 export default function Pricing() {
   const authReturn = useMemo(() => getAuthReturnState(), [])
   const [selectedPlan] = useState<string | null>(authReturn?.plan ?? null)
+  const [autoCheckoutStarted, setAutoCheckoutStarted] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (!authReturn?.fromAuth) return
+    if (!authReturn?.fromPricingSignup) return
 
     const url = new URL(window.location.href)
     url.searchParams.delete('ns_plan')
     url.searchParams.delete('ns_auth')
+    url.searchParams.delete('ns_flow')
     if (!url.hash) url.hash = 'pricing'
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
   }, [authReturn])
+
+  useEffect(() => {
+    if (!authReturn?.fromPricingSignup) return
+    if (!selectedPlan) return
+    if (autoCheckoutStarted) return
+    setAutoCheckoutStarted(true)
+    void startCheckout(selectedPlan)
+  }, [authReturn, selectedPlan, autoCheckoutStarted])
 
   return (
     <section id="pricing" style={S.section}>
