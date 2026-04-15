@@ -1,4 +1,5 @@
-import { useAuth as useClerkAuth, useOrganization } from '@clerk/clerk-react';
+import { useAuth as useClerkAuth, useOrganization, useOrganizationList } from '@clerk/clerk-react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import type { Action } from '@/context/AuthContext';
@@ -11,15 +12,58 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, require: action }: ProtectedRouteProps) {
   const { isSignedIn, isLoaded } = useClerkAuth();
-  const { isLoaded: orgLoaded }  = useOrganization();
-  const auth                     = useAuth();
+  const { isLoaded: orgLoaded, organization } = useOrganization();
+  const {
+    isLoaded: membershipsLoaded,
+    setActive,
+    userMemberships,
+  } = useOrganizationList({ userMemberships: true });
+  const auth = useAuth();
+  const attemptedRestore = useRef(false);
+  const [restoreFailed, setRestoreFailed] = useState(false);
 
-  if (!isLoaded || !orgLoaded) {
+  useEffect(() => {
+    if (!isSignedIn || !isLoaded || !orgLoaded || !membershipsLoaded || organization?.id || attemptedRestore.current) {
+      return;
+    }
+
+    attemptedRestore.current = true;
+
+    const memberships = userMemberships?.data ?? [];
+    const preferredMembership = memberships[memberships.length - 1];
+
+    if (!preferredMembership || !setActive) {
+      return;
+    }
+
+    void setActive({ organization: preferredMembership.organization.id }).catch(() => {
+      attemptedRestore.current = false;
+      setRestoreFailed(true);
+    });
+  }, [
+    isSignedIn,
+    isLoaded,
+    orgLoaded,
+    membershipsLoaded,
+    organization?.id,
+    setActive,
+    userMemberships?.data,
+  ]);
+
+  if (!isLoaded || !orgLoaded || !membershipsLoaded) {
     return <LoadingScreen />;
   }
 
   if (!isSignedIn) {
     return <Navigate to="/sign-in" replace />;
+  }
+
+  if (!organization?.id) {
+    if ((userMemberships?.data?.length ?? 0) > 0 && !restoreFailed) {
+      return <LoadingScreen message="Restoring vessel session…" />;
+    }
+
+    return <Navigate to="/onboarding" replace />;
   }
 
   if (action && !auth.can(action)) {
@@ -29,7 +73,7 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
   return <>{children}</>;
 }
 
-function LoadingScreen() {
+function LoadingScreen({ message = 'Connecting to vessel…' }: { message?: string }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -42,7 +86,7 @@ function LoadingScreen() {
         animation: 'spin 0.8s linear infinite',
       }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      Connecting to vessel…
+      {message}
     </div>
   );
 }

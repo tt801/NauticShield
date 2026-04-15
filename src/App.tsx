@@ -124,7 +124,7 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
                     <Route path="/voyage"        element={<Protect require="view:voyage"><Voyage /></Protect>} />
                     <Route path="/cyber"         element={<Protect require="view:cyber"><Cyber /></Protect>} />
                     <Route path="/settings"      element={<Protect require="view:settings"><Settings /></Protect>} />
-                    <Route path="*"              element={<Dashboard />} />
+                    <Route path="*"              element={<Protect><Dashboard /></Protect>} />
                   </Routes>
                 </Layout>
               </SignedIn>
