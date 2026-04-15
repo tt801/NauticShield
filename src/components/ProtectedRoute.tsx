@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import type { Action } from '@/context/AuthContext';
 
 const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
+const ACTIVE_ORG_QUERY_KEY = 'ns_org';
 type MembershipSummary = { organization: { id: string; name: string | null } };
 const MAX_RESTORE_ATTEMPTS = 8;
 
@@ -29,6 +30,9 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
   const [isRestoring, setIsRestoring] = useState(false);
   const [probedMemberships, setProbedMemberships] = useState<MembershipSummary[] | null>(null);
   const [membershipProbeComplete, setMembershipProbeComplete] = useState(false);
+  const pendingOrgId = typeof window === 'undefined'
+    ? null
+    : new URLSearchParams(window.location.search).get(ACTIVE_ORG_QUERY_KEY);
   const storedOrgId = typeof window === 'undefined' ? null : window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
 
   const memberships: MembershipSummary[] = ((userMemberships?.data?.length ?? 0) > 0
@@ -45,6 +49,12 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
       window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, organization.id);
       setRestoreAttemptCount(0);
       setIsRestoring(false);
+
+      const url = new URL(window.location.href);
+      if (url.searchParams.has(ACTIVE_ORG_QUERY_KEY)) {
+        url.searchParams.delete(ACTIVE_ORG_QUERY_KEY);
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      }
     }
   }, [organization?.id]);
 
@@ -94,7 +104,7 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
       return;
     }
 
-    if (memberships.length === 0 && !storedOrgId) {
+    if (memberships.length === 0 && !storedOrgId && !pendingOrgId) {
       return;
     }
 
@@ -103,10 +113,13 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
     }
 
     const preferredMembership =
+      (pendingOrgId ? memberships.find(membership => membership.organization.id === pendingOrgId) : undefined)
+      ?? (pendingOrgId ? { organization: { id: pendingOrgId, name: null } } : undefined)
+      ??
       (storedOrgId ? memberships.find(membership => membership.organization.id === storedOrgId) : undefined)
       ?? memberships[memberships.length - 1];
 
-    const targetOrgId = preferredMembership?.organization.id ?? storedOrgId;
+    const targetOrgId = preferredMembership?.organization.id ?? pendingOrgId ?? storedOrgId;
 
     if (!targetOrgId || !setActive) {
       return;
@@ -139,6 +152,7 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
     membershipProbeComplete,
     organization?.id,
     memberships,
+    pendingOrgId,
     storedOrgId,
     setActive,
     isRestoring,
@@ -158,15 +172,15 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
       return <LoadingScreen message="Checking vessel access…" />;
     }
 
-    if (memberships.length > 0 || storedOrgId) {
+    if (memberships.length > 0 || storedOrgId || pendingOrgId) {
       if (restoreAttemptCount < MAX_RESTORE_ATTEMPTS) {
         return <LoadingScreen message="Restoring vessel session…" />;
       }
 
-      return <VesselRecoveryScreen storedOrgId={storedOrgId} membershipCount={memberships.length} />;
+      return <VesselRecoveryScreen storedOrgId={storedOrgId} pendingOrgId={pendingOrgId} membershipCount={memberships.length} />;
     }
 
-    return <VesselRecoveryScreen storedOrgId={storedOrgId} membershipCount={memberships.length} />;
+    return <VesselRecoveryScreen storedOrgId={storedOrgId} pendingOrgId={pendingOrgId} membershipCount={memberships.length} />;
   }
 
   if (action && !auth.can(action)) {
@@ -217,7 +231,7 @@ function AccessDenied() {
   );
 }
 
-function VesselRecoveryScreen({ storedOrgId, membershipCount }: { storedOrgId: string | null; membershipCount: number }) {
+function VesselRecoveryScreen({ storedOrgId, pendingOrgId, membershipCount }: { storedOrgId: string | null; pendingOrgId: string | null; membershipCount: number }) {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -239,6 +253,7 @@ function VesselRecoveryScreen({ storedOrgId, membershipCount }: { storedOrgId: s
           background: 'rgba(14,165,233,0.08)', border: '1px solid #0ea5e930', borderRadius: 10,
           padding: '12px 14px', color: '#7dd3fc', fontSize: 12, fontFamily: 'monospace', marginBottom: 18,
         }}>
+          Pending org: {pendingOrgId ?? 'null'}<br />
           Stored org: {storedOrgId ?? 'null'}<br />
           Memberships seen: {membershipCount}
         </div>

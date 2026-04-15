@@ -5,6 +5,7 @@ import { Anchor, ShieldCheck, AlertTriangle, ExternalLink } from 'lucide-react';
 import { CLOUD_API_URL } from '@/api/config';
 
 const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
+const ACTIVE_ORG_QUERY_KEY = 'ns_org';
 type MembershipSummary = { organization: { id: string; name: string | null } };
 
 const S: Record<string, React.CSSProperties> = {
@@ -67,6 +68,10 @@ export default function Onboarding() {
   const [preferredOrgId, setPreferredOrgId] = useState<string | null>(null);
   const [probedMemberships, setProbedMemberships] = useState<MembershipSummary[] | null>(null);
   const [membershipProbeComplete, setMembershipProbeComplete] = useState(false);
+
+  function buildAppRedirect(orgId: string) {
+    return `/?${ACTIVE_ORG_QUERY_KEY}=${encodeURIComponent(orgId)}`;
+  }
 
   const memberships: MembershipSummary[] = ((userMemberships?.data?.length ?? 0) > 0
     ? userMemberships?.data?.map(membership => ({
@@ -157,7 +162,7 @@ export default function Onboarding() {
   // If we already have an active org, onboarding is complete.
   useEffect(() => {
     if (organization?.id) {
-      navigate('/', { replace: true });
+      navigate(buildAppRedirect(organization.id), { replace: true });
     }
   }, [organization?.id, navigate]);
 
@@ -175,7 +180,7 @@ export default function Onboarding() {
       setActive({ organization: preferred.organization.id })
         .then(() => {
           window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, preferred.organization.id);
-          navigate('/', { replace: true });
+          navigate(buildAppRedirect(preferred.organization.id), { replace: true });
         })
         .catch(() => {
           setError('We found your vessel, but could not restore the session automatically. Use the button below to retry.');
@@ -254,7 +259,7 @@ export default function Onboarding() {
       }
 
       await activateOrgWithRetry(orgId);
-      navigate('/', { replace: true });
+      navigate(buildAppRedirect(orgId), { replace: true });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
 
@@ -264,7 +269,8 @@ export default function Onboarding() {
       } else if (msg.toLowerCase().includes('failed to fetch')) {
         try {
           await activateExisting(name, preferredOrgId ?? undefined);
-          navigate('/', { replace: true });
+          const fallbackOrgId = preferredOrgId ?? window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
+          navigate(fallbackOrgId ? buildAppRedirect(fallbackOrgId) : '/', { replace: true });
           return;
         } catch {
           setError('Network error while creating vessel. Please check your connection and try again.');
@@ -323,7 +329,10 @@ export default function Onboarding() {
               Your account already has vessel access. If NauticShield did not restore it automatically, retry below instead of creating a new vessel.
             </div>
             <button
-              onClick={() => activateExisting().then(() => navigate('/', { replace: true })).catch(() => setError('Could not restore your existing vessel. Please sign out and back in, or try again.'))}
+              onClick={() => activateExisting().then(() => {
+                const orgId = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
+                navigate(orgId ? buildAppRedirect(orgId) : '/', { replace: true });
+              }).catch(() => setError('Could not restore your existing vessel. Please sign out and back in, or try again.'))}
               style={{
                 background: 'rgba(255,255,255,0.05)', border: '1px solid #1a2535',
                 color: '#dce8f4', borderRadius: 8,
