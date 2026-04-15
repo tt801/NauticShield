@@ -4,6 +4,8 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import type { Action } from '@/context/AuthContext';
 
+const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
+
 interface ProtectedRouteProps {
   children: React.ReactNode;
   /** If provided, user must have this permission — else show 403 */
@@ -23,6 +25,12 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
   const [restoreFailed, setRestoreFailed] = useState(false);
 
   useEffect(() => {
+    if (organization?.id) {
+      window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, organization.id);
+    }
+  }, [organization?.id]);
+
+  useEffect(() => {
     if (!isSignedIn || !isLoaded || !orgLoaded || !membershipsLoaded || organization?.id || attemptedRestore.current) {
       return;
     }
@@ -30,16 +38,24 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
     attemptedRestore.current = true;
 
     const memberships = userMemberships?.data ?? [];
-    const preferredMembership = memberships[memberships.length - 1];
+    const storedOrgId = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
+    const preferredMembership =
+      (storedOrgId ? memberships.find(membership => membership.organization.id === storedOrgId) : undefined)
+      ?? memberships[memberships.length - 1];
 
     if (!preferredMembership || !setActive) {
       return;
     }
 
-    void setActive({ organization: preferredMembership.organization.id }).catch(() => {
-      attemptedRestore.current = false;
-      setRestoreFailed(true);
-    });
+    void setActive({ organization: preferredMembership.organization.id })
+      .then(() => {
+        window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, preferredMembership.organization.id);
+        setRestoreFailed(false);
+      })
+      .catch(() => {
+        attemptedRestore.current = false;
+        setRestoreFailed(true);
+      });
   }, [
     isSignedIn,
     isLoaded,

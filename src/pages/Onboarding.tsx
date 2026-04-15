@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { Anchor, ShieldCheck, AlertTriangle, ExternalLink } from 'lucide-react';
 import { CLOUD_API_URL } from '@/api/config';
 
+const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
+
 const S: Record<string, React.CSSProperties> = {
   page: {
     minHeight: '100vh', background: '#080b10',
@@ -62,8 +64,16 @@ export default function Onboarding() {
   const [limitHit, setLimitHit]     = useState(false);
   const [preferredOrgId, setPreferredOrgId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (organization?.id) {
+      window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, organization.id);
+    }
+  }, [organization?.id]);
+
   async function activateOrgWithRetry(orgId: string) {
     if (!setActive) throw new Error('Organization activation unavailable. Please refresh and try again.');
+
+    window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, orgId);
 
     try {
       await setActive({ organization: orgId });
@@ -86,26 +96,36 @@ export default function Onboarding() {
     if (!isLoaded || organization?.id) return;
     const memberships = userMemberships?.data;
     if (memberships && memberships.length > 0 && setActive) {
+      const storedOrgId = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
       const preferred =
         (preferredOrgId ? memberships.find(m => m.organization.id === preferredOrgId) : undefined)
+        ?? (storedOrgId ? memberships.find(m => m.organization.id === storedOrgId) : undefined)
         ?? memberships.find(m => m.organization.name?.trim().toLowerCase() === vesselName.trim().toLowerCase())
         ?? memberships[memberships.length - 1];
 
-      setActive({ organization: preferred.organization.id }).then(() => {
-        navigate('/', { replace: true });
-      });
+      setActive({ organization: preferred.organization.id })
+        .then(() => {
+          window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, preferred.organization.id);
+          navigate('/', { replace: true });
+        })
+        .catch(() => {
+          setError('We found your vessel, but could not restore the session automatically. Use the button below to retry.');
+        });
     }
   }, [isLoaded, organization?.id, userMemberships?.data, preferredOrgId, vesselName, setActive, navigate]);
 
   // If the user already has an org (e.g. from a previous session), just activate it
   async function activateExisting(preferredName?: string, preferredId?: string) {
     const memberships = userMemberships?.data ?? [];
+    const storedOrgId = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
     const existing =
       (preferredId ? memberships.find(m => m.organization.id === preferredId) : undefined)
+      ?? (storedOrgId ? memberships.find(m => m.organization.id === storedOrgId) : undefined)
       ?? (preferredName ? memberships.find(m => m.organization.name?.trim().toLowerCase() === preferredName.trim().toLowerCase()) : undefined)
       ?? memberships[memberships.length - 1];
 
     if (existing && setActive) {
+      window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, existing.organization.id);
       await setActive({ organization: existing.organization.id });
     }
   }
@@ -126,6 +146,7 @@ export default function Onboarding() {
         const org = await createOrganization({ name });
         orgId = org.id;
         setPreferredOrgId(org.id);
+        window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, org.id);
       } catch (primaryErr: unknown) {
         // Fallback: create vessel via cloud API if browser-side Clerk call fails.
         if (!CLOUD_API_URL) throw primaryErr;
@@ -159,6 +180,7 @@ export default function Onboarding() {
         }
         orgId = body.orgId;
         setPreferredOrgId(body.orgId);
+        window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, body.orgId);
       }
 
       await activateOrgWithRetry(orgId);
@@ -184,11 +206,12 @@ export default function Onboarding() {
     }
   }
 
-  // Don't render the form until memberships have loaded — avoids a flash
-  // of the create form for users who already have a vessel (auto-redirected above).
-  if (!isLoaded || (userMemberships?.data?.length ?? 0) > 0) {
+  if (!isLoaded) {
     return <div style={{ ...S.page }}><div style={{ color: '#4a5a6a', fontSize: 13 }}>Loading…</div></div>;
   }
+
+  const existingMemberships = userMemberships?.data ?? [];
+  const hasExistingVessel = existingMemberships.length > 0;
 
   return (
     <div style={S.page}>
@@ -211,6 +234,33 @@ export default function Onboarding() {
         </div>
 
         {error && <div style={S.error}>{error}</div>}
+
+        {hasExistingVessel && (
+          <div style={{
+            background: 'rgba(14,165,233,0.08)',
+            border: '1px solid rgba(14,165,233,0.25)',
+            borderRadius: 12,
+            padding: '16px 18px',
+            marginBottom: 20,
+          }}>
+            <div style={{ color: '#7dd3fc', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+              Existing vessel found
+            </div>
+            <div style={{ color: '#9fb3c8', fontSize: 12, lineHeight: 1.6, marginBottom: 12 }}>
+              Your account already has vessel access. If NauticShield did not restore it automatically, retry below instead of creating a new vessel.
+            </div>
+            <button
+              onClick={() => activateExisting().then(() => navigate('/', { replace: true })).catch(() => setError('Could not restore your existing vessel. Please sign out and back in, or try again.'))}
+              style={{
+                background: 'rgba(255,255,255,0.05)', border: '1px solid #1a2535',
+                color: '#dce8f4', borderRadius: 8,
+                padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Continue with existing vessel
+            </button>
+          </div>
+        )}
 
         {/* Vessel limit reached — upgrade prompt */}
         {limitHit && (
@@ -264,7 +314,7 @@ export default function Onboarding() {
           value={vesselName}
           onChange={e => setVesselName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !loading && handleCreate()}
-          disabled={loading}
+          disabled={loading || hasExistingVessel}
           autoFocus
         />
         <div style={S.hint}>This will identify your vessel across NauticShield.</div>
@@ -272,7 +322,7 @@ export default function Onboarding() {
         <button
           style={{ ...S.btn, ...(loading || !vesselName.trim() ? S.btnDisabled : {}) }}
           onClick={handleCreate}
-          disabled={loading || !vesselName.trim()}
+          disabled={loading || !vesselName.trim() || hasExistingVessel}
         >
           <ShieldCheck size={16} />
           {loading ? 'Creating vessel…' : 'Create vessel & continue'}
