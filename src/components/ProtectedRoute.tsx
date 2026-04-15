@@ -159,10 +159,14 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
     }
 
     if (memberships.length > 0 || storedOrgId) {
-      return <LoadingScreen message={restoreAttemptCount >= MAX_RESTORE_ATTEMPTS ? 'Still restoring vessel session…' : 'Restoring vessel session…'} />;
+      if (restoreAttemptCount < MAX_RESTORE_ATTEMPTS) {
+        return <LoadingScreen message="Restoring vessel session…" />;
+      }
+
+      return <VesselRecoveryScreen storedOrgId={storedOrgId} membershipCount={memberships.length} />;
     }
 
-    return <Navigate to="/onboarding" replace />;
+    return <VesselRecoveryScreen storedOrgId={storedOrgId} membershipCount={memberships.length} />;
   }
 
   if (action && !auth.can(action)) {
@@ -208,6 +212,63 @@ function AccessDenied() {
       <div style={{ color: '#4a5a6a', fontSize: 13, textAlign: 'center', maxWidth: 300 }}>
         Your role does not have permission to view this page.
         Contact the vessel owner or captain.
+      </div>
+    </div>
+  );
+}
+
+function VesselRecoveryScreen({ storedOrgId, membershipCount }: { storedOrgId: string | null; membershipCount: number }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      minHeight: '60vh', gap: 16, padding: 24,
+    }}>
+      <div style={{
+        width: '100%', maxWidth: 520,
+        background: '#0d1421', border: '1px solid #1a2535', borderRadius: 14,
+        padding: 24,
+      }}>
+        <div style={{ color: '#f0f4f8', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+          Vessel session not restored
+        </div>
+        <div style={{ color: '#6b7f92', fontSize: 13, lineHeight: 1.7, marginBottom: 16 }}>
+          NauticShield could not recover your active vessel session automatically. Your account is signed in, but Clerk is not returning an active organization for this app session.
+        </div>
+
+        <div style={{
+          background: 'rgba(14,165,233,0.08)', border: '1px solid #0ea5e930', borderRadius: 10,
+          padding: '12px 14px', color: '#7dd3fc', fontSize: 12, fontFamily: 'monospace', marginBottom: 18,
+        }}>
+          Stored org: {storedOrgId ?? 'null'}<br />
+          Memberships seen: {membershipCount}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: 'linear-gradient(135deg, #d4a847 0%, #b8922e 100%)',
+              border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer',
+              color: '#080b10', fontSize: 13, fontWeight: 700,
+            }}
+          >
+            Retry restore
+          </button>
+          <button
+            onClick={() => {
+              if (storedOrgId) {
+                window.localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY);
+              }
+              window.location.assign('/onboarding');
+            }}
+            style={{
+              background: 'transparent', border: '1px solid #2a3a50', borderRadius: 8, padding: '10px 16px', cursor: 'pointer',
+              color: '#dce8f4', fontSize: 13, fontWeight: 600,
+            }}
+          >
+            Go to vessel setup
+          </button>
+        </div>
       </div>
     </div>
   );
