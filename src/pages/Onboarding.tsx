@@ -284,13 +284,12 @@ export default function Onboarding() {
           const fallbackOrgId = preferredOrgId ?? window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
           if (fallbackOrgId) {
             redirectToApp(fallbackOrgId);
-          } else {
-            window.location.assign('/');
+            return;
           }
-          return;
         } catch {
-          setError('Network error while creating vessel. Please check your connection and try again.');
+          // activateExisting failed — fall through to generic error
         }
+        setError('Network error while creating vessel. Please check your connection and try again.');
       } else {
         setError(msg);
       }
