@@ -5,10 +5,57 @@ import { verifyClerkJWT } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { writeAudit } from '../../lib/audit';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (cors(req, res)) return;
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+const PLAN_PRICE_ENV: Record<string, string> = {
+  coastal: 'STRIPE_PRICE_COASTAL',
+  superyacht: 'STRIPE_PRICE_SUPERYACHT',
+};
 
+async function handleCheckout(req: VercelRequest, res: VercelResponse) {
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeKey) return res.status(500).json({ error: 'Stripe not configured' });
+
+  const { plan, successUrl, cancelUrl } = req.body as {
+    plan?: string;
+    successUrl?: string;
+    cancelUrl?: string;
+  };
+
+  if (!plan || !PLAN_PRICE_ENV[plan]) {
+    return res.status(400).json({ error: `Invalid plan. Must be one of: ${Object.keys(PLAN_PRICE_ENV).join(', ')}` });
+  }
+
+  const priceId = process.env[PLAN_PRICE_ENV[plan]];
+  if (!priceId) {
+    return res.status(500).json({ error: `${PLAN_PRICE_ENV[plan]} env var not set` });
+  }
+
+  const stripe = new Stripe(stripeKey, { apiVersion: '2026-03-25.dahlia' });
+
+  const defaultSuccess = 'https://app.nauticshield.io/onboarding?checkout=success';
+  const defaultCancel = 'https://nauticshield.io/#pricing';
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: successUrl ?? defaultSuccess,
+      cancel_url: cancelUrl ?? defaultCancel,
+      subscription_data: {
+        metadata: { plan },
+        trial_period_days: 14,
+      },
+      allow_promotion_codes: true,
+    });
+
+    return res.json({ url: session.url });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Stripe error';
+    console.error('[stripe/checkout]', msg);
+    return res.status(500).json({ error: msg });
+  }
+}
+
+async function handleCancel(req: VercelRequest, res: VercelResponse) {
   const auth = await verifyClerkJWT(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -79,4 +126,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const msg = err instanceof Error ? err.message : 'Stripe error';
     return res.status(500).json({ error: msg });
   }
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (cors(req, res)) return;
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const action = String(req.query.action ?? '').toLowerCase();
+  if (action === 'checkout') return handleCheckout(req, res);
+  if (action === 'cancel') return handleCancel(req, res);
+
+  return res.status(404).json({ error: 'Unknown Stripe action' });
 }
