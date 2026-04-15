@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useOrganizationList, useClerk } from '@clerk/clerk-react';
+import { useOrganizationList, useClerk, useAuth } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { Anchor, ShieldCheck, AlertTriangle, ExternalLink } from 'lucide-react';
+import { CLOUD_API_URL } from '@/api/config';
 
 const S: Record<string, React.CSSProperties> = {
   page: {
@@ -52,6 +53,7 @@ const S: Record<string, React.CSSProperties> = {
 export default function Onboarding() {
   const { setActive, userMemberships, isLoaded, createOrganization } = useOrganizationList({ userMemberships: true });
   const { signOut } = useClerk();
+  const { getToken } = useAuth();
   const navigate = useNavigate();
   const [vesselName, setVesselName] = useState('');
   const [loading, setLoading]       = useState(false);
@@ -88,9 +90,46 @@ export default function Onboarding() {
         throw new Error('Onboarding service unavailable. Please refresh and try again.');
       }
 
-      // Clerk-first creation avoids blocking on cloud/network fetch failures.
-      const org = await createOrganization({ name });
-      await setActive({ organization: org.id });
+      // Prefer direct Clerk creation for the fastest path.
+      let orgId: string;
+      try {
+        const org = await createOrganization({ name });
+        orgId = org.id;
+      } catch (primaryErr: unknown) {
+        // Fallback: create vessel via cloud API if browser-side Clerk call fails.
+        if (!CLOUD_API_URL) throw primaryErr;
+
+        const token = await getToken();
+        if (!token) throw primaryErr;
+
+        const res = await fetch(`${CLOUD_API_URL}/api/vessels`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name }),
+        });
+
+        if (!res.ok) {
+          let message = `HTTP ${res.status}`;
+          try {
+            const body = await res.json();
+            message = body?.message || body?.error || message;
+          } catch {
+            // ignore JSON parsing errors
+          }
+          throw new Error(message);
+        }
+
+        const body = await res.json() as { orgId?: string };
+        if (!body.orgId) {
+          throw new Error('Vessel created but organization activation failed. Please refresh and try again.');
+        }
+        orgId = body.orgId;
+      }
+
+      await setActive({ organization: orgId });
       navigate('/', { replace: true });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
@@ -98,6 +137,8 @@ export default function Onboarding() {
       // 402 = vessel quota reached — show upgrade prompt instead of generic error
       if (msg.includes('vessel_limit_reached') || msg.includes('plan allows')) {
         setLimitHit(true);
+      } else if (msg.toLowerCase().includes('failed to fetch')) {
+        setError('Network error while creating vessel. Please check your connection and try again.');
       } else {
         setError(msg);
       }
