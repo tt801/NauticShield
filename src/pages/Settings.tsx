@@ -259,6 +259,17 @@ export default function Settings() {
   return (
     <div style={{ padding: 28, maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
+      {/* Debug badge — shows org/role state */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'rgba(14,165,233,0.08)', border: '1px solid #0ea5e930', borderRadius: 8,
+        padding: '10px 14px', fontSize: 11, color: '#7dd3fc', fontFamily: 'monospace',
+      }}>
+        <div>
+          Org: <strong>{organization?.id?.slice(0, 12)}...</strong> ({organization?.name ?? 'null'}) | Role: <strong>{auth.role}</strong>
+        </div>
+      </div>
+
       {/* Header */}
       <div>
         <div style={{ color: '#f0f4f8', fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>Settings</div>

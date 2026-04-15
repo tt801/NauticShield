@@ -307,7 +307,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e', flexShrink: 0 }} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{auth?.vesselName ?? 'M/Y Aurora'}</div>
+                  <div 
+                    title={`[DEBUG] Org: ${auth?.vesselName || 'null'} | Role: ${auth?.role || 'unknown'}`}
+                    style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
+                    {auth?.vesselName ?? 'Vessel'}
+                  </div>
                   <div style={{ color: '#3a4a5a', fontSize: 11, marginTop: 1 }}>Last sync: just now</div>
                 </div>
               </div>
@@ -317,7 +322,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         ) : (
           <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, borderTop: '1px solid #1a2535' }}>
             <ConnectionBadge collapsed={true} />
-            <div title={`${auth?.vesselName ?? 'M/Y Aurora'} — connected`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+            <div title={`${auth?.vesselName ?? 'Vessel'} — connected`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
             {hasClerk && <SignOutButton />}
           </div>
         )}
