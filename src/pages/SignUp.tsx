@@ -1,4 +1,4 @@
-import { SignIn } from '@clerk/clerk-react';
+import { SignUp } from '@clerk/clerk-react';
 import { dark } from '@clerk/themes';
 import { ShieldCheck } from 'lucide-react';
 
@@ -24,7 +24,7 @@ function getSafeRedirectUrl() {
   }
 }
 
-export default function SignInPage() {
+export default function SignUpPage() {
   const redirectUrl = getSafeRedirectUrl();
 
   return (
@@ -38,7 +38,6 @@ export default function SignInPage() {
       gap: 40,
       padding: 24,
     }}>
-      {/* Logo + wordmark */}
       <div style={{ textAlign: 'center' }}>
         <div style={{
           width: 56, height: 56, borderRadius: 16, margin: '0 auto 16px',
@@ -52,12 +51,11 @@ export default function SignInPage() {
           NauticShield
         </div>
         <div style={{ color: '#4a5a6a', fontSize: 13, marginTop: 6 }}>
-          Vessel Technology Management
+          Create your vessel security account
         </div>
       </div>
 
-      {/* Clerk sign-in widget */}
-      <SignIn
+      <SignUp
         appearance={{
           baseTheme: dark,
           variables: {
@@ -88,12 +86,9 @@ export default function SignInPage() {
         }}
         fallbackRedirectUrl={redirectUrl}
         forceRedirectUrl={redirectUrl}
-        signUpUrl="/sign-up"
-        signUpFallbackRedirectUrl={redirectUrl}
-        signUpForceRedirectUrl={redirectUrl}
+        signInUrl="/sign-in"
       />
 
-      {/* Security notice */}
       <div style={{
         maxWidth: 360,
         textAlign: 'center',
@@ -101,8 +96,7 @@ export default function SignInPage() {
         fontSize: 11,
         lineHeight: 1.6,
       }}>
-        This system is restricted to authorised vessel personnel only.
-        All access is logged and monitored. Unauthorised access attempts will be reported.
+        Create your account first, then NauticShield will continue your selected onboarding and billing flow.
       </div>
     </div>
   );

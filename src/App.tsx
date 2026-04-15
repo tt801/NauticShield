@@ -8,6 +8,7 @@ import { AuthTokenBridge }    from '@/components/AuthTokenBridge'
 import { ProtectedRoute }     from '@/components/ProtectedRoute'
 import Layout       from '@/components/Layout'
 import SignInPage   from '@/pages/SignIn'
+import SignUpPage   from '@/pages/SignUp'
 import Onboarding   from '@/pages/Onboarding'
 import Dashboard    from '@/pages/Dashboard'
 import Devices      from '@/pages/Devices'
@@ -121,6 +122,8 @@ export default function App() {
     <ErrorBoundary>
       <ClerkProvider
         publishableKey={CLERK_KEY}
+        signInUrl="/sign-in"
+        signUpUrl="/sign-up"
         appearance={{ baseTheme: dark }}
       >
         <AuthTokenBridge />
@@ -144,6 +147,10 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
           {/* Public */}
           <Route path="/sign-in" element={devMode ? <Navigate to="/" replace /> : (
             <SignedOut><SignInPage /></SignedOut>
+          )} />
+
+          <Route path="/sign-up" element={devMode ? <Navigate to="/" replace /> : (
+            <SignedOut><SignUpPage /></SignedOut>
           )} />
 
           {/* Onboarding — signed-in but no org yet */}

@@ -7,7 +7,7 @@ const APP_BASE = 'https://app.nauticshield.io'
 
 function buildSignUpUrl(plan: string) {
   const onboardingUrl = buildAppOnboardingUrl(plan)
-  return `${APP_BASE}/sign-in?redirect_url=${encodeURIComponent(onboardingUrl)}`
+  return `${APP_BASE}/sign-up?redirect_url=${encodeURIComponent(onboardingUrl)}`
 }
 
 function buildAppOnboardingUrl(plan: string) {
