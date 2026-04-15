@@ -6,6 +6,7 @@ import type { Action } from '@/context/AuthContext';
 
 const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
 const ACTIVE_ORG_QUERY_KEY = 'ns_org';
+const PENDING_ORG_STORAGE_KEY = 'nauticshield.pendingOrgId';
 type MembershipSummary = { organization: { id: string; name: string | null } };
 const MAX_RESTORE_ATTEMPTS = 8;
 
@@ -32,7 +33,8 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
   const [membershipProbeComplete, setMembershipProbeComplete] = useState(false);
   const pendingOrgId = typeof window === 'undefined'
     ? null
-    : new URLSearchParams(window.location.search).get(ACTIVE_ORG_QUERY_KEY);
+    : new URLSearchParams(window.location.search).get(ACTIVE_ORG_QUERY_KEY)
+      ?? window.sessionStorage.getItem(PENDING_ORG_STORAGE_KEY);
   const storedOrgId = typeof window === 'undefined' ? null : window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
 
   const memberships: MembershipSummary[] = ((userMemberships?.data?.length ?? 0) > 0
@@ -47,6 +49,7 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
   useEffect(() => {
     if (organization?.id) {
       window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, organization.id);
+      window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, organization.id);
       setRestoreAttemptCount(0);
       setIsRestoring(false);
 
@@ -55,6 +58,8 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
         url.searchParams.delete(ACTIVE_ORG_QUERY_KEY);
         window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
       }
+
+      window.sessionStorage.removeItem(PENDING_ORG_STORAGE_KEY);
     }
   }, [organization?.id]);
 
@@ -130,6 +135,7 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
     void setActive({ organization: targetOrgId })
       .then(() => {
         window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, targetOrgId);
+        window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, targetOrgId);
         setRestoreAttemptCount(0);
         setIsRestoring(false);
       })
@@ -274,6 +280,7 @@ function VesselRecoveryScreen({ storedOrgId, pendingOrgId, membershipCount }: { 
               if (storedOrgId) {
                 window.localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY);
               }
+              window.sessionStorage.removeItem(PENDING_ORG_STORAGE_KEY);
               window.location.assign('/onboarding');
             }}
             style={{

@@ -6,6 +6,7 @@ import { CLOUD_API_URL } from '@/api/config';
 
 const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
 const ACTIVE_ORG_QUERY_KEY = 'ns_org';
+const PENDING_ORG_STORAGE_KEY = 'nauticshield.pendingOrgId';
 type MembershipSummary = { organization: { id: string; name: string | null } };
 
 const S: Record<string, React.CSSProperties> = {
@@ -71,6 +72,13 @@ export default function Onboarding() {
 
   function buildAppRedirect(orgId: string) {
     return `/?${ACTIVE_ORG_QUERY_KEY}=${encodeURIComponent(orgId)}`;
+  }
+
+  function redirectToApp(orgId: string) {
+    const target = buildAppRedirect(orgId);
+    window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, orgId);
+    window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, orgId);
+    window.location.assign(target);
   }
 
   const memberships: MembershipSummary[] = ((userMemberships?.data?.length ?? 0) > 0
@@ -162,9 +170,9 @@ export default function Onboarding() {
   // If we already have an active org, onboarding is complete.
   useEffect(() => {
     if (organization?.id) {
-      navigate(buildAppRedirect(organization.id), { replace: true });
+      redirectToApp(organization.id);
     }
-  }, [organization?.id, navigate]);
+  }, [organization?.id]);
 
   // If no active org yet but memberships exist, activate the best candidate and continue.
   useEffect(() => {
@@ -180,7 +188,8 @@ export default function Onboarding() {
       setActive({ organization: preferred.organization.id })
         .then(() => {
           window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, preferred.organization.id);
-          navigate(buildAppRedirect(preferred.organization.id), { replace: true });
+          window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, preferred.organization.id);
+          redirectToApp(preferred.organization.id);
         })
         .catch(() => {
           setError('We found your vessel, but could not restore the session automatically. Use the button below to retry.');
@@ -199,6 +208,7 @@ export default function Onboarding() {
 
     if (existing && setActive) {
       window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, existing.organization.id);
+      window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, existing.organization.id);
       await setActive({ organization: existing.organization.id });
     }
   }
@@ -220,6 +230,7 @@ export default function Onboarding() {
         orgId = org.id;
         setPreferredOrgId(org.id);
         window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, org.id);
+        window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, org.id);
         await waitForMembership(org.id);
       } catch (primaryErr: unknown) {
         // Fallback: create vessel via cloud API if browser-side Clerk call fails.
@@ -255,11 +266,12 @@ export default function Onboarding() {
         orgId = body.orgId;
         setPreferredOrgId(body.orgId);
         window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, body.orgId);
+        window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, body.orgId);
         await waitForMembership(body.orgId);
       }
 
       await activateOrgWithRetry(orgId);
-      navigate(buildAppRedirect(orgId), { replace: true });
+      redirectToApp(orgId);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
 
@@ -270,7 +282,11 @@ export default function Onboarding() {
         try {
           await activateExisting(name, preferredOrgId ?? undefined);
           const fallbackOrgId = preferredOrgId ?? window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
-          navigate(fallbackOrgId ? buildAppRedirect(fallbackOrgId) : '/', { replace: true });
+          if (fallbackOrgId) {
+            redirectToApp(fallbackOrgId);
+          } else {
+            window.location.assign('/');
+          }
           return;
         } catch {
           setError('Network error while creating vessel. Please check your connection and try again.');
@@ -331,7 +347,11 @@ export default function Onboarding() {
             <button
               onClick={() => activateExisting().then(() => {
                 const orgId = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
-                navigate(orgId ? buildAppRedirect(orgId) : '/', { replace: true });
+                if (orgId) {
+                  redirectToApp(orgId);
+                } else {
+                  window.location.assign('/');
+                }
               }).catch(() => setError('Could not restore your existing vessel. Please sign out and back in, or try again.'))}
               style={{
                 background: 'rgba(255,255,255,0.05)', border: '1px solid #1a2535',
