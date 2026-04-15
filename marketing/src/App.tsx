@@ -108,6 +108,23 @@ function Nav({ isSignedIn, userLabel }: { isSignedIn: boolean; userLabel: string
           </SignedOut>
 
           <SignedIn>
+            <a
+              href="https://app.nauticshield.io/"
+              style={{
+                padding: '8px 16px', borderRadius: 8,
+                background: '#22c55e', color: '#080b10',
+                fontWeight: 700, fontSize: 13, transition: 'all 0.2s',
+                textDecoration: 'none',
+                boxShadow: '0 0 16px #22c55e30',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 24px #22c55e50' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 16px #22c55e30' }}
+            >
+              Go to App →
+            </a>
+          </SignedIn>
+
+          <SignedIn>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #1f3347', borderRadius: 10, padding: '5px 8px' }}>
               <UserButton
                 afterSignOutUrl="https://nauticshield.io"
