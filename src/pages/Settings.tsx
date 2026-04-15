@@ -127,6 +127,25 @@ export default function Settings() {
   const { signOut, openUserProfile }  = useClerk();
 
   const [activeTab, setActiveTab]     = useState<'account' | 'users' | 'subscription' | 'security' | 'notifications' | 'cloud'>('account');
+  type AccountInfo = {
+    profile: { fullName: string | null; email: string | null };
+    billing: {
+      customerId: string | null;
+      name: string | null;
+      email: string | null;
+      phone: string | null;
+      taxExempt: string | null;
+      address: {
+        line1: string | null;
+        line2: string | null;
+        city: string | null;
+        state: string | null;
+        postalCode: string | null;
+        country: string | null;
+      } | null;
+    } | null;
+  };
+  const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
 
   // ── Notification prefs ────────────────────────────────────────
   type CategoryPref = { email: boolean; sms: boolean };
@@ -145,6 +164,11 @@ export default function Settings() {
 
   useEffect(() => {
     fetchJSON<VesselQuota>(`${AGENT_URL}/api/vessels/quota`).then(setVesselQuota).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!CLOUD_API_URL) return;
+    fetchJSON<AccountInfo>(`${CLOUD_API_URL}/api/account`).then(setAccountInfo).catch(() => {});
   }, []);
 
   // ── Subscription cancellation ───────────────────────────────────
@@ -384,6 +408,43 @@ export default function Settings() {
                 </div>
               </div>
             </div>
+          </Card>
+
+          <Card>
+            <SectionTitle icon={CreditCard} label="Account Information" />
+            {accountInfo?.billing ? (
+              <div style={{ display: 'grid', gap: 12 }}>
+                {[
+                  { label: 'Billing name', value: accountInfo.billing.name ?? '—' },
+                  { label: 'Billing email', value: accountInfo.billing.email ?? '—' },
+                  { label: 'Billing phone', value: accountInfo.billing.phone ?? '—' },
+                  { label: 'Stripe customer', value: accountInfo.billing.customerId ?? '—' },
+                ].map(row => (
+                  <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #1a2535' }}>
+                    <span style={{ color: '#6b7f92', fontSize: 13 }}>{row.label}</span>
+                    <span style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 600, textAlign: 'right' }}>{row.value}</span>
+                  </div>
+                ))}
+                <div style={{ paddingTop: 4 }}>
+                  <div style={{ color: '#6b7f92', fontSize: 13, marginBottom: 6 }}>Billing address</div>
+                  <div style={{ color: '#f0f4f8', fontSize: 13, lineHeight: 1.7 }}>
+                    {[
+                      accountInfo.billing.address?.line1,
+                      accountInfo.billing.address?.line2,
+                      [accountInfo.billing.address?.city, accountInfo.billing.address?.state, accountInfo.billing.address?.postalCode].filter(Boolean).join(', '),
+                      accountInfo.billing.address?.country,
+                    ].filter(Boolean).join('\n') || 'No billing address captured yet.'}
+                  </div>
+                </div>
+                <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.6 }}>
+                  Billing details are captured and maintained in Stripe Checkout. Update them there during checkout or when the customer portal is added.
+                </div>
+              </div>
+            ) : (
+              <div style={{ color: '#6b7f92', fontSize: 13, lineHeight: 1.7 }}>
+                Billing information will appear here after the first successful Stripe checkout.
+              </div>
+            )}
           </Card>
         </>
       )}

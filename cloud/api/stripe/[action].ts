@@ -11,52 +11,13 @@ const PLAN_PRICE_ENV: Record<string, string> = {
   superyacht: 'STRIPE_PRICE_SUPERYACHT',
 };
 
-type BillingProfile = {
-  contactFirstName?: string;
-  contactLastName?: string;
-  businessName?: string;
-  billingEmail?: string;
-  billingPhone?: string;
-  addressLine1?: string;
-  addressLine2?: string;
-  city?: string;
-  region?: string;
-  postalCode?: string;
-  country?: string;
-  taxId?: string;
-};
-
-function normalizeBillingProfile(value: unknown): BillingProfile | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const profile = value as Record<string, unknown>;
-  return {
-    contactFirstName: typeof profile.contactFirstName === 'string' ? profile.contactFirstName.trim() : undefined,
-    contactLastName: typeof profile.contactLastName === 'string' ? profile.contactLastName.trim() : undefined,
-    businessName: typeof profile.businessName === 'string' ? profile.businessName.trim() : undefined,
-    billingEmail: typeof profile.billingEmail === 'string' ? profile.billingEmail.trim() : undefined,
-    billingPhone: typeof profile.billingPhone === 'string' ? profile.billingPhone.trim() : undefined,
-    addressLine1: typeof profile.addressLine1 === 'string' ? profile.addressLine1.trim() : undefined,
-    addressLine2: typeof profile.addressLine2 === 'string' ? profile.addressLine2.trim() : undefined,
-    city: typeof profile.city === 'string' ? profile.city.trim() : undefined,
-    region: typeof profile.region === 'string' ? profile.region.trim() : undefined,
-    postalCode: typeof profile.postalCode === 'string' ? profile.postalCode.trim() : undefined,
-    country: typeof profile.country === 'string' ? profile.country.trim() : undefined,
-    taxId: typeof profile.taxId === 'string' ? profile.taxId.trim() : undefined,
-  };
+function createStripeClient(secretKey: string) {
+  return new Stripe(secretKey, { apiVersion: '2026-03-25.dahlia' });
 }
 
-function buildCustomerName(profile: BillingProfile | null): string | undefined {
-  if (!profile) return undefined;
-  if (profile.businessName) return profile.businessName;
+type StripeClient = ReturnType<typeof createStripeClient>;
 
-  const fullName = [profile.contactFirstName, profile.contactLastName].filter(Boolean).join(' ').trim();
-  return fullName || undefined;
-}
-
-async function getBillingProfileForUser(userId: string) {
+async function getCheckoutUser(userId: string) {
   const secretKey = process.env.CLERK_SECRET_KEY;
   if (!secretKey) {
     throw new Error('Clerk not configured');
@@ -64,10 +25,30 @@ async function getBillingProfileForUser(userId: string) {
 
   const clerk = createClerkClient({ secretKey });
   const user = await clerk.users.getUser(userId);
+  const fallbackName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
+
   return {
     email: user.primaryEmailAddress?.emailAddress ?? undefined,
-    profile: normalizeBillingProfile((user.unsafeMetadata as Record<string, unknown> | undefined)?.billingProfile),
+    name: (user.fullName ?? fallbackName) || undefined,
   };
+}
+
+async function findExistingCustomerForUser(stripe: StripeClient, userId: string, email?: string) {
+  const result = await stripe.customers.search({
+    query: `metadata['userId']:'${userId}'`,
+    limit: 1,
+  });
+
+  if (result.data[0]) {
+    return result.data[0];
+  }
+
+  if (!email) {
+    return null;
+  }
+
+  const emailMatches = await stripe.customers.list({ email, limit: 1 });
+  return emailMatches.data[0] ?? null;
 }
 
 async function handleCheckout(req: VercelRequest, res: VercelResponse) {
@@ -89,41 +70,43 @@ async function handleCheckout(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: `${PLAN_PRICE_ENV[plan]} env var not set` });
   }
 
-  const stripe = new Stripe(stripeKey, { apiVersion: '2026-03-25.dahlia' });
+  const stripe = createStripeClient(stripeKey);
 
   const defaultSuccess = 'https://app.nauticshield.io/onboarding?checkout=success';
   const defaultCancel = 'https://nauticshield.io/#pricing';
   const auth = await verifyClerkJWT(req);
 
   try {
-    let customer: Stripe.Customer | null = null;
+    let customer: Awaited<ReturnType<typeof findExistingCustomerForUser>> = null;
     let customerEmail: string | undefined;
-    let billingProfile: BillingProfile | null = null;
+    let customerName: string | undefined;
 
     if (auth) {
-      const billingData = await getBillingProfileForUser(auth.userId);
-      customerEmail = billingData.profile?.billingEmail || billingData.email;
-      billingProfile = billingData.profile;
+      const checkoutUser = await getCheckoutUser(auth.userId);
+      customerEmail = checkoutUser.email;
+      customerName = checkoutUser.name;
 
-      customer = await stripe.customers.create({
-        email: customerEmail,
-        name: buildCustomerName(billingProfile),
-        phone: billingProfile?.billingPhone,
-        address: billingProfile?.addressLine1 && billingProfile?.city && billingProfile?.postalCode && billingProfile?.country ? {
-          line1: billingProfile.addressLine1,
-          line2: billingProfile.addressLine2,
-          city: billingProfile.city,
-          state: billingProfile.region,
-          postal_code: billingProfile.postalCode,
-          country: billingProfile.country,
-        } : undefined,
-        metadata: {
-          userId: auth.userId,
-          plan,
-          businessName: billingProfile?.businessName ?? '',
-          taxId: billingProfile?.taxId ?? '',
-        },
-      });
+      customer = await findExistingCustomerForUser(stripe, auth.userId, customerEmail);
+      if (!customer) {
+        customer = await stripe.customers.create({
+          email: customerEmail,
+          name: customerName,
+          metadata: {
+            userId: auth.userId,
+            plan,
+          },
+        });
+      } else if (customer.metadata.userId !== auth.userId || customer.name !== customerName || customer.email !== customerEmail) {
+        customer = await stripe.customers.update(customer.id, {
+          email: customerEmail,
+          name: customerName,
+          metadata: {
+            ...customer.metadata,
+            userId: auth.userId,
+            plan,
+          },
+        });
+      }
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -137,12 +120,11 @@ async function handleCheckout(req: VercelRequest, res: VercelResponse) {
       client_reference_id: auth?.userId,
       billing_address_collection: 'required',
       tax_id_collection: { enabled: true },
-      customer_update: customer ? { address: 'auto', name: 'auto', shipping: 'auto' } : undefined,
+      customer_update: customer ? { address: 'auto', name: 'auto' } : undefined,
       subscription_data: {
         metadata: {
           plan,
           userId: auth?.userId ?? '',
-          businessName: billingProfile?.businessName ?? '',
         },
         trial_period_days: 14,
       },
@@ -178,7 +160,7 @@ async function handleCancel(req: VercelRequest, res: VercelResponse) {
   if (!vessel?.stripe_subscription_id) return res.status(404).json({ error: 'No active subscription found' });
 
   try {
-    const stripe = new Stripe(stripeKey, { apiVersion: '2026-03-25.dahlia' });
+    const stripe = createStripeClient(stripeKey);
     const updated = await stripe.subscriptions.update(vessel.stripe_subscription_id, {
       cancel_at_period_end: true,
     });

@@ -1,6 +1,5 @@
 import { SignIn } from '@clerk/clerk-react';
 import { dark } from '@clerk/themes';
-import { ShieldCheck } from 'lucide-react';
 
 const ALLOWED_EXTERNAL_REDIRECT_HOSTS = new Set(['nauticshield.io', 'www.nauticshield.io']);
 
@@ -44,16 +43,14 @@ export default function SignInPage() {
       gap: 40,
       padding: 24,
     }}>
+      <div style={{ width: '100%', maxWidth: 520, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22 }}>
       {/* Logo + wordmark */}
-      <div style={{ textAlign: 'center' }}>
-        <div style={{
-          width: 56, height: 56, borderRadius: 16, margin: '0 auto 16px',
-          background: 'rgba(212,168,71,0.12)',
-          border: '1px solid rgba(212,168,71,0.3)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <ShieldCheck size={28} color="#d4a847" />
-        </div>
+      <div style={{ textAlign: 'center', width: '100%' }}>
+        <img
+          src="/icons.png"
+          alt="NauticShield"
+          style={{ display: 'block', margin: '0 auto 14px', width: 92, height: 92, objectFit: 'contain' }}
+        />
         <div style={{ color: '#f0f4f8', fontSize: 22, fontWeight: 800, letterSpacing: 0.3 }}>
           NauticShield
         </div>
@@ -63,6 +60,7 @@ export default function SignInPage() {
       </div>
 
       {/* Clerk sign-in widget */}
+      <div style={{ width: '100%' }}>
       <SignIn
         appearance={{
           baseTheme: dark,
@@ -78,9 +76,10 @@ export default function SignInPage() {
             fontFamily:             "'Inter', system-ui, sans-serif",
           },
           elements: {
-            card:               { boxShadow: '0 8px 40px rgba(0,0,0,0.6)', border: '1px solid #1a2535' },
-            headerTitle:        { color: '#f0f4f8' },
-            headerSubtitle:     { color: '#6b7f92' },
+            card:               { boxShadow: '0 8px 40px rgba(0,0,0,0.6)', border: '1px solid #1a2535', margin: '0 auto' },
+            rootBox:            { display: 'flex', justifyContent: 'center' },
+            headerTitle:        { color: '#f0f4f8', textAlign: 'center' },
+            headerSubtitle:     { color: '#6b7f92', textAlign: 'center' },
             socialButtonsBlockButton: {
               background: '#0a0f18',
               border: '1px solid #1a2535',
@@ -98,6 +97,7 @@ export default function SignInPage() {
         signUpFallbackRedirectUrl={redirectUrl}
         signUpForceRedirectUrl={redirectUrl}
       />
+      </div>
 
       {/* Security notice */}
       <div style={{
@@ -109,6 +109,7 @@ export default function SignInPage() {
       }}>
         This system is restricted to authorised vessel personnel only.
         All access is logged and monitored. Unauthorised access attempts will be reported.
+      </div>
       </div>
     </div>
   );
