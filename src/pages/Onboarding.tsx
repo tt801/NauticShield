@@ -224,63 +224,81 @@ export default function Onboarding() {
     setLoading(true);
     setError(null);
     try {
-      if (!createOrganization || !setActive) {
+      if (!setActive) {
         throw new Error('Onboarding service unavailable. Please refresh and try again.');
       }
 
-      // Prefer direct Clerk creation for the fastest path.
-      let orgId: string;
-      try {
-        const org = await createOrganization({ name });
-        orgId = org.id;
-        setPreferredOrgId(org.id);
-        window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, org.id);
-        window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, org.id);
-        await waitForMembership(org.id);
-      } catch (primaryErr: unknown) {
-        // Fallback: create vessel via cloud API if browser-side Clerk call fails.
-        if (!CLOUD_API_URL) throw primaryErr;
+      let orgId: string | null = null;
+      let cloudError: unknown = null;
 
-        const token = await getToken();
-        if (!token) throw primaryErr;
-
-        const res = await fetch(`${CLOUD_API_URL}/api/vessels`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ name }),
-        });
-
-        if (!res.ok) {
-          let message = `HTTP ${res.status}`;
-          try {
-            const body = await res.json();
-            message = body?.message || body?.error || message;
-          } catch {
-            // ignore JSON parsing errors
+      // Prefer server-side org creation to avoid browser-side Clerk network issues.
+      if (CLOUD_API_URL) {
+        try {
+          const token = await getToken();
+          if (!token) {
+            throw new Error('Authentication token unavailable. Please sign out and sign in again.');
           }
-          throw new Error(message);
-        }
 
-        const body = await res.json() as { orgId?: string };
-        if (!body.orgId) {
-          throw new Error('Vessel created but organization activation failed. Please refresh and try again.');
+          const res = await fetch(`${CLOUD_API_URL}/api/vessels`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name }),
+          });
+
+          if (!res.ok) {
+            let message = `HTTP ${res.status}`;
+            try {
+              const body = await res.json();
+              message = body?.message || body?.error || message;
+            } catch {
+              // ignore JSON parsing errors
+            }
+            throw new Error(message);
+          }
+
+          const body = await res.json() as { orgId?: string };
+          if (!body.orgId) {
+            throw new Error('Vessel created but organization activation failed. Please refresh and try again.');
+          }
+
+          orgId = body.orgId;
+          setPreferredOrgId(body.orgId);
+          window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, body.orgId);
+          window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, body.orgId);
+          await waitForMembership(body.orgId);
+        } catch (err: unknown) {
+          cloudError = err;
         }
-        orgId = body.orgId;
-        setPreferredOrgId(body.orgId);
-        window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, body.orgId);
-        window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, body.orgId);
-        await waitForMembership(body.orgId);
       }
 
+      if (!orgId) {
+        if (!createOrganization) {
+          throw (cloudError ?? new Error('Unable to create vessel. Please try again.'));
+        }
+
+        try {
+          const org = await createOrganization({ name });
+          orgId = org.id;
+          setPreferredOrgId(org.id);
+          window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, org.id);
+          window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, org.id);
+          await waitForMembership(org.id);
+        } catch (clerkErr: unknown) {
+          throw (cloudError ?? clerkErr);
+        }
+      }
+
+      const finalOrgId = orgId;
+
       try {
-        await activateOrgWithRetry(orgId);
+        await activateOrgWithRetry(finalOrgId);
       } catch {
         // Continue with org handoff; ProtectedRoute will retry activation.
       }
-      redirectToApp(orgId);
+      redirectToApp(finalOrgId);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
       console.error('[Onboarding] vessel creation failed', e);
