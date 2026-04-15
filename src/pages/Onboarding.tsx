@@ -81,6 +81,19 @@ export default function Onboarding() {
     window.location.assign(target);
   }
 
+  function cloudApiBase() {
+    if (typeof window === 'undefined') {
+      return CLOUD_API_URL;
+    }
+
+    // Use same-origin proxy in deployed app to avoid CORS/network edge cases.
+    if (window.location.protocol === 'https:') {
+      return `${window.location.origin}/cloud-api`;
+    }
+
+    return CLOUD_API_URL;
+  }
+
   const memberships: MembershipSummary[] = ((userMemberships?.data?.length ?? 0) > 0
     ? userMemberships?.data?.map(membership => ({
         organization: {
@@ -232,14 +245,15 @@ export default function Onboarding() {
       let cloudError: unknown = null;
 
       // Prefer server-side org creation to avoid browser-side Clerk network issues.
-      if (CLOUD_API_URL) {
+      const cloudBase = cloudApiBase();
+      if (cloudBase) {
         try {
           const token = await getToken();
           if (!token) {
             throw new Error('Authentication token unavailable. Please sign out and sign in again.');
           }
 
-          const res = await fetch(`${CLOUD_API_URL}/api/vessels`, {
+          const res = await fetch(`${cloudBase}/api/vessels`, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${token}`,
