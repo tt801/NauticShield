@@ -20,6 +20,8 @@ const ALLOWED_ORIGINS = [
 
 // Allow any Vercel preview deployment for the NauticShield org
 const ALLOWED_ORIGIN_PATTERNS = [
+  /^http:\/\/localhost:\d+$/,
+  /^http:\/\/127\.0\.0\.1:\d+$/,
   /^https:\/\/nautic-shield[a-z0-9-]*\.vercel\.app$/,
   /^https:\/\/nauticshield[a-z0-9-]*\.vercel\.app$/,
   /^https:\/\/[a-z0-9-]*nautic[-]?shield[a-z0-9-]*\.vercel\.app$/,
@@ -32,7 +34,7 @@ const ALLOWED_ORIGIN_PATTERNS = [
 export function cors(req: VercelRequest, res: VercelResponse): boolean {
   const origin = req.headers.origin ?? '';
   const isAllowed = ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGIN_PATTERNS.some(p => p.test(origin));
-  const allow = isAllowed ? origin : ALLOWED_ORIGINS[0];
+  const allow = origin && isAllowed ? origin : ALLOWED_ORIGINS[0];
 
   res.setHeader('Access-Control-Allow-Origin',  allow);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
