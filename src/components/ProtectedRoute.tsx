@@ -186,7 +186,8 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
       return <VesselRecoveryScreen storedOrgId={storedOrgId} pendingOrgId={pendingOrgId} membershipCount={memberships.length} />;
     }
 
-    return <VesselRecoveryScreen storedOrgId={storedOrgId} pendingOrgId={pendingOrgId} membershipCount={memberships.length} />;
+    // No org, no stored IDs, no memberships — first-time user, send to onboarding.
+    return <Navigate to="/onboarding" replace />;
   }
 
   if (action && !auth.can(action)) {
