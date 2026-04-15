@@ -35,12 +35,12 @@ function errorCode(err: unknown): string | null {
 }
 
 function errorMessage(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message;
   const e = err as { errors?: Array<{ longMessage?: string; message?: string }> };
   const longMessage = e?.errors?.[0]?.longMessage;
   if (typeof longMessage === 'string' && longMessage) return longMessage;
   const message = e?.errors?.[0]?.message;
   if (typeof message === 'string' && message) return message;
+  if (err instanceof Error && err.message) return err.message;
   return 'Unexpected server error while creating vessel organization.';
 }
 

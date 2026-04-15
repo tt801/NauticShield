@@ -264,13 +264,15 @@ export default function Onboarding() {
 
           if (!res.ok) {
             let message = `HTTP ${res.status}`;
+            let code = '';
             try {
-              const body = await res.json();
+              const body = await res.json() as { message?: string; error?: string };
+              code = body?.error || '';
               message = body?.message || body?.error || message;
             } catch {
               // ignore JSON parsing errors
             }
-            throw new Error(message);
+            throw new Error(code ? `${code}: ${message}` : message);
           }
 
           const body = await res.json() as { orgId?: string };
@@ -320,6 +322,11 @@ export default function Onboarding() {
       // 402 = vessel quota reached — show upgrade prompt instead of generic error
       if (msg.includes('vessel_limit_reached') || msg.includes('plan allows')) {
         setLimitHit(true);
+      } else if (
+        msg.includes('organization_not_enabled_in_instance')
+        || msg.toLowerCase().includes('organizations feature is not enabled')
+      ) {
+        setError('Clerk Organizations is disabled for this Clerk instance. Enable Organizations in the Clerk Dashboard, then retry vessel setup.');
       } else if (msg.toLowerCase().includes('failed to fetch')) {
         try {
           await activateExisting(name, preferredOrgId ?? undefined);
