@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useOrganizationList, useClerk, useAuth } from '@clerk/clerk-react';
+import { useOrganizationList, useClerk, useAuth, useOrganization } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { Anchor, ShieldCheck, AlertTriangle, ExternalLink } from 'lucide-react';
 import { CLOUD_API_URL } from '@/api/config';
@@ -52,6 +52,7 @@ const S: Record<string, React.CSSProperties> = {
 
 export default function Onboarding() {
   const { setActive, userMemberships, isLoaded, createOrganization } = useOrganizationList({ userMemberships: true });
+  const { organization } = useOrganization();
   const { signOut } = useClerk();
   const { getToken } = useAuth();
   const navigate = useNavigate();
@@ -59,6 +60,7 @@ export default function Onboarding() {
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [limitHit, setLimitHit]     = useState(false);
+  const [preferredOrgId, setPreferredOrgId] = useState<string | null>(null);
 
   async function activateOrgWithRetry(orgId: string) {
     if (!setActive) throw new Error('Organization activation unavailable. Please refresh and try again.');
@@ -72,21 +74,37 @@ export default function Onboarding() {
     }
   }
 
-  // If Clerk already shows the user has a vessel (reused email, previous partial session, etc.),
-  // silently activate it and redirect to dashboard.
+  // If we already have an active org, onboarding is complete.
   useEffect(() => {
-    if (!isLoaded) return;
+    if (organization?.id) {
+      navigate('/', { replace: true });
+    }
+  }, [organization?.id, navigate]);
+
+  // If no active org yet but memberships exist, activate the best candidate and continue.
+  useEffect(() => {
+    if (!isLoaded || organization?.id) return;
     const memberships = userMemberships?.data;
     if (memberships && memberships.length > 0 && setActive) {
-      setActive({ organization: memberships[0].organization.id }).then(() => {
+      const preferred =
+        (preferredOrgId ? memberships.find(m => m.organization.id === preferredOrgId) : undefined)
+        ?? memberships.find(m => m.organization.name?.trim().toLowerCase() === vesselName.trim().toLowerCase())
+        ?? memberships[memberships.length - 1];
+
+      setActive({ organization: preferred.organization.id }).then(() => {
         navigate('/', { replace: true });
       });
     }
-  }, [isLoaded, userMemberships?.data, setActive, navigate]);
+  }, [isLoaded, organization?.id, userMemberships?.data, preferredOrgId, vesselName, setActive, navigate]);
 
   // If the user already has an org (e.g. from a previous session), just activate it
-  async function activateExisting() {
-    const existing = userMemberships?.data?.[0];
+  async function activateExisting(preferredName?: string, preferredId?: string) {
+    const memberships = userMemberships?.data ?? [];
+    const existing =
+      (preferredId ? memberships.find(m => m.organization.id === preferredId) : undefined)
+      ?? (preferredName ? memberships.find(m => m.organization.name?.trim().toLowerCase() === preferredName.trim().toLowerCase()) : undefined)
+      ?? memberships[memberships.length - 1];
+
     if (existing && setActive) {
       await setActive({ organization: existing.organization.id });
     }
@@ -107,6 +125,7 @@ export default function Onboarding() {
       try {
         const org = await createOrganization({ name });
         orgId = org.id;
+        setPreferredOrgId(org.id);
       } catch (primaryErr: unknown) {
         // Fallback: create vessel via cloud API if browser-side Clerk call fails.
         if (!CLOUD_API_URL) throw primaryErr;
@@ -139,6 +158,7 @@ export default function Onboarding() {
           throw new Error('Vessel created but organization activation failed. Please refresh and try again.');
         }
         orgId = body.orgId;
+        setPreferredOrgId(body.orgId);
       }
 
       await activateOrgWithRetry(orgId);
@@ -151,7 +171,7 @@ export default function Onboarding() {
         setLimitHit(true);
       } else if (msg.toLowerCase().includes('failed to fetch')) {
         try {
-          await activateExisting();
+          await activateExisting(name, preferredOrgId ?? undefined);
           navigate('/', { replace: true });
           return;
         } catch {
@@ -223,7 +243,7 @@ export default function Onboarding() {
               </a>
               {(userMemberships?.count ?? 0) > 0 && (
                 <button
-                  onClick={activateExisting}
+                  onClick={() => activateExisting()}
                   style={{
                     background: 'rgba(255,255,255,0.05)', border: '1px solid #1a2535',
                     color: '#8899aa', borderRadius: 8,
