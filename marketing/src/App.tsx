@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ClerkProvider, UserButton, useUser } from '@clerk/clerk-react'
+import { ClerkProvider, UserButton, useAuth, useUser } from '@clerk/clerk-react'
 import { Menu, X } from 'lucide-react'
 import Hero from './sections/Hero'
 import Features from './sections/Features'
@@ -268,6 +268,7 @@ export default function App() {
 }
 
 function MarketingShell() {
+  const { getToken } = useAuth()
   const { user, isSignedIn } = useUser()
   const userLabel = user?.firstName ?? user?.primaryEmailAddress?.emailAddress ?? 'Signed in'
 
@@ -278,7 +279,7 @@ function MarketingShell() {
         <Hero />
         <Features />
         <Screenshots />
-        <Pricing isSignedIn={Boolean(isSignedIn)} />
+        <Pricing isSignedIn={Boolean(isSignedIn)} getToken={getToken} />
         <Testimonials />
         <Contact />
       </main>

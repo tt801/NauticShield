@@ -17,11 +17,15 @@ function getAuthReturnState(): { plan: string | null; fromPricingSignup: boolean
   return { plan: fromPricingSignup ? params.get('ns_plan') : null, fromPricingSignup }
 }
 
-async function startCheckout(plan: string) {
+async function startCheckout(plan: string, getToken?: (() => Promise<string | null>) | null) {
   try {
+    const token = getToken ? await getToken() : null
     const res = await fetch(`${CLOUD_API}/api/stripe/checkout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({ plan }),
     })
     const data = await res.json() as { url?: string; error?: string }
@@ -155,7 +159,7 @@ const S: Record<string, React.CSSProperties> = {
   },
 }
 
-function PlanCard({ plan, selectedPlan, isSignedIn }: { plan: typeof PLANS[number]; selectedPlan: string | null; isSignedIn: boolean }) {
+function PlanCard({ plan, selectedPlan, isSignedIn, getToken }: { plan: typeof PLANS[number]; selectedPlan: string | null; isSignedIn: boolean; getToken?: (() => Promise<string | null>) | null }) {
   const [loading, setLoading] = useState(false)
   const canCheckoutNow = selectedPlan === plan.checkoutPlan && plan.checkoutPlan !== null
 
@@ -167,7 +171,7 @@ function PlanCard({ plan, selectedPlan, isSignedIn }: { plan: typeof PLANS[numbe
     if (!canCheckoutNow) {
       if (isSignedIn) {
         setLoading(true)
-        await startCheckout(plan.checkoutPlan)
+        await startCheckout(plan.checkoutPlan, getToken)
         setLoading(false)
         return
       }
@@ -175,7 +179,7 @@ function PlanCard({ plan, selectedPlan, isSignedIn }: { plan: typeof PLANS[numbe
       return
     }
     setLoading(true)
-    await startCheckout(plan.checkoutPlan)
+    await startCheckout(plan.checkoutPlan, getToken)
     setLoading(false)
   }
 
@@ -268,7 +272,7 @@ function PlanCard({ plan, selectedPlan, isSignedIn }: { plan: typeof PLANS[numbe
   )
 }
 
-export default function Pricing({ isSignedIn = false }: { isSignedIn?: boolean }) {
+export default function Pricing({ isSignedIn = false, getToken }: { isSignedIn?: boolean; getToken?: (() => Promise<string | null>) | null }) {
   const authReturn = useMemo(() => getAuthReturnState(), [])
   const [selectedPlan] = useState<string | null>(authReturn?.plan ?? null)
   const [autoCheckoutStarted, setAutoCheckoutStarted] = useState(false)
@@ -291,8 +295,8 @@ export default function Pricing({ isSignedIn = false }: { isSignedIn?: boolean }
     if (autoCheckoutStarted) return
 
     setAutoCheckoutStarted(true)
-    void startCheckout(selectedPlan)
-  }, [authReturn, selectedPlan, autoCheckoutStarted])
+    void startCheckout(selectedPlan, getToken)
+  }, [authReturn, selectedPlan, autoCheckoutStarted, getToken])
 
   return (
     <section id="pricing" style={S.section}>
@@ -308,7 +312,7 @@ export default function Pricing({ isSignedIn = false }: { isSignedIn?: boolean }
         </div>
 
         <div style={S.grid}>
-          {PLANS.map(plan => <PlanCard key={plan.name} plan={plan} selectedPlan={selectedPlan} isSignedIn={isSignedIn} />)}
+          {PLANS.map(plan => <PlanCard key={plan.name} plan={plan} selectedPlan={selectedPlan} isSignedIn={isSignedIn} getToken={getToken} />)}
         </div>
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#7f95a8', marginTop: 32 }}>

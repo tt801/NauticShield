@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createClerkClient } from '@clerk/backend';
 import Stripe from 'stripe';
 import { cors } from '../../lib/cors';
 import { verifyClerkJWT } from '../../lib/auth';
@@ -9,6 +10,65 @@ const PLAN_PRICE_ENV: Record<string, string> = {
   coastal: 'STRIPE_PRICE_COASTAL',
   superyacht: 'STRIPE_PRICE_SUPERYACHT',
 };
+
+type BillingProfile = {
+  contactFirstName?: string;
+  contactLastName?: string;
+  businessName?: string;
+  billingEmail?: string;
+  billingPhone?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  region?: string;
+  postalCode?: string;
+  country?: string;
+  taxId?: string;
+};
+
+function normalizeBillingProfile(value: unknown): BillingProfile | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const profile = value as Record<string, unknown>;
+  return {
+    contactFirstName: typeof profile.contactFirstName === 'string' ? profile.contactFirstName.trim() : undefined,
+    contactLastName: typeof profile.contactLastName === 'string' ? profile.contactLastName.trim() : undefined,
+    businessName: typeof profile.businessName === 'string' ? profile.businessName.trim() : undefined,
+    billingEmail: typeof profile.billingEmail === 'string' ? profile.billingEmail.trim() : undefined,
+    billingPhone: typeof profile.billingPhone === 'string' ? profile.billingPhone.trim() : undefined,
+    addressLine1: typeof profile.addressLine1 === 'string' ? profile.addressLine1.trim() : undefined,
+    addressLine2: typeof profile.addressLine2 === 'string' ? profile.addressLine2.trim() : undefined,
+    city: typeof profile.city === 'string' ? profile.city.trim() : undefined,
+    region: typeof profile.region === 'string' ? profile.region.trim() : undefined,
+    postalCode: typeof profile.postalCode === 'string' ? profile.postalCode.trim() : undefined,
+    country: typeof profile.country === 'string' ? profile.country.trim() : undefined,
+    taxId: typeof profile.taxId === 'string' ? profile.taxId.trim() : undefined,
+  };
+}
+
+function buildCustomerName(profile: BillingProfile | null): string | undefined {
+  if (!profile) return undefined;
+  if (profile.businessName) return profile.businessName;
+
+  const fullName = [profile.contactFirstName, profile.contactLastName].filter(Boolean).join(' ').trim();
+  return fullName || undefined;
+}
+
+async function getBillingProfileForUser(userId: string) {
+  const secretKey = process.env.CLERK_SECRET_KEY;
+  if (!secretKey) {
+    throw new Error('Clerk not configured');
+  }
+
+  const clerk = createClerkClient({ secretKey });
+  const user = await clerk.users.getUser(userId);
+  return {
+    email: user.primaryEmailAddress?.emailAddress ?? undefined,
+    profile: normalizeBillingProfile((user.unsafeMetadata as Record<string, unknown> | undefined)?.billingProfile),
+  };
+}
 
 async function handleCheckout(req: VercelRequest, res: VercelResponse) {
   const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -33,15 +93,57 @@ async function handleCheckout(req: VercelRequest, res: VercelResponse) {
 
   const defaultSuccess = 'https://app.nauticshield.io/onboarding?checkout=success';
   const defaultCancel = 'https://nauticshield.io/#pricing';
+  const auth = await verifyClerkJWT(req);
 
   try {
+    let customer: Stripe.Customer | null = null;
+    let customerEmail: string | undefined;
+    let billingProfile: BillingProfile | null = null;
+
+    if (auth) {
+      const billingData = await getBillingProfileForUser(auth.userId);
+      customerEmail = billingData.profile?.billingEmail || billingData.email;
+      billingProfile = billingData.profile;
+
+      customer = await stripe.customers.create({
+        email: customerEmail,
+        name: buildCustomerName(billingProfile),
+        phone: billingProfile?.billingPhone,
+        address: billingProfile?.addressLine1 && billingProfile?.city && billingProfile?.postalCode && billingProfile?.country ? {
+          line1: billingProfile.addressLine1,
+          line2: billingProfile.addressLine2,
+          city: billingProfile.city,
+          state: billingProfile.region,
+          postal_code: billingProfile.postalCode,
+          country: billingProfile.country,
+        } : undefined,
+        metadata: {
+          userId: auth.userId,
+          plan,
+          businessName: billingProfile?.businessName ?? '',
+          taxId: billingProfile?.taxId ?? '',
+        },
+      });
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: successUrl ?? defaultSuccess,
       cancel_url: cancelUrl ?? defaultCancel,
+      customer: customer?.id,
+      customer_creation: customer ? undefined : 'always',
+      customer_email: customer ? undefined : customerEmail,
+      client_reference_id: auth?.userId,
+      billing_address_collection: 'required',
+      tax_id_collection: { enabled: true },
+      customer_update: customer ? { address: 'auto', name: 'auto', shipping: 'auto' } : undefined,
       subscription_data: {
-        metadata: { plan },
+        metadata: {
+          plan,
+          userId: auth?.userId ?? '',
+          businessName: billingProfile?.businessName ?? '',
+        },
         trial_period_days: 14,
       },
       allow_promotion_codes: true,
