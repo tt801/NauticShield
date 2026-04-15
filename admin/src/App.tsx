@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { setTokenProvider } from '@/api/client'
 import Layout             from '@/components/Layout'
+import SignInPage         from '@/pages/SignIn'
 import FleetOverview      from '@/pages/FleetOverview'
 import CustomerManagement from '@/pages/CustomerManagement'
 import PaymentsDashboard  from '@/pages/PaymentsDashboard'
@@ -15,6 +16,11 @@ const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 const ADMIN_PORTAL_URL = 'https://admin.nauticshield.io/fleet';
 const ADMIN_USER_ID_ALLOWLIST = (import.meta.env.VITE_ADMIN_USER_ID_ALLOWLIST as string | undefined) ?? '';
 const ADMIN_EMAIL_ALLOWLIST = (import.meta.env.VITE_ADMIN_EMAIL_ALLOWLIST as string | undefined) ?? '';
+
+function isLocalDevHost() {
+  if (typeof window === 'undefined') return false
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname)
+}
 
 function parseCsv(value: string): string[] {
   return value.split(',').map(v => v.trim()).filter(Boolean);
@@ -50,7 +56,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
             <UserButton appearance={{ elements: { avatarBox: { width: 32, height: 32 } } }} />
           </div>
           <button
-            onClick={() => signOut({ redirectUrl: 'https://accounts.nauticshield.io/sign-in' })}
+            onClick={() => signOut({ redirectUrl: 'https://admin.nauticshield.io/sign-in' })}
             style={{
               background: '#131e2d',
               border: '1px solid #1f2d3d',
@@ -80,11 +86,29 @@ function Spinner() {
 }
 
 export default function App() {
+  if (isLocalDevHost() || !CLERK_KEY) {
+    return (
+      <BrowserRouter>
+        <Layout>
+          <Routes>
+            <Route path="/"           element={<Navigate to="/fleet" replace />} />
+            <Route path="/fleet"      element={<FleetOverview />} />
+            <Route path="/customers"  element={<CustomerManagement />} />
+            <Route path="/payments"   element={<PaymentsDashboard />} />
+            <Route path="/audit"      element={<AuditLog />} />
+            <Route path="/team"       element={<TeamAccess />} />
+            <Route path="/shell"      element={<Shell />} />
+            <Route path="*"           element={<Navigate to="/fleet" replace />} />
+          </Routes>
+        </Layout>
+      </BrowserRouter>
+    )
+  }
+
   return (
     <ClerkProvider
       publishableKey={CLERK_KEY}
-      signInUrl="https://accounts.nauticshield.io/sign-in"
-      signUpUrl="https://accounts.nauticshield.io/sign-up"
+      signInUrl="/sign-in"
       signInFallbackRedirectUrl={ADMIN_PORTAL_URL}
       signInForceRedirectUrl={ADMIN_PORTAL_URL}
       signUpFallbackRedirectUrl={ADMIN_PORTAL_URL}
@@ -92,12 +116,14 @@ export default function App() {
       appearance={{ baseTheme: dark, variables: { colorPrimary: '#0ea5e9', colorBackground: '#080c12' } }}
     >
       <BrowserRouter>
+        <RouteGuard />
         <SignedIn>
           <TokenBridge />
           <AdminGuard>
             <Layout>
               <Routes>
                 <Route path="/"           element={<Navigate to="/fleet" replace />} />
+                <Route path="/sign-in"    element={<Navigate to="/fleet" replace />} />
                 <Route path="/fleet"      element={<FleetOverview />} />
                 <Route path="/customers"  element={<CustomerManagement />} />
                 <Route path="/payments"   element={<PaymentsDashboard />} />
@@ -110,9 +136,16 @@ export default function App() {
           </AdminGuard>
         </SignedIn>
         <SignedOut>
-          <RedirectToSignIn redirectUrl={ADMIN_PORTAL_URL} />
+          <Routes>
+            <Route path="/sign-in" element={<SignInPage />} />
+            <Route path="*" element={<RedirectToSignIn redirectUrl={ADMIN_PORTAL_URL} />} />
+          </Routes>
         </SignedOut>
       </BrowserRouter>
     </ClerkProvider>
   );
+}
+
+function RouteGuard() {
+  return null
 }
