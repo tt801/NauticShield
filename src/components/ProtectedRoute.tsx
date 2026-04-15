@@ -6,6 +6,7 @@ import type { Action } from '@/context/AuthContext';
 
 const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
 type MembershipSummary = { organization: { id: string; name: string | null } };
+const MAX_RESTORE_ATTEMPTS = 8;
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -23,10 +24,12 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
     userMemberships,
   } = useOrganizationList({ userMemberships: true });
   const auth = useAuth();
-  const attemptedRestore = useRef(false);
-  const [restoreFailed, setRestoreFailed] = useState(false);
+  const restoreTimerRef = useRef<number | null>(null);
+  const [restoreAttemptCount, setRestoreAttemptCount] = useState(0);
+  const [isRestoring, setIsRestoring] = useState(false);
   const [probedMemberships, setProbedMemberships] = useState<MembershipSummary[] | null>(null);
   const [membershipProbeComplete, setMembershipProbeComplete] = useState(false);
+  const storedOrgId = typeof window === 'undefined' ? null : window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
 
   const memberships: MembershipSummary[] = ((userMemberships?.data?.length ?? 0) > 0
     ? userMemberships?.data?.map(membership => ({
@@ -40,8 +43,18 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
   useEffect(() => {
     if (organization?.id) {
       window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, organization.id);
+      setRestoreAttemptCount(0);
+      setIsRestoring(false);
     }
   }, [organization?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (restoreTimerRef.current !== null) {
+        window.clearTimeout(restoreTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isSignedIn || !isLoaded || !membershipsLoaded || !user) {
@@ -77,29 +90,46 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
   }, [isSignedIn, isLoaded, membershipsLoaded, user, userMemberships?.data]);
 
   useEffect(() => {
-    if (!isSignedIn || !isLoaded || !orgLoaded || !membershipsLoaded || organization?.id || attemptedRestore.current) {
+    if (!isSignedIn || !isLoaded || !orgLoaded || !membershipsLoaded || !membershipProbeComplete || organization?.id || isRestoring) {
       return;
     }
 
-    attemptedRestore.current = true;
+    if (memberships.length === 0 && !storedOrgId) {
+      return;
+    }
 
-    const storedOrgId = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
+    if (restoreAttemptCount >= MAX_RESTORE_ATTEMPTS) {
+      return;
+    }
+
     const preferredMembership =
       (storedOrgId ? memberships.find(membership => membership.organization.id === storedOrgId) : undefined)
       ?? memberships[memberships.length - 1];
 
-    if (!preferredMembership || !setActive) {
+    const targetOrgId = preferredMembership?.organization.id ?? storedOrgId;
+
+    if (!targetOrgId || !setActive) {
       return;
     }
 
-    void setActive({ organization: preferredMembership.organization.id })
+    setIsRestoring(true);
+
+    void setActive({ organization: targetOrgId })
       .then(() => {
-        window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, preferredMembership.organization.id);
-        setRestoreFailed(false);
+        window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, targetOrgId);
+        setRestoreAttemptCount(0);
+        setIsRestoring(false);
       })
       .catch(() => {
-        attemptedRestore.current = false;
-        setRestoreFailed(true);
+        setIsRestoring(false);
+
+        if (restoreTimerRef.current !== null) {
+          window.clearTimeout(restoreTimerRef.current);
+        }
+
+        restoreTimerRef.current = window.setTimeout(() => {
+          setRestoreAttemptCount(count => count + 1);
+        }, 400);
       });
   }, [
     isSignedIn,
@@ -109,7 +139,10 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
     membershipProbeComplete,
     organization?.id,
     memberships,
+    storedOrgId,
     setActive,
+    isRestoring,
+    restoreAttemptCount,
   ]);
 
   if (!isLoaded || !orgLoaded || !membershipsLoaded) {
@@ -125,8 +158,8 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
       return <LoadingScreen message="Checking vessel access…" />;
     }
 
-    if (memberships.length > 0 && !restoreFailed) {
-      return <LoadingScreen message="Restoring vessel session…" />;
+    if (memberships.length > 0 || storedOrgId) {
+      return <LoadingScreen message={restoreAttemptCount >= MAX_RESTORE_ATTEMPTS ? 'Still restoring vessel session…' : 'Restoring vessel session…'} />;
     }
 
     return <Navigate to="/onboarding" replace />;
