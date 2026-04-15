@@ -133,20 +133,25 @@ export default function Onboarding() {
     if (!user) return;
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const result = await user.getOrganizationMemberships();
-      const nextMemberships = result.data.map(membership => ({
-        organization: {
-          id: membership.organization.id,
-          name: membership.organization.name ?? null,
-        },
-      }));
+      try {
+        const result = await user.getOrganizationMemberships();
+        const nextMemberships = result.data.map(membership => ({
+          organization: {
+            id: membership.organization.id,
+            name: membership.organization.name ?? null,
+          },
+        }));
 
-      setProbedMemberships(nextMemberships);
-      setMembershipProbeComplete(true);
-      await userMemberships.revalidate?.();
+        setProbedMemberships(nextMemberships);
+        setMembershipProbeComplete(true);
+        await userMemberships.revalidate?.();
 
-      if (nextMemberships.some(membership => membership.organization.id === orgId)) {
-        return;
+        if (nextMemberships.some(membership => membership.organization.id === orgId)) {
+          return;
+        }
+      } catch {
+        // Clerk membership reads can briefly fail right after org creation.
+        // Do not abort onboarding; activation/route restore can still succeed.
       }
 
       await new Promise(resolve => window.setTimeout(resolve, 250 * (attempt + 1)));
@@ -270,10 +275,15 @@ export default function Onboarding() {
         await waitForMembership(body.orgId);
       }
 
-      await activateOrgWithRetry(orgId);
+      try {
+        await activateOrgWithRetry(orgId);
+      } catch {
+        // Continue with org handoff; ProtectedRoute will retry activation.
+      }
       redirectToApp(orgId);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
+      console.error('[Onboarding] vessel creation failed', e);
 
       // 402 = vessel quota reached — show upgrade prompt instead of generic error
       if (msg.includes('vessel_limit_reached') || msg.includes('plan allows')) {
@@ -289,7 +299,7 @@ export default function Onboarding() {
         } catch {
           // activateExisting failed — fall through to generic error
         }
-        setError('Network error while creating vessel. Please check your connection and try again.');
+        setError(`Network error while creating vessel. ${msg}`);
       } else {
         setError(msg);
       }
