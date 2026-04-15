@@ -28,71 +28,120 @@ import { AGENT_URL, CLOUD_API_URL, VESSEL_ID } from '@/api/config';
 
 // ── Plan definitions ─────────────────────────────────────────────
 
+type PlanId = 'coastal' | 'superyacht' | 'fleet';
+
 const PLANS = [
   {
-    id:    'basic',
-    name:  'Basic',
-    price: '€149 / mo',
+    id:    'coastal',
+    name:  'Coastal',
+    price: 'GBP 200 / mo',
     color: '#6b7f92',
     icon:  ShieldCheck,
     features: [
       'Dashboard & real-time monitoring',
       'Alert management',
       'Device inventory',
-      'Network zones',
-      'Up to 3 users',
+      'Secure remote access',
+      'Single-vessel deployment',
     ],
     locked: [
-      'Guest Network management',
-      'Voyage log',
-      'Cyber CVE database',
-      'Reports & PDF export',
-      'Multi-vessel support',
+      'Fleet-wide oversight',
+      'Dedicated account support',
     ],
   },
   {
-    id:    'pro',
-    name:  'Pro',
-    price: '€349 / mo',
+    id:    'superyacht',
+    name:  'Superyacht',
+    price: 'GBP 800 / mo',
     color: '#0ea5e9',
     icon:  Zap,
     recommended: true,
     features: [
-      'Everything in Basic',
-      'Guest Network management',
-      'Voyage log & history',
-      'Reports & PDF export',
-      'Up to 10 users',
+      'Everything in Coastal',
+      'Enhanced monitoring & workflows',
+      'Priority support',
+      'Larger operational teams',
     ],
     locked: [
-      'Cyber CVE database & assessments',
-      'Multi-vessel support',
-      'Dedicated support SLA',
+      'Fleet commercial terms',
+      'Custom deployment design',
     ],
   },
   {
-    id:    'enterprise',
-    name:  'Enterprise',
-    price: '€799 / mo',
+    id:    'fleet',
+    name:  'Fleet',
+    price: 'Custom',
     color: '#d4a847',
     icon:  Crown,
     features: [
-      'Everything in Pro',
-      'Cyber CVE database & assessments',
-      'BIMCO / IMO compliance reports',
-      'Multi-vessel fleet management',
-      'Unlimited users',
-      'Dedicated 24/7 support',
-      'Custom SLA & on-site training',
+      'Multi-vessel fleet oversight',
+      'Commercial invoicing and procurement support',
+      'Custom onboarding and operating model',
+      'Dedicated success team',
     ],
     locked: [],
   },
 ] as const;
 
-// Mocked current plan — in production this comes from your billing API
-const CURRENT_PLAN_ID = 'enterprise';
+const LEGACY_PLAN_MAP: Record<string, PlanId> = {
+  starter: 'coastal',
+  basic: 'coastal',
+  coastal: 'coastal',
+  pro: 'superyacht',
+  superyacht: 'superyacht',
+  enterprise: 'fleet',
+  fleet: 'fleet',
+};
+
+const NOTIFICATION_CATEGORIES: { key: string; label: string; desc: string }[] = [
+  { key: 'new_device', label: 'New Device Detected', desc: 'Unknown device joins the network' },
+  { key: 'port_scan', label: 'Port Scan Detected', desc: 'Active port scanning detected' },
+  { key: 'internet_down', label: 'Internet Connectivity', desc: 'Internet connection lost or restored' },
+  { key: 'cyber_critical', label: 'Cyber Critical', desc: 'High-severity vulnerability or threat' },
+  { key: 'device_spike', label: 'Device Spike', desc: 'Unusual surge in connected devices' },
+];
 
 // ── Helpers ──────────────────────────────────────────────────────
+
+function normalizePlanId(plan?: string | null): PlanId {
+  return LEGACY_PLAN_MAP[plan ?? ''] ?? 'coastal';
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return 'Not available';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Not available' : date.toLocaleDateString('en-GB');
+}
+
+function formatPaymentMethod(paymentMethod?: {
+  brand: string | null;
+  last4: string | null;
+  expMonth: number | null;
+  expYear: number | null;
+} | null) {
+  if (!paymentMethod?.brand || !paymentMethod.last4) {
+    return 'No saved payment method';
+  }
+
+  const brand = paymentMethod.brand.charAt(0).toUpperCase() + paymentMethod.brand.slice(1);
+  const expiry = paymentMethod.expMonth && paymentMethod.expYear
+    ? ` · expires ${String(paymentMethod.expMonth).padStart(2, '0')}/${String(paymentMethod.expYear).slice(-2)}`
+    : '';
+
+  return `${brand} ending ${paymentMethod.last4}${expiry}`;
+}
+
+function getPlanActionLabel(planId: PlanId) {
+  return planId === 'fleet' ? 'Contact Sales' : 'Choose Plan';
+}
+
+function getSubscriptionStatusLabel(status?: string | null, cancelAtPeriodEnd?: boolean) {
+  if (cancelAtPeriodEnd) return 'Cancels at period end';
+  if (!status) return 'Not started';
+
+  const label = status.replace(/_/g, ' ');
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
 
 function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
@@ -144,50 +193,184 @@ export default function Settings() {
         country: string | null;
       } | null;
     } | null;
+    subscription: {
+      plan: string | null;
+      status: string | null;
+      currentPeriodEnd: string | null;
+      trialEnd: string | null;
+      cancelAtPeriodEnd: boolean;
+      paymentMethod: {
+        brand: string | null;
+        last4: string | null;
+        expMonth: number | null;
+        expYear: number | null;
+      } | null;
+      customerPortalAvailable: boolean;
+    };
   };
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
+  const [accountLoading, setAccountLoading] = useState(Boolean(CLOUD_API_URL));
 
   // ── Notification prefs ────────────────────────────────────────
   type CategoryPref = { email: boolean; sms: boolean };
   type NotifPrefs = { emailTo: string; phoneTo: string; categories: Record<string, CategoryPref> };
   const [notifPrefs, setNotifPrefs]   = useState<NotifPrefs | null>(null);
+  const [notifLoading, setNotifLoading] = useState(true);
+  const [notifLoadError, setNotifLoadError] = useState<string | null>(null);
   const [notifSaving, setNotifSaving] = useState(false);
   const [notifMsg,    setNotifMsg]    = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-
-  useEffect(() => {
-    fetchJSON<NotifPrefs>(`${AGENT_URL}/api/notifications`).then(setNotifPrefs).catch(() => {});
-  }, []);
 
   // ── Vessel quota ─────────────────────────────────────────────────
   type VesselQuota = { plan: string; currentVessels: number; maxVessels: number };
   const [vesselQuota, setVesselQuota] = useState<VesselQuota | null>(null);
-
-  useEffect(() => {
-    fetchJSON<VesselQuota>(`${AGENT_URL}/api/vessels/quota`).then(setVesselQuota).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!CLOUD_API_URL) return;
-    fetchJSON<AccountInfo>(`${CLOUD_API_URL}/api/account`).then(setAccountInfo).catch(() => {});
-  }, []);
+  const [quotaLoading, setQuotaLoading] = useState(true);
+  const [quotaError, setQuotaError] = useState<string | null>(null);
 
   // ── Subscription cancellation ───────────────────────────────────
   const [cancelingSub, setCancelingSub] = useState(false);
-  const [cancelMsg, setCancelMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [billingMsg, setBillingMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [portalLoading, setPortalLoading] = useState<'invoices' | 'payment' | null>(null);
+  const [planActionLoading, setPlanActionLoading] = useState<PlanId | null>(null);
 
-  async function handleCancelSubscription() {
+  type AuditEntry = {
+    actor?: string;
+    action?: string;
+    resource?: string | null;
+    created_at?: string;
+    timestamp?: string;
+  };
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[] | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+
+  async function loadNotifPrefs() {
+    setNotifLoading(true);
+    setNotifLoadError(null);
+    try {
+      const prefs = await fetchJSON<NotifPrefs>(`${AGENT_URL}/api/notifications`);
+      setNotifPrefs(prefs);
+    } catch (error) {
+      setNotifPrefs(null);
+      setNotifLoadError(error instanceof Error ? error.message : 'Unable to reach the vessel agent');
+    } finally {
+      setNotifLoading(false);
+    }
+  }
+
+  async function loadVesselQuota() {
+    setQuotaLoading(true);
+    setQuotaError(null);
+    try {
+      const quota = await fetchJSON<VesselQuota>(`${AGENT_URL}/api/vessels/quota`);
+      setVesselQuota(quota);
+    } catch (error) {
+      setVesselQuota(null);
+      setQuotaError(error instanceof Error ? error.message : 'Unable to load vessel quota');
+    } finally {
+      setQuotaLoading(false);
+    }
+  }
+
+  async function loadAuditEntries() {
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const entries = await fetchJSON<AuditEntry[]>(`${AGENT_URL}/api/audit`);
+      setAuditEntries(entries);
+    } catch (error) {
+      setAuditEntries(null);
+      setAuditError(error instanceof Error ? error.message : 'Unable to load audit log');
+    } finally {
+      setAuditLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadNotifPrefs();
+    void loadVesselQuota();
+  }, []);
+
+  useEffect(() => {
     if (!CLOUD_API_URL) {
-      setCancelMsg({ type: 'err', text: 'Cloud billing API is not configured.' });
+      setAccountLoading(false);
       return;
     }
 
-    const confirmed = window.confirm(
-      'Cancel subscription at period end? Trial cancellations are free within 14 days. Paid plans retain access until the current billing period ends.'
-    );
-    if (!confirmed) return;
+    setAccountLoading(true);
+    fetchJSON<AccountInfo>(`${CLOUD_API_URL}/api/account`)
+      .then(setAccountInfo)
+      .catch(() => setAccountInfo(null))
+      .finally(() => setAccountLoading(false));
+  }, []);
+
+  const currentPlanId = normalizePlanId(accountInfo?.subscription.plan ?? vesselQuota?.plan);
+  const currentPlan = PLANS.find(plan => plan.id === currentPlanId) ?? PLANS[0];
+  const subscriptionInfo = accountInfo?.subscription ?? null;
+  const renewalDate = formatDate(subscriptionInfo?.trialEnd ?? subscriptionInfo?.currentPeriodEnd);
+  const subscriptionStatus = getSubscriptionStatusLabel(subscriptionInfo?.status, subscriptionInfo?.cancelAtPeriodEnd);
+
+  async function handleOpenBillingPortal(target: 'invoices' | 'payment') {
+    if (!CLOUD_API_URL) {
+      setBillingMsg({ type: 'err', text: 'Cloud billing API is not configured.' });
+      return;
+    }
+
+    setPortalLoading(target);
+    setBillingMsg(null);
+    try {
+      const result = await fetchJSON<{ url: string }>(`${CLOUD_API_URL}/api/stripe/portal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ returnUrl: window.location.href }),
+      });
+      window.location.assign(result.url);
+    } catch (error) {
+      setBillingMsg({ type: 'err', text: error instanceof Error ? error.message : 'Unable to open billing portal' });
+    } finally {
+      setPortalLoading(null);
+    }
+  }
+
+  async function handlePlanChange(planId: PlanId) {
+    if (planId === 'fleet') {
+      window.open('https://www.nauticshield.io/#contact', '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (!CLOUD_API_URL) {
+      setBillingMsg({ type: 'err', text: 'Cloud billing API is not configured.' });
+      return;
+    }
+
+    setPlanActionLoading(planId);
+    setBillingMsg(null);
+    try {
+      const result = await fetchJSON<{ url: string }>(`${CLOUD_API_URL}/api/stripe/checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan: planId,
+          successUrl: `${window.location.origin}/settings?billing=success`,
+          cancelUrl: `${window.location.origin}/settings?billing=canceled`,
+        }),
+      });
+      window.location.assign(result.url);
+    } catch (error) {
+      setBillingMsg({ type: 'err', text: error instanceof Error ? error.message : 'Unable to start checkout' });
+    } finally {
+      setPlanActionLoading(null);
+    }
+  }
+
+  async function handleCancelSubscription() {
+    if (!CLOUD_API_URL) {
+      setBillingMsg({ type: 'err', text: 'Cloud billing API is not configured.' });
+      return;
+    }
 
     setCancelingSub(true);
-    setCancelMsg(null);
+    setBillingMsg(null);
     try {
       const result = await fetchJSON<{ ok: boolean; message: string; currentPeriodEnd?: string | null; trialEnd?: string | null }>(
         `${CLOUD_API_URL}/api/stripe/cancel`,
@@ -195,9 +378,10 @@ export default function Settings() {
       );
       const endDate = result.trialEnd ?? result.currentPeriodEnd;
       const suffix = endDate ? ` Access remains until ${new Date(endDate).toLocaleDateString('en-GB')}.` : '';
-      setCancelMsg({ type: 'ok', text: `${result.message}${suffix}` });
+      setBillingMsg({ type: 'ok', text: `${result.message}${suffix}` });
+      setShowCancelConfirm(false);
     } catch (e: unknown) {
-      setCancelMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed to cancel subscription' });
+      setBillingMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed to cancel subscription' });
     } finally {
       setCancelingSub(false);
     }
@@ -222,8 +406,6 @@ export default function Settings() {
       setInviting(false);
     }
   }
-
-  const currentPlan = PLANS.find(p => p.id === CURRENT_PLAN_ID) ?? PLANS[2];
 
   // ── Cloud Sync ────────────────────────────────────────────────────
   const [cloudVesselId,    setCloudVesselId]    = useState(VESSEL_ID);
@@ -282,17 +464,6 @@ export default function Settings() {
 
   return (
     <div style={{ padding: 28, maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
-
-      {/* Debug badge — shows org/role state */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        background: 'rgba(14,165,233,0.08)', border: '1px solid #0ea5e930', borderRadius: 8,
-        padding: '10px 14px', fontSize: 11, color: '#7dd3fc', fontFamily: 'monospace',
-      }}>
-        <div>
-          Org: <strong>{organization?.id?.slice(0, 12)}...</strong> ({organization?.name ?? 'null'}) | Role: <strong>{auth.role}</strong>
-        </div>
-      </div>
 
       {/* Header */}
       <div>
@@ -356,7 +527,7 @@ export default function Settings() {
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
-                onClick={() => openUserProfile()}
+                onClick={() => openUserProfile({ __experimental_startPath: '/security' })}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 7,
                   background: 'rgba(212,168,71,0.1)', color: '#d4a847',
@@ -412,7 +583,9 @@ export default function Settings() {
 
           <Card>
             <SectionTitle icon={CreditCard} label="Account Information" />
-            {accountInfo?.billing ? (
+            {accountLoading ? (
+              <div style={{ color: '#6b7f92', fontSize: 13 }}>Loading account information…</div>
+            ) : accountInfo?.billing ? (
               <div style={{ display: 'grid', gap: 12 }}>
                 {[
                   { label: 'Billing name', value: accountInfo.billing.name ?? '—' },
@@ -437,7 +610,7 @@ export default function Settings() {
                   </div>
                 </div>
                 <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.6 }}>
-                  Billing details are captured and maintained in Stripe Checkout. Update them there during checkout or when the customer portal is added.
+                  Billing details are captured in Stripe Checkout and managed through the customer portal.
                 </div>
               </div>
             ) : (
@@ -587,7 +760,7 @@ export default function Settings() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
             {PLANS.map(plan => {
               const PlanIcon  = plan.icon;
-              const isCurrent = plan.id === CURRENT_PLAN_ID;
+              const isCurrent = plan.id === currentPlanId;
               return (
                 <div key={plan.id} style={{
                   background: '#0d1421',
@@ -640,12 +813,17 @@ export default function Settings() {
                   </div>
 
                   {!isCurrent && (
-                    <button style={{
+                    <button
+                      onClick={() => handlePlanChange(plan.id)}
+                      disabled={planActionLoading === plan.id}
+                      style={{
                       width: '100%', padding: '9px 0', borderRadius: 8, fontWeight: 700,
                       fontSize: 12, cursor: 'pointer', border: `1px solid ${plan.color}44`,
                       background: plan.color + '12', color: plan.color,
-                    }}>
-                      {plan.id === 'basic' ? 'Downgrade' : 'Upgrade'} to {plan.name}
+                      opacity: planActionLoading === plan.id ? 0.7 : 1,
+                    }}
+                    >
+                      {planActionLoading === plan.id ? 'Opening…' : getPlanActionLabel(plan.id)}
                     </button>
                   )}
                   {isCurrent && (
@@ -666,6 +844,8 @@ export default function Settings() {
             <SectionTitle icon={Building2} label="Vessel Quota" />
             {vesselQuota ? (() => {
               const { currentVessels, maxVessels, plan } = vesselQuota;
+              const normalizedPlan = normalizePlanId(plan);
+              const planLabel = PLANS.find(item => item.id === normalizedPlan)?.name ?? plan;
               const atLimit = currentVessels >= maxVessels;
               const pct     = Math.min(100, Math.round((currentVessels / maxVessels) * 100));
               return (
@@ -687,7 +867,7 @@ export default function Settings() {
                       transition: 'width 0.4s',
                     }} />
                   </div>
-                  {atLimit && plan !== 'enterprise' && (
+                  {atLimit && normalizedPlan !== 'fleet' && (
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: 10,
                       background: 'rgba(212,168,71,0.08)', border: '1px solid rgba(212,168,71,0.25)',
@@ -695,7 +875,7 @@ export default function Settings() {
                     }}>
                       <AlertTriangle size={14} color="#d4a847" style={{ flexShrink: 0 }} />
                       <div style={{ fontSize: 12, color: '#8899aa', lineHeight: 1.6 }}>
-                        You've reached the <strong style={{ color: '#d4a847' }}>{plan}</strong> plan vessel limit.
+                        You've reached the <strong style={{ color: '#d4a847' }}>{planLabel}</strong> plan vessel limit.
                         Upgrade to add more vessels to your account.
                       </div>
                     </div>
@@ -703,7 +883,9 @@ export default function Settings() {
                 </div>
               );
             })() : (
-              <div style={{ color: '#4a5a6a', fontSize: 13 }}>Loading…</div>
+              <div style={{ color: '#4a5a6a', fontSize: 13 }}>
+                {quotaLoading ? 'Loading…' : quotaError ?? 'Vessel quota unavailable'}
+              </div>
             )}
           </Card>
 
@@ -712,8 +894,9 @@ export default function Settings() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[
                 { label: 'Current plan',    value: `${currentPlan.name} — ${currentPlan.price}` },
-                { label: 'Next renewal',    value: '1 May 2026' },
-                { label: 'Payment method', value: 'Visa ending 4242' },
+                { label: 'Subscription status', value: subscriptionStatus },
+                { label: 'Next renewal',    value: renewalDate },
+                { label: 'Payment method', value: formatPaymentMethod(subscriptionInfo?.paymentMethod) },
               ].map(row => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #1a2535' }}>
                   <span style={{ color: '#6b7f92', fontSize: 13 }}>{row.label}</span>
@@ -721,48 +904,110 @@ export default function Settings() {
                 </div>
               ))}
               <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-                <button style={{
+                <button
+                  onClick={() => handleOpenBillingPortal('invoices')}
+                  disabled={portalLoading !== null || !subscriptionInfo?.customerPortalAvailable}
+                  style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   background: 'rgba(212,168,71,0.1)', color: '#d4a847',
                   border: '1px solid rgba(212,168,71,0.3)', borderRadius: 9,
-                  padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                }}>
-                  <FileText size={13} /> View Invoices
+                  padding: '8px 16px', fontSize: 13, fontWeight: 600,
+                  cursor: portalLoading !== null || !subscriptionInfo?.customerPortalAvailable ? 'not-allowed' : 'pointer',
+                  opacity: portalLoading === 'payment' || !subscriptionInfo?.customerPortalAvailable ? 0.65 : 1,
+                }}
+                >
+                  <FileText size={13} /> {portalLoading === 'invoices' ? 'Opening…' : 'View Invoices'}
                 </button>
-                <button style={{
+                <button
+                  onClick={() => handleOpenBillingPortal('payment')}
+                  disabled={portalLoading !== null || !subscriptionInfo?.customerPortalAvailable}
+                  style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   background: '#0a0f18', color: '#8899aa',
                   border: '1px solid #1a2535', borderRadius: 9,
-                  padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                }}>
-                  <CreditCard size={13} /> Update Payment
+                  padding: '8px 16px', fontSize: 13, fontWeight: 600,
+                  cursor: portalLoading !== null || !subscriptionInfo?.customerPortalAvailable ? 'not-allowed' : 'pointer',
+                  opacity: portalLoading === 'invoices' || !subscriptionInfo?.customerPortalAvailable ? 0.65 : 1,
+                }}
+                >
+                  <CreditCard size={13} /> {portalLoading === 'payment' ? 'Opening…' : 'Update Payment'}
                 </button>
                 <button
-                  onClick={handleCancelSubscription}
-                  disabled={cancelingSub}
+                  onClick={() => setShowCancelConfirm(current => !current)}
+                  disabled={cancelingSub || !subscriptionInfo?.status || subscriptionInfo.cancelAtPeriodEnd}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     background: 'rgba(239,68,68,0.08)', color: '#ef4444',
                     border: '1px solid rgba(239,68,68,0.25)', borderRadius: 9,
                     padding: '8px 16px', fontSize: 13, fontWeight: 600,
-                    cursor: cancelingSub ? 'wait' : 'pointer', opacity: cancelingSub ? 0.7 : 1,
+                    cursor: cancelingSub || !subscriptionInfo?.status || subscriptionInfo.cancelAtPeriodEnd ? 'not-allowed' : 'pointer',
+                    opacity: cancelingSub || !subscriptionInfo?.status || subscriptionInfo.cancelAtPeriodEnd ? 0.65 : 1,
                   }}
                 >
-                  {cancelingSub ? 'Canceling…' : 'Cancel Subscription'}
+                  {subscriptionInfo?.cancelAtPeriodEnd ? 'Cancellation Scheduled' : 'Cancel Subscription'}
                 </button>
               </div>
-              {cancelMsg && (
+              {showCancelConfirm && !subscriptionInfo?.cancelAtPeriodEnd && (
+                <div style={{
+                  marginTop: 8,
+                  padding: '12px 14px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(239,68,68,0.25)',
+                  background: 'rgba(239,68,68,0.06)',
+                  color: '#fca5a5',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                }}>
+                  Cancel at period end? Trial cancellations stay free. Paid plans keep access until the current billing period ends.
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button
+                      onClick={handleCancelSubscription}
+                      disabled={cancelingSub}
+                      style={{
+                        background: '#ef4444',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '8px 14px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: cancelingSub ? 'wait' : 'pointer',
+                        opacity: cancelingSub ? 0.75 : 1,
+                      }}
+                    >
+                      {cancelingSub ? 'Confirming…' : 'Confirm Cancellation'}
+                    </button>
+                    <button
+                      onClick={() => setShowCancelConfirm(false)}
+                      disabled={cancelingSub}
+                      style={{
+                        background: 'transparent',
+                        color: '#8899aa',
+                        border: '1px solid #1a2535',
+                        borderRadius: 8,
+                        padding: '8px 14px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: cancelingSub ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      Keep Subscription
+                    </button>
+                  </div>
+                </div>
+              )}
+              {billingMsg && (
                 <div style={{
                   marginTop: 8,
                   padding: '10px 12px',
                   borderRadius: 8,
-                  border: cancelMsg.type === 'ok' ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(239,68,68,0.35)',
-                  background: cancelMsg.type === 'ok' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
-                  color: cancelMsg.type === 'ok' ? '#22c55e' : '#f87171',
+                  border: billingMsg.type === 'ok' ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(239,68,68,0.35)',
+                  background: billingMsg.type === 'ok' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                  color: billingMsg.type === 'ok' ? '#22c55e' : '#f87171',
                   fontSize: 12,
                   lineHeight: 1.5,
                 }}>
-                  {cancelMsg.text}
+                  {billingMsg.text}
                 </div>
               )}
               <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.7, marginTop: 6 }}>
@@ -799,7 +1044,7 @@ export default function Settings() {
                 )}
               </div>
               <button
-                onClick={() => openUserProfile()}
+                onClick={() => openUserProfile({ __experimental_startPath: '/security' })}
                 style={{
                   flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7,
                   background: 'rgba(212,168,71,0.1)', color: '#d4a847',
@@ -841,6 +1086,7 @@ export default function Settings() {
             </div>
             {auth.can('settings:manage_users') && (
               <button
+                onClick={() => void loadAuditEntries()}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 7,
                   background: '#0a0f18', color: '#8899aa',
@@ -848,23 +1094,40 @@ export default function Settings() {
                   padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 }}
               >
-                <FileText size={13} /> View Full Audit Log
+                <FileText size={13} /> {auditLoading ? 'Loading Audit Log…' : 'View Recent Audit Log'}
               </button>
             )}
+            {auditError && (
+              <div style={{ color: '#f87171', fontSize: 12, marginTop: 12 }}>{auditError}</div>
+            )}
+            {auditEntries?.length ? (
+              <div style={{ marginTop: 16, display: 'grid', gap: 8 }}>
+                {auditEntries.slice(0, 12).map((entry, index) => (
+                  <div
+                    key={`${entry.timestamp ?? entry.created_at ?? 'audit'}-${index}`}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '140px 1fr auto',
+                      gap: 12,
+                      background: '#0a0f18',
+                      border: '1px solid #1a2535',
+                      borderRadius: 10,
+                      padding: '10px 12px',
+                    }}
+                  >
+                    <div style={{ color: '#6b7f92', fontSize: 12 }}>{formatDate(entry.timestamp ?? entry.created_at)}</div>
+                    <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600 }}>{entry.action ?? 'Unknown action'}</div>
+                    <div style={{ color: '#4a5a6a', fontSize: 12 }}>{entry.actor ?? entry.resource ?? 'system'}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </Card>
         </>
       )}
 
       {/* ─── Notifications ───────────────────────────────────────── */}
       {activeTab === 'notifications' && notifPrefs && (() => {
-        const CATEGORIES: { key: string; label: string; desc: string }[] = [
-          { key: 'new_device',    label: 'New Device Detected',  desc: 'Unknown device joins the network' },
-          { key: 'port_scan',     label: 'Port Scan Detected',   desc: 'Active port scanning detected' },
-          { key: 'internet_down', label: 'Internet Connectivity', desc: 'Internet connection lost / restored' },
-          { key: 'cyber_critical', label: 'Cyber Critical',      desc: 'High-severity vulnerability or threat' },
-          { key: 'device_spike',  label: 'Device Spike',         desc: 'Unusual surge in connected devices' },
-        ];
-
         function toggleCat(key: string, channel: 'email' | 'sms') {
           setNotifPrefs(prev => {
             if (!prev) return prev;
@@ -883,11 +1146,15 @@ export default function Settings() {
           setNotifSaving(true);
           setNotifMsg(null);
           try {
-            const updated = await fetchJSON<NotifPrefs>(`${AGENT_URL}/api/notifications`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(notifPrefs) });
+            const updated = await fetchJSON<NotifPrefs>(`${AGENT_URL}/api/notifications`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(notifPrefs),
+            });
             setNotifPrefs(updated);
             setNotifMsg({ type: 'ok', text: 'Notification preferences saved.' });
-          } catch {
-            setNotifMsg({ type: 'err', text: 'Failed to save preferences.' });
+          } catch (error) {
+            setNotifMsg({ type: 'err', text: error instanceof Error ? error.message : 'Failed to save preferences.' });
           } finally {
             setNotifSaving(false);
           }
@@ -954,7 +1221,7 @@ export default function Settings() {
                     </tr>
                   </thead>
                   <tbody>
-                    {CATEGORIES.map((cat, i) => {
+                    {NOTIFICATION_CATEGORIES.map((cat, i) => {
                       const pref = notifPrefs.categories[cat.key] ?? { email: false, sms: false };
                       return (
                         <tr key={cat.key} style={{ borderTop: i > 0 ? '1px solid #1a2535' : undefined }}>
@@ -1015,10 +1282,30 @@ export default function Settings() {
       })()}
 
       {/* show spinner if notifications tab but prefs not yet loaded */}
-      {activeTab === 'notifications' && !notifPrefs && (
+      {activeTab === 'notifications' && notifLoading && (
         <div style={{ color: '#4a5a6a', fontSize: 13, padding: 40, textAlign: 'center' }}>
           Loading notification preferences…
         </div>
+      )}
+
+      {activeTab === 'notifications' && !notifLoading && !notifPrefs && (
+        <Card>
+          <SectionTitle icon={Bell} label="Notifications Unavailable" />
+          <div style={{ color: '#6b7f92', fontSize: 13, lineHeight: 1.7, marginBottom: 14 }}>
+            {notifLoadError ?? 'The vessel agent is not reachable, so notification preferences cannot be loaded right now.'}
+          </div>
+          <button
+            onClick={() => void loadNotifPrefs()}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: '#0a0f18', color: '#f0f4f8',
+              border: '1px solid #1a2535', borderRadius: 9,
+              padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            <RefreshCw size={13} /> Retry
+          </button>
+        </Card>
       )}
 
       {/* ── Cloud Sync tab ──────────────────────────────────────── */}

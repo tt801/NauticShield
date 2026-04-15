@@ -79,7 +79,13 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
     const res = await fetch(url, { ...init, headers, signal: controller.signal });
     if (!res.ok) {
       let msg = `HTTP ${res.status}`;
-      try { const body = await res.json(); if (body?.message) msg = body.message; } catch { /* ignore */ }
+      try {
+        const body = await res.json();
+        if (body?.message) msg = body.message;
+        else if (body?.error) msg = body.error;
+      } catch {
+        /* ignore */
+      }
       throw new Error(msg);
     }
     return await res.json() as T;

@@ -51,6 +51,23 @@ async function findExistingCustomerForUser(stripe: StripeClient, userId: string,
   return emailMatches.data[0] ?? null;
 }
 
+async function findExistingCustomerForOrg(stripe: StripeClient, orgId: string, userId: string, email?: string) {
+  const { data: vessel } = await supabase
+    .from('vessels')
+    .select('stripe_customer_id')
+    .eq('org_id', orgId)
+    .not('stripe_customer_id', 'is', null)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (vessel?.stripe_customer_id) {
+    return stripe.customers.retrieve(vessel.stripe_customer_id);
+  }
+
+  return findExistingCustomerForUser(stripe, userId, email);
+}
+
 async function handleCheckout(req: VercelRequest, res: VercelResponse) {
   const stripeKey = process.env.STRIPE_SECRET_KEY;
   if (!stripeKey) return res.status(500).json({ error: 'Stripe not configured' });
@@ -212,6 +229,49 @@ async function handleCancel(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+async function handlePortal(req: VercelRequest, res: VercelResponse) {
+  const auth = await verifyClerkJWT(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeKey) return res.status(500).json({ error: 'Stripe not configured' });
+
+  const orgId = auth.orgId ?? auth.userId;
+  const { returnUrl } = (req.body ?? {}) as { returnUrl?: string };
+
+  try {
+    const stripe = createStripeClient(stripeKey);
+    const checkoutUser = await getCheckoutUser(auth.userId);
+    const customer = await findExistingCustomerForOrg(
+      stripe,
+      orgId,
+      auth.userId,
+      checkoutUser.email,
+    );
+
+    if (!customer || ('deleted' in customer && customer.deleted)) {
+      return res.status(404).json({ error: 'No Stripe customer found for this account' });
+    }
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customer.id,
+      return_url: returnUrl || 'https://app.nauticshield.io/settings',
+    });
+
+    await writeAudit({
+      org_id: orgId,
+      actor: auth.userId,
+      action: 'subscription.portal.opened',
+      metadata: { customerId: customer.id },
+    }, req);
+
+    return res.json({ url: session.url });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Stripe error';
+    return res.status(500).json({ error: msg });
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -219,6 +279,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = String(req.query.action ?? '').toLowerCase();
   if (action === 'checkout') return handleCheckout(req, res);
   if (action === 'cancel') return handleCancel(req, res);
+  if (action === 'portal') return handlePortal(req, res);
 
   return res.status(404).json({ error: 'Unknown Stripe action' });
 }

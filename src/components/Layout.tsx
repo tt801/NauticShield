@@ -24,6 +24,14 @@ import { getConnectionMode, onConnectionModeChange, type ConnectionMode } from '
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
+function isLocalDevHost() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+}
+
 function SignOutButton() {
   const { signOut } = useClerk();
   return (
@@ -89,7 +97,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const auth = useAuthOptional();
   useInactivityLogout(auth?.role);
-  const hasClerk = !!CLERK_KEY && CLERK_KEY !== 'pk_test_REPLACE_ME';
+  const hasClerk = !!CLERK_KEY && CLERK_KEY !== 'pk_test_REPLACE_ME' && !isLocalDevHost();
 
   return (
     <div style={{ display: 'flex', height: '100%', minHeight: '100vh', background: '#080b10' }}>
@@ -307,8 +315,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e', flexShrink: 0 }} />
                 <div style={{ minWidth: 0 }}>
-                  <div 
-                    title={`[DEBUG] Org: ${auth?.vesselName || 'null'} | Role: ${auth?.role || 'unknown'}`}
+                  <div
                     style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
                     {auth?.vesselName ?? 'Vessel'}
