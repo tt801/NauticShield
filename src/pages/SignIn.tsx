@@ -2,6 +2,8 @@ import { SignIn } from '@clerk/clerk-react';
 import { dark } from '@clerk/themes';
 import { ShieldCheck } from 'lucide-react';
 
+const ALLOWED_EXTERNAL_REDIRECT_HOSTS = new Set(['nauticshield.io', 'www.nauticshield.io']);
+
 function getSafeRedirectUrl() {
   if (typeof window === 'undefined') {
     return '/';
@@ -14,11 +16,15 @@ function getSafeRedirectUrl() {
 
   try {
     const parsed = new URL(redirectParam, window.location.origin);
-    if (parsed.origin !== window.location.origin) {
-      return '/';
+    if (parsed.origin === window.location.origin) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
 
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    if (parsed.protocol === 'https:' && ALLOWED_EXTERNAL_REDIRECT_HOSTS.has(parsed.hostname)) {
+      return parsed.toString();
+    }
+
+    return '/';
   } catch {
     return '/';
   }
