@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ClerkProvider, SignedIn, SignedOut, UserButton, useUser } from '@clerk/clerk-react'
+import { ClerkProvider, UserButton, useUser } from '@clerk/clerk-react'
 import { Menu, X } from 'lucide-react'
 import Hero from './sections/Hero'
 import Features from './sections/Features'
@@ -81,7 +81,7 @@ function Nav({ isSignedIn, userLabel }: { isSignedIn: boolean; userLabel: string
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <SignedOut>
+          {!isSignedIn && (
             <a
               href={SIGN_IN_URL}
               onClick={handleSignInClick}
@@ -105,9 +105,9 @@ function Nav({ isSignedIn, userLabel }: { isSignedIn: boolean; userLabel: string
             >
               Sign In
             </a>
-          </SignedOut>
+          )}
 
-          <SignedIn>
+          {isSignedIn && (
             <a
               href="https://app.nauticshield.io/"
               style={{
@@ -122,9 +122,9 @@ function Nav({ isSignedIn, userLabel }: { isSignedIn: boolean; userLabel: string
             >
               Go to App →
             </a>
-          </SignedIn>
+          )}
 
-          <SignedIn>
+          {isSignedIn && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #22c55e50', borderRadius: 10, padding: '5px 10px', background: 'rgba(34,197,94,0.07)' }}>
               <UserButton
                 afterSignOutUrl="https://nauticshield.io"
@@ -134,7 +134,7 @@ function Nav({ isSignedIn, userLabel }: { isSignedIn: boolean; userLabel: string
                 {userLabel}
               </span>
             </div>
-          </SignedIn>
+          )}
           <a
             href={GET_STARTED_URL}
             style={{

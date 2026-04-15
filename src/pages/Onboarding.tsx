@@ -7,6 +7,7 @@ import { CLOUD_API_URL } from '@/api/config';
 const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
 const ACTIVE_ORG_QUERY_KEY = 'ns_org';
 const PENDING_ORG_STORAGE_KEY = 'nauticshield.pendingOrgId';
+const ALLOWED_POST_ONBOARDING_HOSTS = new Set(['nauticshield.io', 'www.nauticshield.io']);
 type MembershipSummary = { organization: { id: string; name: string | null } };
 
 const S: Record<string, React.CSSProperties> = {
@@ -74,10 +75,41 @@ export default function Onboarding() {
     return `/?${ACTIVE_ORG_QUERY_KEY}=${encodeURIComponent(orgId)}`;
   }
 
+  function getPostOnboardingRedirect() {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    const redirectParam = new URLSearchParams(window.location.search).get('redirect_url');
+    if (!redirectParam) {
+      return null;
+    }
+
+    try {
+      const parsed = new URL(redirectParam);
+      if (parsed.protocol !== 'https:') {
+        return null;
+      }
+      if (!ALLOWED_POST_ONBOARDING_HOSTS.has(parsed.hostname)) {
+        return null;
+      }
+      return parsed.toString();
+    } catch {
+      return null;
+    }
+  }
+
   function redirectToApp(orgId: string) {
-    const target = buildAppRedirect(orgId);
     window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, orgId);
     window.sessionStorage.setItem(PENDING_ORG_STORAGE_KEY, orgId);
+
+    const postOnboardingRedirect = getPostOnboardingRedirect();
+    if (postOnboardingRedirect) {
+      window.location.assign(postOnboardingRedirect);
+      return;
+    }
+
+    const target = buildAppRedirect(orgId);
     window.location.assign(target);
   }
 

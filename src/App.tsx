@@ -19,6 +19,36 @@ import Voyage       from '@/pages/Voyage'
 import Cyber        from '@/pages/Cyber'
 import Settings     from '@/pages/Settings'
 
+function LocalDevHome() {
+  const currentPath = typeof window === 'undefined' ? '/' : window.location.pathname;
+
+  return (
+    <div style={{ padding: 32, color: '#e5edf5' }}>
+      <div style={{ maxWidth: 760, background: '#0d1421', border: '1px solid #1a2535', borderRadius: 16, padding: 28 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#7dd3fc', marginBottom: 10 }}>
+          Local Development
+        </div>
+        <h1 style={{ margin: '0 0 12px', fontSize: 32, lineHeight: 1.1 }}>Vessel app auth is bypassed on localhost</h1>
+        <p style={{ margin: '0 0 12px', color: '#9fb0c3', lineHeight: 1.6 }}>
+          This local shell is running without Clerk because the configured publishable key does not allow localhost as a valid origin.
+          Marketing and admin can now be tested locally, but the authenticated vessel pages still require a Clerk-enabled domain.
+        </p>
+        <p style={{ margin: '0 0 20px', color: '#9fb0c3', lineHeight: 1.6 }}>
+          Current path: <span style={{ color: '#f0f4f8', fontWeight: 600 }}>{currentPath}</span>
+        </p>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ padding: 14, borderRadius: 12, background: 'rgba(125,211,252,0.08)', border: '1px solid rgba(125,211,252,0.16)' }}>
+            Use the marketing site to verify sign-up and plan flows.
+          </div>
+          <div style={{ padding: 14, borderRadius: 12, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.16)' }}>
+            Use the admin site locally to verify the admin portal routes and UI.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Error Boundary ────────────────────────────────────────────────
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
@@ -43,6 +73,30 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 }
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
+const ADMIN_HOSTNAME = 'admin.nauticshield.io';
+const ADMIN_FALLBACK_URL = 'https://nautic-shield-admin.vercel.app';
+
+function isLocalDevHost() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+}
+
+function redirectIfWrongHost() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  if (window.location.hostname !== ADMIN_HOSTNAME) {
+    return false;
+  }
+
+  const target = `${ADMIN_FALLBACK_URL}${window.location.pathname}${window.location.search}${window.location.hash}`;
+  window.location.replace(target);
+  return true;
+}
 
 if (!CLERK_KEY || CLERK_KEY === 'pk_test_REPLACE_ME') {
   console.warn(
@@ -52,8 +106,14 @@ if (!CLERK_KEY || CLERK_KEY === 'pk_test_REPLACE_ME') {
 }
 
 export default function App() {
+  if (redirectIfWrongHost()) {
+    return null;
+  }
+
+  const useDevMode = !CLERK_KEY || CLERK_KEY === 'pk_test_REPLACE_ME' || isLocalDevHost();
+
   // If no Clerk key is configured, run in dev mode (no auth wall)
-  if (!CLERK_KEY || CLERK_KEY === 'pk_test_REPLACE_ME') {
+  if (useDevMode) {
     return <ErrorBoundary><AppRoutes devMode /></ErrorBoundary>;
   }
 
@@ -82,7 +142,7 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
       <BrowserRouter>
         <Routes>
           {/* Public */}
-          <Route path="/sign-in" element={devMode ? <Dashboard /> : (
+          <Route path="/sign-in" element={devMode ? <Navigate to="/" replace /> : (
             <SignedOut><SignInPage /></SignedOut>
           )} />
 
@@ -97,18 +157,7 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
           <Route path="/*" element={
             devMode ? (
               <Layout>
-                <Routes>
-                  <Route path="/"              element={<Dashboard />} />
-                  <Route path="/devices"       element={<Devices />} />
-                  <Route path="/alerts"        element={<Alerts />} />
-                  <Route path="/zones"         element={<Zones />} />
-                  <Route path="/report"        element={<Report />} />
-                  <Route path="/guest-network" element={<GuestNetwork />} />
-                  <Route path="/voyage"        element={<Voyage />} />
-                  <Route path="/cyber"         element={<Cyber />} />
-                  <Route path="/settings"      element={<Settings />} />
-                  <Route path="*"              element={<Dashboard />} />
-                </Routes>
+                <LocalDevHome />
               </Layout>
             ) : (
               <>

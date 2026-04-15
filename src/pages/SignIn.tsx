@@ -2,7 +2,31 @@ import { SignIn } from '@clerk/clerk-react';
 import { dark } from '@clerk/themes';
 import { ShieldCheck } from 'lucide-react';
 
+function getSafeRedirectUrl() {
+  if (typeof window === 'undefined') {
+    return '/';
+  }
+
+  const redirectParam = new URLSearchParams(window.location.search).get('redirect_url');
+  if (!redirectParam) {
+    return '/';
+  }
+
+  try {
+    const parsed = new URL(redirectParam, window.location.origin);
+    if (parsed.origin !== window.location.origin) {
+      return '/';
+    }
+
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return '/';
+  }
+}
+
 export default function SignInPage() {
+  const redirectUrl = getSafeRedirectUrl();
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -62,8 +86,10 @@ export default function SignInPage() {
             footerActionLink:   { color: '#d4a847' },
           },
         }}
-        fallbackRedirectUrl="/"
-        forceRedirectUrl="/"
+        fallbackRedirectUrl={redirectUrl}
+        forceRedirectUrl={redirectUrl}
+        signUpFallbackRedirectUrl={redirectUrl}
+        signUpForceRedirectUrl={redirectUrl}
       />
 
       {/* Security notice */}
