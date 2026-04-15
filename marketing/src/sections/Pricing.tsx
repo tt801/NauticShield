@@ -166,7 +166,7 @@ function PlanCard({ plan, selectedPlan, isSignedIn }: { plan: typeof PLANS[numbe
     }
     if (!canCheckoutNow) {
       if (isSignedIn) {
-        window.alert('You are already signed in. Continuing to Stripe checkout for your selected plan.')
+        // Already signed in — go straight to Stripe, no alert needed
         setLoading(true)
         await startCheckout(plan.checkoutPlan)
         setLoading(false)

@@ -125,12 +125,12 @@ function Nav({ isSignedIn, userLabel }: { isSignedIn: boolean; userLabel: string
           </SignedIn>
 
           <SignedIn>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #1f3347', borderRadius: 10, padding: '5px 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #22c55e50', borderRadius: 10, padding: '5px 10px', background: 'rgba(34,197,94,0.07)' }}>
               <UserButton
                 afterSignOutUrl="https://nauticshield.io"
-                appearance={{ elements: { avatarBox: { width: 24, height: 24 } } }}
+                appearance={{ elements: { avatarBox: { width: 28, height: 28 } } }}
               />
-              <span style={{ color: '#9cb1c2', fontSize: 12, maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ color: '#86efac', fontSize: 12, maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
                 {userLabel}
               </span>
             </div>
