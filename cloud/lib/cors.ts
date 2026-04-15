@@ -21,6 +21,8 @@ const ALLOWED_ORIGINS = [
 // Allow any Vercel preview deployment for the NauticShield org
 const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/nautic-shield[a-z0-9-]*\.vercel\.app$/,
+  /^https:\/\/nauticshield[a-z0-9-]*\.vercel\.app$/,
+  /^https:\/\/[a-z0-9-]*nautic[-]?shield[a-z0-9-]*\.vercel\.app$/,
 ];
 
 /**

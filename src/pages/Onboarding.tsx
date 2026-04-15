@@ -60,6 +60,18 @@ export default function Onboarding() {
   const [error, setError]           = useState<string | null>(null);
   const [limitHit, setLimitHit]     = useState(false);
 
+  async function activateOrgWithRetry(orgId: string) {
+    if (!setActive) throw new Error('Organization activation unavailable. Please refresh and try again.');
+
+    try {
+      await setActive({ organization: orgId });
+      return;
+    } catch {
+      // One retry covers transient Clerk session/network blips.
+      await setActive({ organization: orgId });
+    }
+  }
+
   // If Clerk already shows the user has a vessel (reused email, previous partial session, etc.),
   // silently activate it and redirect to dashboard.
   useEffect(() => {
@@ -129,7 +141,7 @@ export default function Onboarding() {
         orgId = body.orgId;
       }
 
-      await setActive({ organization: orgId });
+      await activateOrgWithRetry(orgId);
       navigate('/', { replace: true });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create vessel. Please try again.';
@@ -138,7 +150,13 @@ export default function Onboarding() {
       if (msg.includes('vessel_limit_reached') || msg.includes('plan allows')) {
         setLimitHit(true);
       } else if (msg.toLowerCase().includes('failed to fetch')) {
-        setError('Network error while creating vessel. Please check your connection and try again.');
+        try {
+          await activateExisting();
+          navigate('/', { replace: true });
+          return;
+        } catch {
+          setError('Network error while creating vessel. Please check your connection and try again.');
+        }
       } else {
         setError(msg);
       }
