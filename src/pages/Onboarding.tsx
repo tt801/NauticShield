@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useOrganizationList, useClerk, useAuth, useOrganization } from '@clerk/clerk-react';
+import { useOrganizationList, useClerk, useAuth, useOrganization, useUser } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { Anchor, ShieldCheck, AlertTriangle, ExternalLink } from 'lucide-react';
 import { CLOUD_API_URL } from '@/api/config';
 
 const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
+type MembershipSummary = { organization: { id: string; name: string | null } };
 
 const S: Record<string, React.CSSProperties> = {
   page: {
@@ -55,6 +56,7 @@ const S: Record<string, React.CSSProperties> = {
 export default function Onboarding() {
   const { setActive, userMemberships, isLoaded, createOrganization } = useOrganizationList({ userMemberships: true });
   const { organization } = useOrganization();
+  const { user } = useUser();
   const { signOut } = useClerk();
   const { getToken } = useAuth();
   const navigate = useNavigate();
@@ -63,12 +65,80 @@ export default function Onboarding() {
   const [error, setError]           = useState<string | null>(null);
   const [limitHit, setLimitHit]     = useState(false);
   const [preferredOrgId, setPreferredOrgId] = useState<string | null>(null);
+  const [probedMemberships, setProbedMemberships] = useState<MembershipSummary[] | null>(null);
+  const [membershipProbeComplete, setMembershipProbeComplete] = useState(false);
+
+  const memberships: MembershipSummary[] = ((userMemberships?.data?.length ?? 0) > 0
+    ? userMemberships?.data?.map(membership => ({
+        organization: {
+          id: membership.organization.id,
+          name: membership.organization.name ?? null,
+        },
+      }))
+    : probedMemberships) ?? [];
 
   useEffect(() => {
     if (organization?.id) {
       window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, organization.id);
     }
   }, [organization?.id]);
+
+  useEffect(() => {
+    if (!isLoaded || !user) {
+      return;
+    }
+
+    if ((userMemberships?.data?.length ?? 0) > 0) {
+      setProbedMemberships(null);
+      setMembershipProbeComplete(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    void user.getOrganizationMemberships().then(result => {
+      if (cancelled) return;
+      setProbedMemberships(result.data.map(membership => ({
+        organization: {
+          id: membership.organization.id,
+          name: membership.organization.name ?? null,
+        },
+      })));
+      setMembershipProbeComplete(true);
+    }).catch(() => {
+      if (cancelled) return;
+      setProbedMemberships([]);
+      setMembershipProbeComplete(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, user, userMemberships?.data]);
+
+  async function waitForMembership(orgId: string) {
+    if (!user) return;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const result = await user.getOrganizationMemberships();
+      const nextMemberships = result.data.map(membership => ({
+        organization: {
+          id: membership.organization.id,
+          name: membership.organization.name ?? null,
+        },
+      }));
+
+      setProbedMemberships(nextMemberships);
+      setMembershipProbeComplete(true);
+      await userMemberships.revalidate?.();
+
+      if (nextMemberships.some(membership => membership.organization.id === orgId)) {
+        return;
+      }
+
+      await new Promise(resolve => window.setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
 
   async function activateOrgWithRetry(orgId: string) {
     if (!setActive) throw new Error('Organization activation unavailable. Please refresh and try again.');
@@ -94,7 +164,6 @@ export default function Onboarding() {
   // If no active org yet but memberships exist, activate the best candidate and continue.
   useEffect(() => {
     if (!isLoaded || organization?.id) return;
-    const memberships = userMemberships?.data;
     if (memberships && memberships.length > 0 && setActive) {
       const storedOrgId = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
       const preferred =
@@ -112,11 +181,10 @@ export default function Onboarding() {
           setError('We found your vessel, but could not restore the session automatically. Use the button below to retry.');
         });
     }
-  }, [isLoaded, organization?.id, userMemberships?.data, preferredOrgId, vesselName, setActive, navigate]);
+  }, [isLoaded, organization?.id, memberships, preferredOrgId, vesselName, setActive, navigate]);
 
   // If the user already has an org (e.g. from a previous session), just activate it
   async function activateExisting(preferredName?: string, preferredId?: string) {
-    const memberships = userMemberships?.data ?? [];
     const storedOrgId = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
     const existing =
       (preferredId ? memberships.find(m => m.organization.id === preferredId) : undefined)
@@ -147,6 +215,7 @@ export default function Onboarding() {
         orgId = org.id;
         setPreferredOrgId(org.id);
         window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, org.id);
+        await waitForMembership(org.id);
       } catch (primaryErr: unknown) {
         // Fallback: create vessel via cloud API if browser-side Clerk call fails.
         if (!CLOUD_API_URL) throw primaryErr;
@@ -181,6 +250,7 @@ export default function Onboarding() {
         orgId = body.orgId;
         setPreferredOrgId(body.orgId);
         window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, body.orgId);
+        await waitForMembership(body.orgId);
       }
 
       await activateOrgWithRetry(orgId);
@@ -210,8 +280,11 @@ export default function Onboarding() {
     return <div style={{ ...S.page }}><div style={{ color: '#4a5a6a', fontSize: 13 }}>Loading…</div></div>;
   }
 
-  const existingMemberships = userMemberships?.data ?? [];
-  const hasExistingVessel = existingMemberships.length > 0;
+  if (!membershipProbeComplete && (userMemberships?.data?.length ?? 0) === 0) {
+    return <div style={{ ...S.page }}><div style={{ color: '#4a5a6a', fontSize: 13 }}>Checking vessel access…</div></div>;
+  }
+
+  const hasExistingVessel = memberships.length > 0;
 
   return (
     <div style={S.page}>

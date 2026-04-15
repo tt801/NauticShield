@@ -1,10 +1,11 @@
-import { useAuth as useClerkAuth, useOrganization, useOrganizationList } from '@clerk/clerk-react';
+import { useAuth as useClerkAuth, useOrganization, useOrganizationList, useUser } from '@clerk/clerk-react';
 import { useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import type { Action } from '@/context/AuthContext';
 
 const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
+type MembershipSummary = { organization: { id: string; name: string | null } };
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -14,6 +15,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, require: action }: ProtectedRouteProps) {
   const { isSignedIn, isLoaded } = useClerkAuth();
+  const { user } = useUser();
   const { isLoaded: orgLoaded, organization } = useOrganization();
   const {
     isLoaded: membershipsLoaded,
@@ -23,6 +25,17 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
   const auth = useAuth();
   const attemptedRestore = useRef(false);
   const [restoreFailed, setRestoreFailed] = useState(false);
+  const [probedMemberships, setProbedMemberships] = useState<MembershipSummary[] | null>(null);
+  const [membershipProbeComplete, setMembershipProbeComplete] = useState(false);
+
+  const memberships: MembershipSummary[] = ((userMemberships?.data?.length ?? 0) > 0
+    ? userMemberships?.data?.map(membership => ({
+        organization: {
+          id: membership.organization.id,
+          name: membership.organization.name ?? null,
+        },
+      }))
+    : probedMemberships) ?? [];
 
   useEffect(() => {
     if (organization?.id) {
@@ -31,13 +44,45 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
   }, [organization?.id]);
 
   useEffect(() => {
+    if (!isSignedIn || !isLoaded || !membershipsLoaded || !user) {
+      return;
+    }
+
+    if ((userMemberships?.data?.length ?? 0) > 0) {
+      setProbedMemberships(null);
+      setMembershipProbeComplete(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    void user.getOrganizationMemberships().then(result => {
+      if (cancelled) return;
+      setProbedMemberships(result.data.map(membership => ({
+        organization: {
+          id: membership.organization.id,
+          name: membership.organization.name ?? null,
+        },
+      })));
+      setMembershipProbeComplete(true);
+    }).catch(() => {
+      if (cancelled) return;
+      setProbedMemberships([]);
+      setMembershipProbeComplete(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn, isLoaded, membershipsLoaded, user, userMemberships?.data]);
+
+  useEffect(() => {
     if (!isSignedIn || !isLoaded || !orgLoaded || !membershipsLoaded || organization?.id || attemptedRestore.current) {
       return;
     }
 
     attemptedRestore.current = true;
 
-    const memberships = userMemberships?.data ?? [];
     const storedOrgId = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
     const preferredMembership =
       (storedOrgId ? memberships.find(membership => membership.organization.id === storedOrgId) : undefined)
@@ -61,9 +106,10 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
     isLoaded,
     orgLoaded,
     membershipsLoaded,
+    membershipProbeComplete,
     organization?.id,
+    memberships,
     setActive,
-    userMemberships?.data,
   ]);
 
   if (!isLoaded || !orgLoaded || !membershipsLoaded) {
@@ -75,7 +121,11 @@ export function ProtectedRoute({ children, require: action }: ProtectedRouteProp
   }
 
   if (!organization?.id) {
-    if ((userMemberships?.data?.length ?? 0) > 0 && !restoreFailed) {
+    if (!membershipProbeComplete) {
+      return <LoadingScreen message="Checking vessel access…" />;
+    }
+
+    if (memberships.length > 0 && !restoreFailed) {
       return <LoadingScreen message="Restoring vessel session…" />;
     }
 
