@@ -141,34 +141,34 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
     : ProtectedRoute;
 
   return (
-    <VesselDataProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public */}
-          <Route path="/sign-in" element={devMode ? <Navigate to="/" replace /> : (
-            <SignedOut><SignInPage /></SignedOut>
-          )} />
+    <BrowserRouter>
+      <Routes>
+        {/* Public */}
+        <Route path="/sign-in" element={devMode ? <Navigate to="/" replace /> : (
+          <SignedOut><SignInPage /></SignedOut>
+        )} />
 
-          <Route path="/sign-up" element={devMode ? <Navigate to="/" replace /> : (
-            <SignedOut><SignUpPage /></SignedOut>
-          )} />
+        <Route path="/sign-up" element={devMode ? <Navigate to="/" replace /> : (
+          <SignedOut><SignUpPage /></SignedOut>
+        )} />
 
-          {/* Onboarding — signed-in but no org yet */}
-          <Route path="/onboarding" element={
-            devMode ? <Navigate to="/" replace /> : (
-              <SignedIn><Onboarding /></SignedIn>
-            )
-          } />
+        {/* Onboarding — signed-in but no org yet */}
+        <Route path="/onboarding" element={
+          devMode ? <Navigate to="/" replace /> : (
+            <SignedIn><Onboarding /></SignedIn>
+          )
+        } />
 
-          {/* Protected — wrapped in Layout */}
-          <Route path="/*" element={
-            devMode ? (
-              <Layout>
-                <LocalDevHome />
-              </Layout>
-            ) : (
-              <>
-              <SignedIn>
+        {/* Protected — wrapped in Layout */}
+        <Route path="/*" element={
+          devMode ? (
+            <Layout>
+              <LocalDevHome />
+            </Layout>
+          ) : (
+            <>
+            <SignedIn>
+              <VesselDataProvider>
                 <Layout>
                   <Routes>
                     <Route path="/"              element={<Protect><Dashboard /></Protect>} />
@@ -183,13 +183,13 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
                     <Route path="*"              element={<Protect><Dashboard /></Protect>} />
                   </Routes>
                 </Layout>
-              </SignedIn>
-              <SignedOut><RedirectToSignIn /></SignedOut>
-              </>
-            )
-          } />
-        </Routes>
-      </BrowserRouter>
-    </VesselDataProvider>
+              </VesselDataProvider>
+            </SignedIn>
+            <SignedOut><RedirectToSignIn /></SignedOut>
+            </>
+          )
+        } />
+      </Routes>
+    </BrowserRouter>
   );
 }

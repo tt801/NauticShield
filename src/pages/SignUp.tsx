@@ -76,8 +76,8 @@ export default function SignUpPage() {
               elements: {
                 card:               { boxShadow: '0 8px 40px rgba(0,0,0,0.6)', border: '1px solid #1a2535', margin: '0 auto' },
                 rootBox:            { display: 'flex', justifyContent: 'center' },
-                headerTitle:        { color: '#f0f4f8', textAlign: 'center' },
-                headerSubtitle:     { color: '#6b7f92', textAlign: 'center' },
+                headerTitle:        { display: 'none' },
+                headerSubtitle:     { display: 'none' },
                 socialButtonsBlockButton: {
                   background: '#0a0f18',
                   border: '1px solid #1a2535',
