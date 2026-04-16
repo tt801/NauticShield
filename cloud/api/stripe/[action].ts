@@ -17,6 +17,8 @@ function createStripeClient(secretKey: string) {
 
 type StripeClient = ReturnType<typeof createStripeClient>;
 
+const MANAGED_SUBSCRIPTION_STATUSES = new Set(['trialing', 'active', 'past_due', 'unpaid']);
+
 async function getCheckoutUser(userId: string) {
   const secretKey = process.env.CLERK_SECRET_KEY;
   if (!secretKey) {
@@ -66,6 +68,30 @@ async function findExistingCustomerForOrg(stripe: StripeClient, orgId: string, u
   }
 
   return findExistingCustomerForUser(stripe, userId, email);
+}
+
+async function findManagedSubscription(
+  stripe: StripeClient,
+  customer: Awaited<ReturnType<typeof findExistingCustomerForOrg>>,
+  knownSubscriptionId?: string | null,
+) {
+  if (knownSubscriptionId) {
+    return stripe.subscriptions.retrieve(knownSubscriptionId);
+  }
+
+  if (!customer || ('deleted' in customer && customer.deleted)) {
+    return null;
+  }
+
+  const subscriptions = await stripe.subscriptions.list({
+    customer: customer.id,
+    status: 'all',
+    limit: 10,
+  });
+
+  return subscriptions.data.find(subscription =>
+    subscription.cancel_at_period_end || MANAGED_SUBSCRIPTION_STATUSES.has(subscription.status),
+  ) ?? subscriptions.data[0] ?? null;
 }
 
 async function handleCheckout(req: VercelRequest, res: VercelResponse) {
@@ -168,17 +194,24 @@ async function handleCancel(req: VercelRequest, res: VercelResponse) {
     .from('vessels')
     .select('id, stripe_subscription_id, stripe_customer_id, subscription_status')
     .eq('org_id', orgId)
-    .not('stripe_subscription_id', 'is', null)
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle();
 
   if (vesselErr) return res.status(500).json({ error: vesselErr.message });
-  if (!vessel?.stripe_subscription_id) return res.status(404).json({ error: 'No active subscription found' });
+  if (!vessel) return res.status(404).json({ error: 'No vessel found for this account' });
 
   try {
     const stripe = createStripeClient(stripeKey);
-    const updated = await stripe.subscriptions.update(vessel.stripe_subscription_id, {
+    const checkoutUser = await getCheckoutUser(auth.userId);
+    const customer = await findExistingCustomerForOrg(stripe, orgId, auth.userId, checkoutUser.email);
+    const subscription = await findManagedSubscription(stripe, customer, vessel.stripe_subscription_id);
+
+    if (!subscription) {
+      return res.status(404).json({ error: 'No active subscription found' });
+    }
+
+    const updated = await stripe.subscriptions.update(subscription.id, {
       cancel_at_period_end: true,
     });
 
@@ -192,6 +225,7 @@ async function handleCancel(req: VercelRequest, res: VercelResponse) {
     await supabase
       .from('vessels')
       .update({
+        stripe_subscription_id: updated.id,
         subscription_status: updated.cancel_at_period_end ? 'canceling' : updated.status,
         current_period_end: periodEndIso,
         trial_ends_at: trialEndIso,

@@ -21,8 +21,6 @@ import {
   Camera,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useOrganization } from '@clerk/clerk-react';
-import { useAuth } from '@/context/AuthContext';
 import type { ConnectionStatus, AlertSeverity } from '@/data/mock';
 import { useVesselData } from '@/context/VesselDataProvider';
 import type { AgentStatus } from '@/context/VesselDataProvider';
@@ -600,8 +598,6 @@ function AgentStatusBanner({ status, lastSync }: { status: AgentStatus; lastSync
 
 export default function Dashboard() {
   const { devices, alerts, internetStatus, agentStatus, lastSync } = useVesselData();
-  const auth = useAuth();
-  const { organization } = useOrganization();
   const online       = devices.filter(d => d.status === 'online').length;
   const activeAlerts = alerts.filter(a => !a.resolved).length;
   const date = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -610,17 +606,6 @@ export default function Dashboard() {
     <div style={{ padding: '24px 28px', minHeight: '100%', background: '#080b10' }}>
 
       <AgentStatusBanner status={agentStatus} lastSync={lastSync} />
-
-      {/* Debug badge — shows org/role state */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        background: 'rgba(14,165,233,0.08)', border: '1px solid #0ea5e930', borderRadius: 8,
-        padding: '10px 14px', fontSize: 11, color: '#7dd3fc', fontFamily: 'monospace', marginBottom: 16,
-      }}>
-        <div>
-          Org: <strong>{organization?.id?.slice(0, 12) ?? 'null'}...</strong> ({organization?.name ?? 'null'}) | Role: <strong>{auth.role}</strong>
-        </div>
-      </div>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>

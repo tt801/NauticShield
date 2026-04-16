@@ -69,7 +69,7 @@ export function setTokenProvider(fn: () => Promise<string | null>) {
 
 export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
-  const timer      = setTimeout(() => controller.abort(), API_TIMEOUT);
+  const timer      = setTimeout(() => controller.abort(new DOMException('Request timed out', 'AbortError')), API_TIMEOUT);
   try {
     const token = _getToken ? await _getToken() : null;
     const headers: HeadersInit = {
@@ -89,6 +89,11 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
       throw new Error(msg);
     }
     return await res.json() as T;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out');
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
   }

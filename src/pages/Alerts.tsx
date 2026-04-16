@@ -210,7 +210,7 @@ export default function Alerts() {
   const criticalCount = alerts.filter(a => a.severity === 'critical' && !a.resolved).length;
 
   return (
-    <div style={{ padding: 28, maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ padding: 28, maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
       <style>{`
         @keyframes newAlertIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
         @keyframes alertPulse { 0%,100% { transform: scale(1); opacity:0.4; } 50% { transform: scale(2.2); opacity:0; } }

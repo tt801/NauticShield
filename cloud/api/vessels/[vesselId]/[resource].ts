@@ -10,10 +10,96 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { supabase }            from '../../../lib/supabase';
 import { verifyClerkJWT, assertVesselOwnership } from '../../../lib/auth';
 import { cors } from '../../../lib/cors';
+import { writeAudit } from '../../../lib/audit';
+
+type NotificationCategory = 'new_device' | 'port_scan' | 'internet_down' | 'cyber_critical' | 'device_spike';
+type CategoryPref = { email: boolean; sms: boolean };
+type NotificationPrefs = {
+  emailTo: string;
+  phoneTo: string;
+  categories: Record<NotificationCategory, CategoryPref>;
+};
+
+const DEFAULT_NOTIFICATION_CATEGORIES: Record<NotificationCategory, CategoryPref> = {
+  new_device: { email: true, sms: false },
+  port_scan: { email: true, sms: true },
+  internet_down: { email: true, sms: true },
+  cyber_critical: { email: true, sms: true },
+  device_spike: { email: true, sms: false },
+};
+
+function normalizePlan(plan?: string | null) {
+  switch ((plan ?? '').toLowerCase()) {
+    case 'starter':
+    case 'basic':
+    case 'coastal':
+      return 'coastal';
+    case 'pro':
+    case 'superyacht':
+      return 'superyacht';
+    case 'enterprise':
+    case 'fleet':
+      return 'fleet';
+    default:
+      return 'coastal';
+  }
+}
+
+function maxVesselsForPlan(plan: string) {
+  switch (normalizePlan(plan)) {
+    case 'superyacht':
+      return 3;
+    case 'fleet':
+      return 999;
+    default:
+      return 1;
+  }
+}
+
+function mergeNotificationPrefs(value: unknown, current?: NotificationPrefs): NotificationPrefs {
+  const source = (value && typeof value === 'object') ? value as Partial<NotificationPrefs> : {};
+  const base = current ?? {
+    emailTo: '',
+    phoneTo: '',
+    categories: DEFAULT_NOTIFICATION_CATEGORIES,
+  };
+
+  const categories = Object.entries(DEFAULT_NOTIFICATION_CATEGORIES).reduce((acc, [key, defaults]) => {
+    const existing = base.categories[key as NotificationCategory] ?? defaults;
+    const incoming = source.categories?.[key as NotificationCategory];
+
+    acc[key as NotificationCategory] = {
+      email: typeof incoming?.email === 'boolean' ? incoming.email : existing.email,
+      sms: typeof incoming?.sms === 'boolean' ? incoming.sms : existing.sms,
+    };
+
+    return acc;
+  }, {} as Record<NotificationCategory, CategoryPref>);
+
+  return {
+    emailTo: typeof source.emailTo === 'string' ? source.emailTo : base.emailTo,
+    phoneTo: typeof source.phoneTo === 'string' ? source.phoneTo : base.phoneTo,
+    categories,
+  };
+}
+
+async function loadNotificationPrefs(orgId: string) {
+  const { data } = await supabase
+    .from('audit_log')
+    .select('metadata')
+    .eq('org_id', orgId)
+    .eq('action', 'notification.preferences.updated')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const metadata = (data?.metadata ?? null) as Record<string, unknown> | null;
+  return mergeNotificationPrefs(metadata?.preferences);
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  if (!['GET', 'PUT'].includes(req.method ?? '')) return res.status(405).json({ error: 'Method not allowed' });
 
   const auth = await verifyClerkJWT(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
@@ -22,6 +108,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!vessel) return res.status(404).json({ error: 'Vessel not found' });
 
   const resource = req.query.resource as string;
+
+  if (req.method === 'PUT') {
+    if (resource !== 'notifications') {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    const current = await loadNotificationPrefs(vessel.org_id);
+    const preferences = mergeNotificationPrefs(req.body, current);
+
+    await writeAudit({
+      org_id: vessel.org_id,
+      actor: auth.userId,
+      action: 'notification.preferences.updated',
+      resource: vessel.id,
+      metadata: { preferences },
+    }, req);
+
+    return res.json(preferences);
+  }
 
   if (resource === 'alerts' || resource === 'devices') {
     const { data } = await supabase
@@ -59,6 +164,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .limit(200);
 
     return res.json((data ?? []).map((r: { data: unknown }) => r.data));
+  }
+
+  if (resource === 'quota') {
+    const { count } = await supabase
+      .from('vessels')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', vessel.org_id);
+
+    const { data: primaryVessel } = await supabase
+      .from('vessels')
+      .select('plan')
+      .eq('org_id', vessel.org_id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    const plan = normalizePlan(primaryVessel?.plan ?? null);
+    return res.json({
+      plan,
+      currentVessels: count ?? 0,
+      maxVessels: maxVesselsForPlan(plan),
+    });
+  }
+
+  if (resource === 'audit') {
+    const { data, error } = await supabase
+      .from('audit_log')
+      .select('actor, action, resource, created_at')
+      .eq('org_id', vessel.org_id)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json(data ?? []);
+  }
+
+  if (resource === 'notifications') {
+    return res.json(await loadNotificationPrefs(vessel.org_id));
   }
 
   return res.status(404).json({ error: 'Unknown resource' });

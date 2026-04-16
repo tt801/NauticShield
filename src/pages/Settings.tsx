@@ -23,8 +23,8 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { fetchJSON } from '@/api/client';
-import { AGENT_URL, CLOUD_API_URL, VESSEL_ID } from '@/api/config';
+import { fetchJSON, fetchWithFallback } from '@/api/client';
+import { CLOUD_API_URL, VESSEL_ID } from '@/api/config';
 
 // ── Plan definitions ─────────────────────────────────────────────
 
@@ -244,11 +244,15 @@ export default function Settings() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
 
+  function openMfaSetup() {
+    openUserProfile({ __experimental_startPath: '/mfa' });
+  }
+
   async function loadNotifPrefs() {
     setNotifLoading(true);
     setNotifLoadError(null);
     try {
-      const prefs = await fetchJSON<NotifPrefs>(`${AGENT_URL}/api/notifications`);
+      const prefs = await fetchWithFallback<NotifPrefs>('/api/notifications');
       setNotifPrefs(prefs);
     } catch (error) {
       setNotifPrefs(null);
@@ -262,7 +266,7 @@ export default function Settings() {
     setQuotaLoading(true);
     setQuotaError(null);
     try {
-      const quota = await fetchJSON<VesselQuota>(`${AGENT_URL}/api/vessels/quota`);
+      const quota = await fetchWithFallback<VesselQuota>('/api/vessels/quota');
       setVesselQuota(quota);
     } catch (error) {
       setVesselQuota(null);
@@ -276,7 +280,7 @@ export default function Settings() {
     setAuditLoading(true);
     setAuditError(null);
     try {
-      const entries = await fetchJSON<AuditEntry[]>(`${AGENT_URL}/api/audit`);
+      const entries = await fetchWithFallback<AuditEntry[]>('/api/audit');
       setAuditEntries(entries);
     } catch (error) {
       setAuditEntries(null);
@@ -527,7 +531,7 @@ export default function Settings() {
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
-                onClick={() => openUserProfile({ __experimental_startPath: '/security' })}
+                onClick={openMfaSetup}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 7,
                   background: 'rgba(212,168,71,0.1)', color: '#d4a847',
@@ -1032,6 +1036,7 @@ export default function Settings() {
                 <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.6, maxWidth: 440 }}>
                   Multi-factor authentication protects access to this system.
                   Given the sensitive nature of vessel and passenger data, MFA is strongly recommended for all users.
+                  Use the MFA section to add an authenticator app or passkey.
                 </div>
                 {user?.twoFactorEnabled ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, color: '#22c55e', fontSize: 12, fontWeight: 700 }}>
@@ -1044,7 +1049,7 @@ export default function Settings() {
                 )}
               </div>
               <button
-                onClick={() => openUserProfile({ __experimental_startPath: '/security' })}
+                onClick={openMfaSetup}
                 style={{
                   flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7,
                   background: 'rgba(212,168,71,0.1)', color: '#d4a847',
@@ -1146,7 +1151,7 @@ export default function Settings() {
           setNotifSaving(true);
           setNotifMsg(null);
           try {
-            const updated = await fetchJSON<NotifPrefs>(`${AGENT_URL}/api/notifications`, {
+            const updated = await fetchWithFallback<NotifPrefs>('/api/notifications', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(notifPrefs),

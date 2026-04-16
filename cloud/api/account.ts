@@ -13,7 +13,9 @@ type StripeClient = ReturnType<typeof createStripeClient>;
 type StripeCustomerLookup = Awaited<ReturnType<StripeClient['customers']['retrieve']>>;
 type StripeCustomerListItem = Awaited<ReturnType<StripeClient['customers']['list']>>['data'][number];
 type StripeCustomer = StripeCustomerLookup | StripeCustomerListItem;
-type StripeSubscription = Awaited<ReturnType<StripeClient['subscriptions']['retrieve']>>;
+type StripeSubscription = Awaited<ReturnType<StripeClient['subscriptions']['list']>>['data'][number];
+
+const MANAGED_SUBSCRIPTION_STATUSES = new Set(['trialing', 'active', 'past_due', 'unpaid']);
 
 function isDeletedCustomer(customer: StripeCustomer | null): customer is Extract<StripeCustomerLookup, { deleted: true }> {
   return Boolean(customer && 'deleted' in customer && customer.deleted);
@@ -123,6 +125,30 @@ async function getDefaultPaymentMethod(
   };
 }
 
+async function findManagedSubscription(
+  stripe: StripeClient,
+  customer: StripeCustomer | null,
+  knownSubscriptionId?: string | null,
+) {
+  if (knownSubscriptionId) {
+    return stripe.subscriptions.retrieve(knownSubscriptionId);
+  }
+
+  if (!customer || isDeletedCustomer(customer)) {
+    return null;
+  }
+
+  const subscriptions = await stripe.subscriptions.list({
+    customer: customer.id,
+    status: 'all',
+    limit: 10,
+  });
+
+  return subscriptions.data.find(subscription =>
+    subscription.cancel_at_period_end || MANAGED_SUBSCRIPTION_STATUSES.has(subscription.status),
+  ) ?? subscriptions.data[0] ?? null;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -144,11 +170,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       orgId,
       user.primaryEmailAddress?.emailAddress ?? null,
     );
-    const subscription = vessel?.stripe_subscription_id
-      ? await stripe.subscriptions.retrieve(vessel.stripe_subscription_id)
-      : null;
-    const paymentMethod = await getDefaultPaymentMethod(stripe, customer, subscription);
     const activeCustomer = customer && !isDeletedCustomer(customer) ? customer : null;
+    const subscription = await findManagedSubscription(stripe, activeCustomer, vessel?.stripe_subscription_id ?? null);
+    const paymentMethod = await getDefaultPaymentMethod(stripe, activeCustomer, subscription);
     const customerAddress = activeCustomer?.address ?? null;
 
     return res.json({

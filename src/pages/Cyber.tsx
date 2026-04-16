@@ -315,6 +315,49 @@ function PremiumBadge() {
   );
 }
 
+const CYBER_SECTIONS = [
+  { id: 'cyber-overview', label: 'Overview' },
+  { id: 'cyber-scanning', label: 'Scanning' },
+  { id: 'cyber-incidents', label: 'Incidents' },
+  { id: 'cyber-pen-tests', label: 'Pen Tests' },
+  { id: 'cyber-coverage', label: 'Coverage' },
+  { id: 'cyber-recommendations', label: 'Recommendations' },
+] as const;
+
+function CyberSectionNav() {
+  function jumpTo(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  return (
+    <Card style={{ padding: 12, position: 'sticky', top: 12, zIndex: 5, background: 'rgba(13,20,33,0.94)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <span style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', marginRight: 4 }}>
+          Jump to
+        </span>
+        {CYBER_SECTIONS.map(section => (
+          <button
+            key={section.id}
+            onClick={() => jumpTo(section.id)}
+            style={{
+              background: '#0a0f18',
+              color: '#a8b9c8',
+              border: '1px solid #1a2535',
+              borderRadius: 999,
+              padding: '7px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {section.label}
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 // ── Threat Score Ring ─────────────────────────────────────────────
 
 function ThreatRing({ score }: { score: number }) {
@@ -2163,8 +2206,10 @@ export default function Cyber() {
         </div>
       </div>
 
+      <CyberSectionNav />
+
       {/* KPI strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+      <div id="cyber-overview" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, scrollMarginTop: 88 }}>
         {[
           { label: 'Active Threats',    value: activeThreats.length,                                   icon: ShieldAlert,   color: activeThreats.length > 0 ? '#ef4444' : '#22c55e' },
           { label: 'Open Incidents',    value: activeIncidents.length,                                 icon: ClipboardList, color: activeIncidents.length > 0 ? '#f97316' : '#22c55e' },
@@ -2227,50 +2272,60 @@ export default function Cyber() {
       </div>
 
       {/* Port scan (toggleable) */}
-      {scanOpen && <PortScanTable results={scanResults} />}
+      <div id="cyber-scanning" style={{ display: 'flex', flexDirection: 'column', gap: 14, scrollMarginTop: 88 }}>
+        {scanOpen && <PortScanTable results={scanResults} />}
 
-      {/* Traffic + Firewall side by side */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <TrafficMonitor />
-        <FirewallPanel rules={fwRules} onToggle={toggleRule} />
+        {/* Traffic + Firewall side by side */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <TrafficMonitor />
+          <FirewallPanel rules={fwRules} onToggle={toggleRule} />
+        </div>
       </div>
 
       {/* Incident log */}
-      <IncidentLog incidents={incidents} onUpdateStatus={updateIncident} />
+      <div id="cyber-incidents" style={{ scrollMarginTop: 88 }}>
+        <IncidentLog incidents={incidents} onUpdateStatus={updateIncident} />
+      </div>
 
       {/* Pen test — full width */}
-      <PenTestPanel
-        tests={mockPenTests}
-        devices={devices}
-        scanResults={scanResults}
-        threats={threats}
-        fwRules={fwRules}
-        incidents={incidents}
-      />
+      <div id="cyber-pen-tests" style={{ scrollMarginTop: 88 }}>
+        <PenTestPanel
+          tests={mockPenTests}
+          devices={devices}
+          scanResults={scanResults}
+          threats={threats}
+          fwRules={fwRules}
+          incidents={incidents}
+        />
+      </div>
 
       {/* Protection coverage — full width */}
-      <ProtectionCoverage coverage={coverage} />
+      <div id="cyber-coverage" style={{ scrollMarginTop: 88 }}>
+        <ProtectionCoverage coverage={coverage} />
+      </div>
 
       {/* Recommendations */}
-      <Card style={{ border: `1px solid ${GOLD_BORDER}`, background: `linear-gradient(135deg, #0d1421 80%, rgba(212,168,71,0.04))` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <Fingerprint size={16} color={GOLD} />
-          <CardLabel>AI Security Recommendations</CardLabel>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {[
-            { icon: ShieldX,    color: '#ef4444', text: 'Isolate device 192.168.0.138 — unrecognised MAC with active probe requests. Block at switch level.' },
-            { icon: Globe,      color: '#f97316', text: 'Enable outbound traffic filtering. Samsung TV is beaconing to analytics servers on non-standard ports.' },
-            { icon: TrendingUp, color: '#f59e0b', text: 'Update Hikvision camera firmware immediately — CVE-2023-1 allows unauthenticated remote code execution.' },
-            { icon: Zap,        color: GOLD,      text: 'Consider enabling Starlink Enhanced Security Mode to block inbound unsolicited traffic before it reaches the LAN.' },
-          ].map(({ icon: Icon, color, text }) => (
-            <div key={text} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#080b10', borderRadius: 10, padding: '12px 14px', border: '1px solid #1a2535' }}>
-              <Icon size={14} color={color} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span style={{ color: '#8899aa', fontSize: 13, lineHeight: 1.6 }}>{text}</span>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <div id="cyber-recommendations" style={{ scrollMarginTop: 88 }}>
+        <Card style={{ border: `1px solid ${GOLD_BORDER}`, background: `linear-gradient(135deg, #0d1421 80%, rgba(212,168,71,0.04))` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            <Fingerprint size={16} color={GOLD} />
+            <CardLabel>AI Security Recommendations</CardLabel>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { icon: ShieldX,    color: '#ef4444', text: 'Isolate device 192.168.0.138 — unrecognised MAC with active probe requests. Block at switch level.' },
+              { icon: Globe,      color: '#f97316', text: 'Enable outbound traffic filtering. Samsung TV is beaconing to analytics servers on non-standard ports.' },
+              { icon: TrendingUp, color: '#f59e0b', text: 'Update Hikvision camera firmware immediately — CVE-2023-1 allows unauthenticated remote code execution.' },
+              { icon: Zap,        color: GOLD,      text: 'Consider enabling Starlink Enhanced Security Mode to block inbound unsolicited traffic before it reaches the LAN.' },
+            ].map(({ icon: Icon, color, text }) => (
+              <div key={text} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#080b10', borderRadius: 10, padding: '12px 14px', border: '1px solid #1a2535' }}>
+                <Icon size={14} color={color} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span style={{ color: '#8899aa', fontSize: 13, lineHeight: 1.6 }}>{text}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
 
       {/* Device risk side panel */}
       {selectedDev && (
