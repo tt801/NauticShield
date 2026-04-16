@@ -303,8 +303,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = '#a0b4c8'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7f92'; }}
               >
-                <Icon size={17} color="#6b7f92" style={{ flexShrink: 0 }} />
-                {!collapsed && label}
+                <Icon size={17} color="#7dd3fc" style={{ flexShrink: 0 }} />
+                {!collapsed && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#d9f3ff', fontWeight: 700 }}>
+                    {label}
+                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.5, background: 'rgba(14,165,233,0.16)', color: '#7dd3fc', borderRadius: 999, padding: '2px 6px' }}>CHAT</span>
+                  </span>
+                )}
               </button>
             );
           })}

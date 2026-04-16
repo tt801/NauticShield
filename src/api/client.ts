@@ -130,6 +130,12 @@ function setMode(m: ConnectionMode) {
   }
 }
 
+function toCloudPath(path: string) {
+  return VESSEL_ID
+    ? path.replace(/^\/api\//, `/api/vessels/${VESSEL_ID}/`)
+    : path;
+}
+
 /**
  * Like fetchJSON but automatically tries the local agent first,
  * then substitutes CLOUD_API_URL if the local agent is unreachable.
@@ -140,7 +146,7 @@ export async function fetchWithFallback<T>(path: string, init?: RequestInit): Pr
   if (!AGENT_URL) {
     if (!CLOUD_API_URL) { setMode('offline'); throw new Error('No agent or cloud URL configured'); }
     try {
-      const cloudPath = VESSEL_ID ? path.replace(/^\/api\//, `/api/vessels/${VESSEL_ID}/`) : path;
+      const cloudPath = toCloudPath(path);
       const result = await fetchJSON<T>(`${CLOUD_API_URL}${cloudPath}`, init);
       setMode('cloud');
       return result;
@@ -169,9 +175,7 @@ export async function fetchWithFallback<T>(path: string, init?: RequestInit): Pr
 
     // Try cloud fallback — map /api/foo → /api/vessels/:vesselId/foo
     try {
-      const cloudPath = VESSEL_ID
-        ? path.replace(/^\/api\//, `/api/vessels/${VESSEL_ID}/`)
-        : path;
+      const cloudPath = toCloudPath(path);
       const cloudUrl = `${CLOUD_API_URL}${cloudPath}`;
       const result = await fetchJSON<T>(cloudUrl, init);
       setMode('cloud');
@@ -243,12 +247,39 @@ export const agentApi = {
       return fetchJSON<{ avgDownMbps: number; avgLatencyMs: number; uptimePct: number; provider: string; incidents: number; blocks: string; hasData: boolean }>(`${AGENT_URL}/api/voyage/autofill-range?from=${from}&to=${to}`);
     },
 
-    add: (entry: Omit<VoyageEntry, 'id' | 'createdAt'>) =>
-      fetchWithFallback<VoyageEntry>('/api/voyage', {
+    add: async (entry: Omit<VoyageEntry, 'id' | 'createdAt'>) => {
+      const init: RequestInit = {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(entry),
-      }),
+      };
+
+      if (!AGENT_URL) {
+        return fetchWithFallback<VoyageEntry>('/api/voyage', init);
+      }
+
+      try {
+        const result = await fetchJSON<VoyageEntry>(`${AGENT_URL}/api/voyage`, init);
+        setMode('local');
+        return result;
+      } catch (error) {
+        const shouldRetryInCloud = error instanceof Error && CLOUD_API_URL && VESSEL_ID && (
+          /date and location are required/i.test(error.message) ||
+          /date is required/i.test(error.message) ||
+          /method not allowed/i.test(error.message) ||
+          /http 4\d\d/i.test(error.message)
+        );
+
+        if (!shouldRetryInCloud) {
+          throw error;
+        }
+
+        const cloudPath = toCloudPath('/api/voyage');
+        const created = await fetchJSON<VoyageEntry>(`${CLOUD_API_URL}${cloudPath}`, init);
+        setMode('cloud');
+        return created;
+      }
+    },
 
     update: (id: string, patch: Partial<Omit<VoyageEntry, 'id' | 'createdAt'>>) =>
       fetchJSON<VoyageEntry>(`${AGENT_URL}/api/voyage/${id}`, {

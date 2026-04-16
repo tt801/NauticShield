@@ -404,7 +404,7 @@ function GeoField({ label, loading, placeholder, value, onChange }: {
 }
 
 function AddEntryModal({ onSave, onClose }: {
-  onSave:  (entry: Omit<VoyageEntry, 'id' | 'createdAt'>) => void;
+  onSave:  (entry: Omit<VoyageEntry, 'id' | 'createdAt'>) => Promise<void>;
   onClose: () => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
@@ -427,6 +427,8 @@ function AddEntryModal({ onSave, onClose }: {
   const [notes,             setNotes]             = useState('');
   const [autoFilling,       setAutoFilling]       = useState(false);
   const [autoFilled,        setAutoFilled]        = useState(false);
+  const [saving,            setSaving]            = useState(false);
+  const [saveError,         setSaveError]         = useState('');
   const [autoData,          setAutoData]          = useState<{ avgDownMbps: number; avgLatencyMs: number; uptimePct: number; provider: string; incidents: number; blocks: string } | null>(null);
 
   useEffect(() => {
@@ -473,26 +475,34 @@ function AddEntryModal({ onSave, onClose }: {
   const hasDestination = locTo.trim().length > 0;
   const canSave    = fromDate.length > 0 && toDate.length > 0 && toDate >= fromDate;
 
-  function handleSave() {
+  async function handleSave() {
     if (!canSave) return;
-    onSave({
-      date:              fromDate,
-      location:          locFrom.trim(),
-      region:            region.trim(),
-      country:           country.trim(),
-      locationTo:        hasDestination ? locTo.trim()             : '',
-      locationToCountry: hasDestination ? locationToCountry.trim() : '',
-      locationToRegion:  hasDestination ? locationToRegion.trim()  : '',
-      eta:               toDate,
-      status:            'completed',
-      avgDownMbps:       autoData?.avgDownMbps  ?? 0,
-      avgLatencyMs:      autoData?.avgLatencyMs ?? 0,
-      uptimePct:         autoData?.uptimePct    ?? 100,
-      provider:          autoData?.provider     ?? 'Starlink',
-      incidents:         autoData?.incidents    ?? 0,
-      blocks:            autoData?.blocks       ?? '[]',
-      notes:             notes.trim(),
-    });
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onSave({
+        date:              fromDate,
+        location:          locFrom.trim(),
+        region:            region.trim(),
+        country:           country.trim(),
+        locationTo:        hasDestination ? locTo.trim()             : '',
+        locationToCountry: hasDestination ? locationToCountry.trim() : '',
+        locationToRegion:  hasDestination ? locationToRegion.trim()  : '',
+        eta:               toDate,
+        status:            'completed',
+        avgDownMbps:       autoData?.avgDownMbps  ?? 0,
+        avgLatencyMs:      autoData?.avgLatencyMs ?? 0,
+        uptimePct:         autoData?.uptimePct    ?? 100,
+        provider:          autoData?.provider     ?? 'Starlink',
+        incidents:         autoData?.incidents    ?? 0,
+        blocks:            autoData?.blocks       ?? '[]',
+        notes:             notes.trim(),
+      });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Voyage range could not be saved.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -593,16 +603,22 @@ function AddEntryModal({ onSave, onClose }: {
           </div>
         </div>
 
+        {saveError && (
+          <div style={{ marginTop: 18, color: '#fca5a5', fontSize: 12, lineHeight: 1.5 }}>
+            {saveError}
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 10, marginTop: 22, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ background: 'transparent', border: '1px solid #1a2535', color: '#6b7f92', borderRadius: 9, padding: '9px 18px', fontSize: 13, cursor: 'pointer' }}>
             Cancel
           </button>
           <button
             onClick={handleSave}
-            disabled={!canSave}
-            style={{ background: canSave ? 'rgba(14,165,233,0.15)' : '#0d1421', color: canSave ? '#7dd3fc' : '#4a5a6a', border: `1px solid ${canSave ? 'rgba(14,165,233,0.35)' : '#1a2535'}`, borderRadius: 9, padding: '9px 22px', fontSize: 13, fontWeight: 600, cursor: canSave ? 'pointer' : 'default' }}
+            disabled={!canSave || saving}
+            style={{ background: canSave && !saving ? 'rgba(14,165,233,0.15)' : '#0d1421', color: canSave && !saving ? '#7dd3fc' : '#4a5a6a', border: `1px solid ${canSave && !saving ? 'rgba(14,165,233,0.35)' : '#1a2535'}`, borderRadius: 9, padding: '9px 22px', fontSize: 13, fontWeight: 600, cursor: canSave && !saving ? 'pointer' : 'default' }}
           >
-            Save Voyage
+            {saving ? 'Saving…' : 'Save Voyage'}
           </button>
         </div>
       </div>
@@ -638,6 +654,7 @@ export default function Voyage() {
       setShowModal(false);
     } catch (err) {
       console.error('Failed to add voyage entry', err);
+      throw err;
     }
   }
 
