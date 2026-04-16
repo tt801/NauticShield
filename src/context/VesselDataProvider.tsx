@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 
 import { AGENT_WS_URL } from '@/api/config';
-import { agentApi }     from '@/api/client';
+import { agentApi, getConnectionMode }     from '@/api/client';
 
 import {
   devices        as mockDevices,
@@ -20,7 +20,7 @@ import type { Device, Alert, InternetStatus, NetworkHealth } from '@/data/mock';
 
 // ── Public types ─────────────────────────────────────────────────
 
-export type AgentStatus = 'connecting' | 'online' | 'offline';
+export type AgentStatus = 'connecting' | 'online' | 'cloud' | 'offline';
 
 export interface VesselContextValue {
   devices:        Device[];
@@ -83,7 +83,7 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
     try {
       ws = new WebSocket(AGENT_WS_URL);
     } catch {
-      setAgentStatus('offline');
+      setAgentStatus(getConnectionMode() === 'cloud' ? 'cloud' : 'offline');
       return;
     }
     wsRef.current = ws;
@@ -152,8 +152,9 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
 
     ws.onclose = () => {
       console.log('[VesselData] WS closed — retrying in 5 s');
-      setAgentStatus('offline');
-      setIsLive(false);
+      const mode = getConnectionMode();
+      setAgentStatus(mode === 'cloud' ? 'cloud' : 'offline');
+      setIsLive(mode !== 'offline');
       reconnectRef.current = setTimeout(connectWebSocket, 5_000);
     };
 
@@ -165,15 +166,17 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
   const fetchSnapshot = useCallback(async () => {
     try {
       const snap = await agentApi.snapshot();
+      const mode = getConnectionMode();
       setDevices(snap.devices);
       setAlerts(snap.alerts);
       setInternetStatus(snap.internetStatus);
       setNetworkHealth(snap.networkHealth);
-      setIsLive(true);
-      setAgentStatus('online');
+      setIsLive(mode !== 'offline');
+      setAgentStatus(mode === 'cloud' ? 'cloud' : 'online');
       setLastSync(new Date());
     } catch {
-      setAgentStatus('offline');
+      setIsLive(false);
+      setAgentStatus(getConnectionMode() === 'cloud' ? 'cloud' : 'offline');
     }
   }, []);
 

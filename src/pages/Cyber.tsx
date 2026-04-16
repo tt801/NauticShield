@@ -156,6 +156,15 @@ const mockPenTests: PenTest[] = [
   },
 ];
 
+const PEN_TEST_STORAGE_KEY = 'nauticshield.penTestSchedule';
+
+function addOneYear(date: string) {
+  if (!date) return '';
+  const next = new Date(`${date}T00:00:00`);
+  next.setFullYear(next.getFullYear() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
 
 // ── Maritime CVE Database ─────────────────────────────────────────
 
@@ -869,7 +878,7 @@ function exportPenTestPDF(score: number, checks: PenCheckResult[], scanResults: 
   doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...GOLD_C);
-  doc.text('Quick Security Assessment', 14, 25);
+  doc.text('Security Scan', 14, 25);
   doc.setTextColor(...GREY as [number,number,number]);
   doc.setFontSize(9);
   doc.text(`Generated ${new Date().toLocaleString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}`, 14, 33);
@@ -1229,8 +1238,46 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
   fwRules:     FirewallRule[];
   incidents:   Incident[];
 }) {
-  const next       = tests.find(t => t.result === 'scheduled');
-  const daysUntil  = next ? Math.ceil((new Date(next.date).getTime() - Date.now()) / (1000*60*60*24)) : null;
+  const scheduledTest = tests.find(t => t.result === 'scheduled');
+  const latestCompletedTest = [...tests]
+    .filter(t => t.result !== 'scheduled')
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  const [lastCompletedDate, setLastCompletedDate] = useState(latestCompletedTest?.date ?? '');
+  const [nextDueDate, setNextDueDate] = useState(scheduledTest?.date ?? latestCompletedTest?.nextDue ?? '');
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PEN_TEST_STORAGE_KEY);
+      if (!saved) return;
+      const parsed = JSON.parse(saved) as { lastCompletedDate?: string; nextDueDate?: string };
+      if (parsed.lastCompletedDate) setLastCompletedDate(parsed.lastCompletedDate);
+      if (parsed.nextDueDate) setNextDueDate(parsed.nextDueDate);
+    } catch {
+      // ignore invalid saved schedule state
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PEN_TEST_STORAGE_KEY, JSON.stringify({ lastCompletedDate, nextDueDate }));
+    } catch {
+      // ignore storage failures
+    }
+  }, [lastCompletedDate, nextDueDate]);
+
+  const displayTests = tests.map(test => {
+    if (test.result === 'scheduled') {
+      return { ...test, date: nextDueDate || test.date, nextDue: nextDueDate || test.nextDue };
+    }
+    if (latestCompletedTest && test.id === latestCompletedTest.id) {
+      return { ...test, date: lastCompletedDate || test.date, nextDue: nextDueDate || test.nextDue };
+    }
+    return test;
+  });
+
+  const daysUntil = nextDueDate
+    ? Math.ceil((new Date(`${nextDueDate}T00:00:00`).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
 
   type ScanPhase = 'idle' | 'scanning' | 'done';
   const [phase,         setPhase]         = useState<ScanPhase>('idle');
@@ -1309,14 +1356,14 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
             <Fingerprint size={18} color={GOLD} />
           </div>
           <div>
-            <div style={{ color: '#f0f4f8', fontSize: 15, fontWeight: 700 }}>Quick Security Assessment</div>
+            <div style={{ color: '#f0f4f8', fontSize: 15, fontWeight: 700 }}>Security Scan</div>
             <div style={{ color: '#4a5a6a', fontSize: 12, marginTop: 2 }}>Single-click scan of your vessel network and security posture</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {next && (
+          {nextDueDate && daysUntil !== null && (
             <span style={{ background: GOLD_BG, color: GOLD, border: `1px solid ${GOLD_BORDER}`, borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700 }}>
-              Annual pen test in {daysUntil}d
+              Annual pen test in {Math.max(daysUntil, 0)}d
             </span>
           )}
           <button
@@ -1344,9 +1391,34 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
               borderRadius: 9, padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: phase === 'scanning' ? 'default' : 'pointer',
             }}
           >
-            <Radar size={15} /> {phase === 'idle' ? 'Run Quick Scan' : phase === 'scanning' ? 'Scanning\u2026' : 'Rescan'}
+            <Radar size={15} /> {phase === 'idle' ? 'Run Security Scan' : phase === 'scanning' ? 'Scanning\u2026' : 'Rescan'}
           </button>
         </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 18 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>Last completed pen test</span>
+          <input
+            type="date"
+            value={lastCompletedDate}
+            onChange={event => {
+              const value = event.target.value;
+              setLastCompletedDate(value);
+              if (value) setNextDueDate(addOneYear(value));
+            }}
+            style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 9, padding: '10px 12px', color: '#f0f4f8', fontSize: 13 }}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>Next due date</span>
+          <input
+            type="date"
+            value={nextDueDate}
+            onChange={event => setNextDueDate(event.target.value)}
+            style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 9, padding: '10px 12px', color: '#f0f4f8', fontSize: 13 }}
+          />
+        </label>
       </div>
 
       {/* Score trend sparkline */}
@@ -1483,7 +1555,7 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
         <div style={{ background: '#080b10', borderRadius: 12, padding: '28px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, border: '1px dashed #1a2535' }}>
           <Radar size={32} color="#1a2535" />
           <div style={{ color: '#4a5a6a', fontSize: 13, textAlign: 'center' }}>
-            Click <strong style={{ color: '#7dd3fc' }}>Run Quick Scan</strong> to assess your vessel network &mdash; no technical knowledge required.<br />
+            Click <strong style={{ color: '#7dd3fc' }}>Run Security Scan</strong> to assess your vessel network &mdash; no technical knowledge required.<br />
             <span style={{ fontSize: 11 }}>The scan typically completes in under 5 seconds and checks {10} security controls.</span>
           </div>
         </div>
@@ -1535,7 +1607,7 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
           <span style={{ color: '#4a5a6a', fontSize: 10 }}>Click any entry to view findings</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {tests.map(t => {
+          {displayTests.map(t => {
             const color      = t.result === 'pass' ? '#22c55e' : t.result === 'fail' ? '#ef4444' : GOLD;
             const Icon       = t.result === 'pass' ? CalendarCheck : t.result === 'fail' ? CalendarX : Clock;
             const isOpen     = expanded === t.id;

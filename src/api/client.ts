@@ -180,7 +180,7 @@ export const agentApi = {
     fetchJSON<{ status: string; uptime: number }>(`${AGENT_URL}/api/health`),
 
   snapshot: () =>
-    fetchJSON<VesselSnapshot>(`${AGENT_URL}/api/snapshot`),
+    fetchWithFallback<VesselSnapshot>('/api/snapshot'),
 
   devices: () =>
     fetchJSON<Device[]>(`${AGENT_URL}/api/devices`),

@@ -573,17 +573,18 @@ function QuickActionsCard() {
 function AgentStatusBanner({ status, lastSync }: { status: AgentStatus; lastSync: Date | null }) {
   if (status === 'online') return null;
   const isConnecting = status === 'connecting';
+  const isCloud = status === 'cloud';
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10,
-      background: isConnecting ? 'rgba(245,158,11,0.08)' : 'rgba(239,68,68,0.08)',
-      border: `1px solid ${isConnecting ? 'rgba(245,158,11,0.25)' : 'rgba(239,68,68,0.25)'}`,
+      background: isConnecting ? 'rgba(245,158,11,0.08)' : isCloud ? 'rgba(212,168,71,0.08)' : 'rgba(239,68,68,0.08)',
+      border: `1px solid ${isConnecting ? 'rgba(245,158,11,0.25)' : isCloud ? 'rgba(212,168,71,0.25)' : 'rgba(239,68,68,0.25)'}`,
       borderRadius: 10, padding: '10px 16px', marginBottom: 14, fontSize: 13,
     }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-        background: isConnecting ? '#f59e0b' : '#ef4444', display: 'inline-block' }} />
-      <span style={{ color: isConnecting ? '#f59e0b' : '#ef4444', fontWeight: 600 }}>
-        {isConnecting ? 'Connecting to vessel agent…' : 'Agent offline — showing cached data'}
+        background: isConnecting ? '#f59e0b' : isCloud ? '#d4a847' : '#ef4444', display: 'inline-block' }} />
+      <span style={{ color: isConnecting ? '#f59e0b' : isCloud ? '#d4a847' : '#ef4444', fontWeight: 600 }}>
+        {isConnecting ? 'Connecting to vessel agent…' : isCloud ? 'Vessel agent unreachable — showing cloud data' : 'Agent offline — showing cached data'}
       </span>
       {lastSync && (
         <span style={{ color: '#6b7f92', fontSize: 12, marginLeft: 'auto' }}>

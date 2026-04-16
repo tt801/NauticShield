@@ -6,7 +6,6 @@ import {
   CreditCard,
   Clock,
   FileText,
-  ChevronRight,
   Crown,
   Zap,
   Building2,
@@ -243,6 +242,105 @@ export default function Settings() {
   const [auditEntries, setAuditEntries] = useState<AuditEntry[] | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
+  type TotpSetup = { secret: string; uri: string; backupCodes: string[] };
+  const [totpSetup, setTotpSetup] = useState<TotpSetup | null>(null);
+  const [totpCode, setTotpCode] = useState('');
+  const [mfaLoading, setMfaLoading] = useState<'totp' | 'verify' | 'disable' | 'passkey' | null>(null);
+  const [mfaMsg, setMfaMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  function getErrorMessage(error: unknown, fallback: string) {
+    return error instanceof Error ? error.message : fallback;
+  }
+
+  async function refreshUserMfaState() {
+    try {
+      await user?.reload();
+    } catch {
+      // ignore reload failures
+    }
+  }
+
+  async function startTotpSetup() {
+    if (!user) return;
+    setMfaLoading('totp');
+    setMfaMsg(null);
+    try {
+      const setup = await user.createTOTP();
+      setTotpSetup({
+        secret: setup.secret ?? '',
+        uri: setup.uri ?? '',
+        backupCodes: setup.backupCodes ?? [],
+      });
+      setTotpCode('');
+    } catch (error) {
+      setMfaMsg({ type: 'err', text: getErrorMessage(error, 'Unable to start MFA setup.') });
+    } finally {
+      setMfaLoading(null);
+    }
+  }
+
+  async function verifyTotpSetup() {
+    if (!user || totpCode.trim().length !== 6) return;
+    setMfaLoading('verify');
+    setMfaMsg(null);
+    try {
+      const setup = await user.verifyTOTP({ code: totpCode.trim() });
+      await refreshUserMfaState();
+      setTotpSetup(prev => ({
+        secret: setup.secret ?? prev?.secret ?? '',
+        uri: setup.uri ?? prev?.uri ?? '',
+        backupCodes: setup.backupCodes ?? prev?.backupCodes ?? [],
+      }));
+      setTotpCode('');
+      setMfaMsg({ type: 'ok', text: 'Authenticator app verified. MFA is now enabled.' });
+    } catch (error) {
+      setMfaMsg({ type: 'err', text: getErrorMessage(error, 'Invalid verification code.') });
+    } finally {
+      setMfaLoading(null);
+    }
+  }
+
+  async function disableTotpSetup() {
+    if (!user) return;
+    setMfaLoading('disable');
+    setMfaMsg(null);
+    try {
+      await user.disableTOTP();
+      await refreshUserMfaState();
+      setTotpSetup(null);
+      setTotpCode('');
+      setMfaMsg({ type: 'ok', text: 'Authenticator app MFA has been disabled.' });
+    } catch (error) {
+      setMfaMsg({ type: 'err', text: getErrorMessage(error, 'Unable to disable MFA.') });
+    } finally {
+      setMfaLoading(null);
+    }
+  }
+
+  async function createPasskeyMfa() {
+    if (!user) return;
+    setMfaLoading('passkey');
+    setMfaMsg(null);
+    try {
+      await user.createPasskey();
+      await refreshUserMfaState();
+      setMfaMsg({ type: 'ok', text: 'Passkey created successfully.' });
+    } catch (error) {
+      setMfaMsg({ type: 'err', text: getErrorMessage(error, 'Unable to create passkey on this device.') });
+    } finally {
+      setMfaLoading(null);
+    }
+  }
+
+  async function copyText(value: string, label: string) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setMfaMsg({ type: 'ok', text: `${label} copied.` });
+    } catch {
+      setMfaMsg({ type: 'err', text: `Unable to copy ${label.toLowerCase()}.` });
+    }
+  }
 
   function openMfaSetup() {
     openUserProfile({ __experimental_startPath: '/mfa' });
@@ -1048,18 +1146,117 @@ export default function Settings() {
                   </div>
                 )}
               </div>
-              <button
-                onClick={openMfaSetup}
-                style={{
-                  flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7,
-                  background: 'rgba(212,168,71,0.1)', color: '#d4a847',
-                  border: '1px solid rgba(212,168,71,0.3)', borderRadius: 9,
-                  padding: '10px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                }}
-              >
-                {user?.twoFactorEnabled ? 'Manage MFA' : 'Enable MFA'} <ChevronRight size={14} />
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+                <button
+                  onClick={user?.twoFactorEnabled ? disableTotpSetup : startTotpSetup}
+                  disabled={mfaLoading === 'totp' || mfaLoading === 'disable'}
+                  style={{
+                    flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7,
+                    background: 'rgba(212,168,71,0.1)', color: '#d4a847',
+                    border: '1px solid rgba(212,168,71,0.3)', borderRadius: 9,
+                    padding: '10px 18px', fontSize: 13, fontWeight: 600,
+                    cursor: mfaLoading === 'totp' || mfaLoading === 'disable' ? 'not-allowed' : 'pointer',
+                    opacity: mfaLoading === 'totp' || mfaLoading === 'disable' ? 0.7 : 1,
+                  }}
+                >
+                  {user?.twoFactorEnabled
+                    ? (mfaLoading === 'disable' ? 'Disabling…' : 'Disable Authenticator MFA')
+                    : (mfaLoading === 'totp' ? 'Starting…' : 'Set Up Authenticator App')}
+                </button>
+                <button
+                  onClick={createPasskeyMfa}
+                  disabled={mfaLoading === 'passkey'}
+                  style={{
+                    flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7,
+                    background: '#0a0f18', color: '#8899aa',
+                    border: '1px solid #1a2535', borderRadius: 9,
+                    padding: '10px 18px', fontSize: 13, fontWeight: 600,
+                    cursor: mfaLoading === 'passkey' ? 'not-allowed' : 'pointer',
+                    opacity: mfaLoading === 'passkey' ? 0.7 : 1,
+                  }}
+                >
+                  {mfaLoading === 'passkey' ? 'Creating Passkey…' : 'Create Passkey'}
+                </button>
+                <button
+                  onClick={openMfaSetup}
+                  style={{
+                    flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7,
+                    background: 'transparent', color: '#6b7f92',
+                    border: '1px solid #1a2535', borderRadius: 9,
+                    padding: '9px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Open Clerk Profile
+                </button>
+              </div>
             </div>
+            {totpSetup && !user?.twoFactorEnabled && (
+              <div style={{ marginTop: 18, padding: '14px 16px', borderRadius: 10, border: '1px solid rgba(14,165,233,0.2)', background: 'rgba(14,165,233,0.05)' }}>
+                <div style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Authenticator app setup</div>
+                <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
+                  Scan the OTP URI in your authenticator app or enter the setup secret manually, then verify with a 6-digit code.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '10px 12px', color: '#f0f4f8', fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}>
+                    {totpSetup.secret || 'Setup secret unavailable'}
+                  </div>
+                  <button
+                    onClick={() => void copyText(totpSetup.secret, 'Setup secret')}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: '#0a0f18', color: '#8899aa', border: '1px solid #1a2535', borderRadius: 8, padding: '10px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    <Copy size={13} /> Copy
+                  </button>
+                </div>
+                {totpSetup.uri && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+                    <div style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '10px 12px', color: '#6b7f92', fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>
+                      {totpSetup.uri}
+                    </div>
+                    <button
+                      onClick={() => void copyText(totpSetup.uri, 'OTP URI')}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: '#0a0f18', color: '#8899aa', border: '1px solid #1a2535', borderRadius: 8, padding: '10px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      <Copy size={13} /> Copy URI
+                    </button>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Enter 6-digit code"
+                    value={totpCode}
+                    onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onKeyDown={e => e.key === 'Enter' && totpCode.trim().length === 6 && void verifyTotpSetup()}
+                    style={{ width: 180, background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '10px 12px', color: '#f0f4f8', fontSize: 13, outline: 'none' }}
+                  />
+                  <button
+                    onClick={verifyTotpSetup}
+                    disabled={mfaLoading === 'verify' || totpCode.trim().length !== 6}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 12, fontWeight: 700, cursor: mfaLoading === 'verify' || totpCode.trim().length !== 6 ? 'not-allowed' : 'pointer', opacity: mfaLoading === 'verify' || totpCode.trim().length !== 6 ? 0.7 : 1 }}
+                  >
+                    {mfaLoading === 'verify' ? 'Verifying…' : 'Verify Code'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {totpSetup?.backupCodes?.length ? (
+              <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(212,168,71,0.2)', background: 'rgba(212,168,71,0.05)' }}>
+                <div style={{ color: '#d4a847', fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Backup codes</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
+                  {totpSetup.backupCodes.map(code => (
+                    <div key={code} style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 10px', color: '#f0f4f8', fontFamily: 'monospace', fontSize: 12 }}>
+                      {code}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {mfaMsg && (
+              <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 8, border: mfaMsg.type === 'ok' ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(239,68,68,0.35)', background: mfaMsg.type === 'ok' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', color: mfaMsg.type === 'ok' ? '#22c55e' : '#f87171', fontSize: 12, lineHeight: 1.5 }}>
+                {mfaMsg.text}
+              </div>
+            )}
           </Card>
 
           <Card>
