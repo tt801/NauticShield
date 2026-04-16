@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Check } from 'lucide-react'
 
 const CLOUD_API = 'https://nautic-shield.vercel.app'
@@ -10,14 +10,14 @@ function buildSignUpUrl(plan: string) {
   return `${APP_BASE}/sign-up?redirect_url=${encodeURIComponent(returnUrl)}`
 }
 
-function getAuthReturnState(): { plan: string | null; fromPricingSignup: boolean } {
+export function getAuthReturnState(): { plan: string | null; fromPricingSignup: boolean } {
   if (typeof window === 'undefined') return { plan: null, fromPricingSignup: false }
   const params = new URLSearchParams(window.location.search)
   const fromPricingSignup = params.get('ns_auth') === '1' && params.get('ns_flow') === 'plan-signup'
   return { plan: fromPricingSignup ? params.get('ns_plan') : null, fromPricingSignup }
 }
 
-async function startCheckout(plan: string, getToken?: (() => Promise<string | null>) | null) {
+export async function startCheckout(plan: string, getToken?: (() => Promise<string | null>) | null) {
   try {
     const token = getToken ? await getToken() : null
     const res = await fetch(`${CLOUD_API}/api/stripe/checkout`, {
@@ -31,11 +31,16 @@ async function startCheckout(plan: string, getToken?: (() => Promise<string | nu
     const data = await res.json() as { url?: string; error?: string }
     if (data.url) {
       window.location.href = data.url
+      return { ok: true as const }
     } else {
-      alert(data.error ?? 'Could not start checkout. Please try again.')
+      const message = data.error ?? 'Could not start checkout. Please try again.'
+      alert(message)
+      return { ok: false as const, error: message }
     }
   } catch {
-    alert('Connection error. Please try again.')
+    const message = 'Connection error. Please try again.'
+    alert(message)
+    return { ok: false as const, error: message }
   }
 }
 
@@ -275,28 +280,6 @@ function PlanCard({ plan, selectedPlan, isSignedIn, getToken }: { plan: typeof P
 export default function Pricing({ isSignedIn = false, getToken }: { isSignedIn?: boolean; getToken?: (() => Promise<string | null>) | null }) {
   const authReturn = useMemo(() => getAuthReturnState(), [])
   const [selectedPlan] = useState<string | null>(authReturn?.plan ?? null)
-  const [autoCheckoutStarted, setAutoCheckoutStarted] = useState(false)
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (!authReturn?.fromPricingSignup) return
-
-    const url = new URL(window.location.href)
-    url.searchParams.delete('ns_plan')
-    url.searchParams.delete('ns_auth')
-    url.searchParams.delete('ns_flow')
-    if (!url.hash) url.hash = 'pricing'
-    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
-  }, [authReturn])
-
-  useEffect(() => {
-    if (!authReturn?.fromPricingSignup) return
-    if (!selectedPlan) return
-    if (autoCheckoutStarted) return
-
-    setAutoCheckoutStarted(true)
-    void startCheckout(selectedPlan, getToken)
-  }, [authReturn, selectedPlan, autoCheckoutStarted, getToken])
 
   return (
     <section id="pricing" style={S.section}>

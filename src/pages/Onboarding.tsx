@@ -386,7 +386,7 @@ export default function Onboarding() {
     return <div style={{ ...S.page }}><div style={{ color: '#4a5a6a', fontSize: 13 }}>Checking vessel access…</div></div>;
   }
 
-  const hasExistingVessel = memberships.length > 0;
+  const hasExistingVessel = memberships.length > 0 && !preferredOrgId;
 
   return (
     <div style={S.page}>

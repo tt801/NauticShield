@@ -43,7 +43,7 @@ export default function SignInPage() {
       gap: 40,
       padding: 24,
     }}>
-      <div style={{ width: '100%', maxWidth: 520, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22 }}>
+      <div style={{ width: '100%', maxWidth: 520, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 22, margin: '0 auto' }}>
       {/* Logo + wordmark */}
       <div style={{ textAlign: 'center', width: '100%' }}>
         <img
@@ -60,7 +60,7 @@ export default function SignInPage() {
       </div>
 
       {/* Clerk sign-in widget */}
-      <div style={{ width: '100%' }}>
+      <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
       <SignIn
         appearance={{
           baseTheme: dark,
@@ -76,8 +76,9 @@ export default function SignInPage() {
             fontFamily:             "'Inter', system-ui, sans-serif",
           },
           elements: {
-            card:               { boxShadow: '0 8px 40px rgba(0,0,0,0.6)', border: '1px solid #1a2535', margin: '0 auto' },
-            rootBox:            { display: 'flex', justifyContent: 'center' },
+            card:               { boxShadow: '0 8px 40px rgba(0,0,0,0.6)', border: '1px solid #1a2535', margin: '0 auto', width: '100%', maxWidth: 420 },
+            rootBox:            { display: 'flex', justifyContent: 'center', width: '100%' },
+            cardBox:            { display: 'flex', justifyContent: 'center', width: '100%' },
             headerTitle:        { display: 'none' },
             headerSubtitle:     { display: 'none' },
             socialButtonsBlockButton: {

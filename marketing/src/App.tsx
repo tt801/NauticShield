@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { ClerkProvider, UserButton, useAuth, useUser } from '@clerk/clerk-react'
 import { Menu, X } from 'lucide-react'
 import Hero from './sections/Hero'
 import Features from './sections/Features'
 import Screenshots from './sections/Screenshots'
-import Pricing from './sections/Pricing'
+import Pricing, { getAuthReturnState, startCheckout } from './sections/Pricing'
 import Testimonials from './sections/Testimonials'
 import Contact from './sections/Contact'
 
@@ -242,6 +242,37 @@ function Footer() {
   )
 }
 
+function CheckoutHandoffScreen({ error }: { error: string | null }) {
+  return (
+    <main style={{ minHeight: '100vh', background: '#05080f', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ width: '100%', maxWidth: 520, background: '#0a0f18', border: '1px solid #132233', borderRadius: 18, padding: '40px 36px', textAlign: 'center', boxShadow: '0 28px 80px rgba(0,0,0,0.45)' }}>
+        <img src="/icons.png" alt="NauticShield" style={{ height: 78, width: 'auto', objectFit: 'contain', margin: '0 auto 18px', display: 'block' }} />
+        <div style={{ color: '#e8edf2', fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 10 }}>
+          Completing secure checkout
+        </div>
+        <div style={{ color: '#97adbe', fontSize: 15, lineHeight: 1.7, margin: '0 auto', maxWidth: 380 }}>
+          Your account is ready. NauticShield is sending you directly to Stripe to finish the selected plan setup.
+        </div>
+        {!error ? (
+          <div style={{ marginTop: 26, color: '#d4a847', fontSize: 13, fontWeight: 700 }}>
+            Redirecting to Stripe...
+          </div>
+        ) : (
+          <div style={{ marginTop: 26 }}>
+            <div style={{ color: '#fda4af', fontSize: 13, lineHeight: 1.6, marginBottom: 14 }}>{error}</div>
+            <a
+              href="#pricing"
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '10px 16px', borderRadius: 10, background: '#0ea5e9', color: '#fff', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}
+            >
+              Return to pricing
+            </a>
+          </div>
+        )}
+      </div>
+    </main>
+  )
+}
+
 export default function App() {
   if (!CLERK_KEY) {
     return (
@@ -271,6 +302,37 @@ function MarketingShell() {
   const { getToken } = useAuth()
   const { user, isSignedIn } = useUser()
   const userLabel = user?.firstName ?? user?.primaryEmailAddress?.emailAddress ?? 'Signed in'
+  const authReturn = useMemo(() => getAuthReturnState(), [])
+  const [handoffStarted, setHandoffStarted] = useState(false)
+  const [handoffError, setHandoffError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!authReturn.fromPricingSignup) return
+
+    const url = new URL(window.location.href)
+    url.searchParams.delete('ns_plan')
+    url.searchParams.delete('ns_auth')
+    url.searchParams.delete('ns_flow')
+    if (!url.hash) url.hash = 'pricing'
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [authReturn])
+
+  useEffect(() => {
+    if (!authReturn.fromPricingSignup || !authReturn.plan) return
+    if (handoffStarted) return
+
+    setHandoffStarted(true)
+    void startCheckout(authReturn.plan, getToken).then(result => {
+      if (!result.ok) {
+        setHandoffError(result.error)
+      }
+    })
+  }, [authReturn, handoffStarted, getToken])
+
+  if (authReturn.fromPricingSignup && authReturn.plan) {
+    return <CheckoutHandoffScreen error={handoffError} />
+  }
 
   return (
     <>

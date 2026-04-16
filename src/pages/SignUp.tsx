@@ -43,7 +43,7 @@ export default function SignUpPage() {
       gap: 40,
       padding: 24,
     }}>
-      <div style={{ width: '100%', maxWidth: 520, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22 }}>
+      <div style={{ width: '100%', maxWidth: 520, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 22, margin: '0 auto' }}>
         <div style={{ textAlign: 'center', width: '100%' }}>
           <img
             src="/icons.png"
@@ -58,7 +58,7 @@ export default function SignUpPage() {
         </div>
       </div>
 
-        <div style={{ width: '100%' }}>
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
           <SignUp
             appearance={{
               baseTheme: dark,
@@ -74,8 +74,9 @@ export default function SignUpPage() {
                 fontFamily:             "'Inter', system-ui, sans-serif",
               },
               elements: {
-                card:               { boxShadow: '0 8px 40px rgba(0,0,0,0.6)', border: '1px solid #1a2535', margin: '0 auto' },
-                rootBox:            { display: 'flex', justifyContent: 'center' },
+                card:               { boxShadow: '0 8px 40px rgba(0,0,0,0.6)', border: '1px solid #1a2535', margin: '0 auto', width: '100%', maxWidth: 420 },
+                rootBox:            { display: 'flex', justifyContent: 'center', width: '100%' },
+                cardBox:            { display: 'flex', justifyContent: 'center', width: '100%' },
                 headerTitle:        { display: 'none' },
                 headerSubtitle:     { display: 'none' },
                 socialButtonsBlockButton: {
