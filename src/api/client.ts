@@ -56,6 +56,16 @@ export interface CyberFinding {
   createdAt:    string;
 }
 
+export interface PenTestReportMeta {
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  bucket: string;
+  path: string;
+  downloadUrl: string | null;
+}
+
 // ── JWT token provider (set by AuthTokenBridge) ──────────────────
 // Avoids importing Clerk hooks directly into this module (non-React file).
 
@@ -258,5 +268,23 @@ export const agentApi = {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(patch),
       }),
+
+    latestPenTestReport: () => {
+      if (!CLOUD_API_URL || !VESSEL_ID) {
+        return Promise.resolve(null as PenTestReportMeta | null);
+      }
+      return fetchJSON<PenTestReportMeta | null>(`${CLOUD_API_URL}/api/vessels/${VESSEL_ID}/pen-test-report`);
+    },
+
+    uploadPenTestReport: (payload: { fileName: string; contentType: string; fileDataBase64: string }) => {
+      if (!CLOUD_API_URL || !VESSEL_ID) {
+        return Promise.reject(new Error('Cloud upload is not configured for this vessel.'));
+      }
+      return fetchJSON<PenTestReportMeta>(`${CLOUD_API_URL}/api/vessels/${VESSEL_ID}/pen-test-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    },
   },
 };

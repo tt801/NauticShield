@@ -93,7 +93,7 @@ function SummaryKpis({ log }: { log: VoyageEntry[] }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
       {[
-        { label: 'Avg Voyage Uptime',  value: `${avgUptime}%`,               color: '#22c55e', icon: TrendingUp,   sub: `${log.length} days tracked` },
+        { label: 'Avg Voyage Uptime',  value: `${avgUptime}%`,               color: '#22c55e', icon: TrendingUp,   sub: `${log.length} voyage windows tracked` },
         { label: 'Avg Download Speed', value: `${avgDown} Mbps`,              color: '#0ea5e9', icon: Activity,     sub: 'across all locations' },
         { label: 'Total Incidents',    value: totalInc,                        color: totalInc > 5 ? '#ef4444' : '#f59e0b', icon: AlertTriangle, sub: 'connection drops & slowdowns' },
         { label: 'Best Connectivity',  value: bestDay.location.split(',')[0], color: '#22c55e', icon: CheckCircle2, sub: `${bestDay.uptimePct}% uptime` },
@@ -414,8 +414,8 @@ function AddEntryModal({ onSave, onClose }: {
   };
   const lbl = (t: string) => <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, marginBottom: 5 }}>{t}</div>;
 
-  const [entryType,         setEntryType]         = useState<'in_port' | 'underway'>('in_port');
-  const [date,              setDate]              = useState(today);
+  const [fromDate,          setFromDate]          = useState(today);
+  const [toDate,            setToDate]            = useState(today);
   const [locFrom,           setLocFrom]           = useState('');
   const [country,           setCountry]           = useState('');
   const [region,            setRegion]            = useState('');
@@ -423,7 +423,6 @@ function AddEntryModal({ onSave, onClose }: {
   const [locTo,             setLocTo]             = useState('');
   const [locationToCountry, setLocationToCountry] = useState('');
   const [locationToRegion,  setLocationToRegion]  = useState('');
-  const [eta,               setEta]               = useState('');
   const [geoToLoading,      setGeoToLoading]      = useState(false);
   const [notes,             setNotes]             = useState('');
   const [autoFilling,       setAutoFilling]       = useState(false);
@@ -431,16 +430,23 @@ function AddEntryModal({ onSave, onClose }: {
   const [autoData,          setAutoData]          = useState<{ avgDownMbps: number; avgLatencyMs: number; uptimePct: number; provider: string; incidents: number; blocks: string } | null>(null);
 
   useEffect(() => {
+    if (toDate < fromDate) {
+      setAutoFilling(false);
+      setAutoFilled(false);
+      setAutoData(null);
+      return;
+    }
+
     let cancelled = false;
     setAutoFilling(true);
     setAutoFilled(false);
     setAutoData(null);
-    agentApi.voyage.autofill(date).then(data => {
+    agentApi.voyage.autofillRange(fromDate, toDate).then(data => {
       if (cancelled) return;
       if (data.hasData) { setAutoData(data); setAutoFilled(true); }
     }).catch(() => {}).finally(() => { if (!cancelled) setAutoFilling(false); });
     return () => { cancelled = true; };
-  }, [date]);
+  }, [fromDate, toDate]);
 
   async function geocodeFrom(query: string) {
     if (!query.trim()) return;
@@ -464,21 +470,21 @@ function AddEntryModal({ onSave, onClose }: {
     }
   }
 
-  const isUnderway = entryType === 'underway';
-  const canSave    = locFrom.trim().length > 0;
+  const hasDestination = locTo.trim().length > 0;
+  const canSave    = locFrom.trim().length > 0 && fromDate.length > 0 && toDate.length > 0 && toDate >= fromDate;
 
   function handleSave() {
     if (!canSave) return;
     onSave({
-      date,
+      date:              fromDate,
       location:          locFrom.trim(),
       region:            region.trim(),
       country:           country.trim(),
-      locationTo:        isUnderway ? locTo.trim()             : '',
-      locationToCountry: isUnderway ? locationToCountry.trim() : '',
-      locationToRegion:  isUnderway ? locationToRegion.trim()  : '',
-      eta:               isUnderway ? eta                       : '',
-      status:            entryType,
+      locationTo:        hasDestination ? locTo.trim()             : '',
+      locationToCountry: hasDestination ? locationToCountry.trim() : '',
+      locationToRegion:  hasDestination ? locationToRegion.trim()  : '',
+      eta:               toDate,
+      status:            'completed',
       avgDownMbps:       autoData?.avgDownMbps  ?? 0,
       avgLatencyMs:      autoData?.avgLatencyMs ?? 0,
       uptimePct:         autoData?.uptimePct    ?? 100,
@@ -496,53 +502,50 @@ function AddEntryModal({ onSave, onClose }: {
     >
       <div style={{ background: '#0d1421', border: '1px solid #1a2535', borderRadius: 16, padding: 28, width: 540, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <div style={{ color: '#f0f4f8', fontSize: 16, fontWeight: 700 }}>Add Voyage Entry</div>
+          <div style={{ color: '#f0f4f8', fontSize: 16, fontWeight: 700 }}>Add Voyage Range</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#6b7f92' }}><X size={18} /></button>
         </div>
 
-        {/* Agent data banner */}
-        <div style={{ marginBottom: 16, borderRadius: 8, padding: '7px 12px', fontSize: 12,
+        <div style={{
+          marginBottom: 16,
+          borderRadius: 8,
+          padding: '7px 12px',
+          fontSize: 12,
           ...(autoFilling
             ? { background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.2)', color: '#7dd3fc' }
             : autoFilled
-            ? { background: 'rgba(34,197,94,0.08)',   border: '1px solid rgba(34,197,94,0.2)',  color: '#4ade80' }
-            : { background: 'rgba(107,127,146,0.06)', border: '1px solid #1a2535', color: '#4a5a6a' })
+            ? { background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', color: '#4ade80' }
+            : { background: 'rgba(107,127,146,0.06)', border: '1px solid #1a2535', color: '#4a5a6a' }),
         }}>
           {autoFilling
-            ? 'Fetching performance data for this date\u2026'
+            ? 'Fetching performance data for the selected voyage window…'
             : autoFilled
-            ? '\u2713 Speed, latency, uptime & incidents auto-filled from agent data.'
-            : 'No agent data for this date \u2014 performance metrics will default to zero.'}
+            ? '✓ Speed, latency, uptime and incidents pulled from the selected date range.'
+            : 'No agent data found for this date range — performance metrics will default to zero.'}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-          {/* Date */}
-          <div>
-            {lbl('Date')}
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
-          </div>
-
-          {/* Entry type toggle */}
-          <div>
-            {lbl('Entry Type')}
-            <div style={{ display: 'flex', background: '#080b10', border: '1px solid #1a2535', borderRadius: 8, padding: 3 }}>
-              {([['in_port', '\u2693\ufe0f  In Port / At Anchor'], ['underway', '\u26f5\ufe0f  Underway / Transit']] as const).map(([t, label]) => (
-                <button key={t} onClick={() => setEntryType(t)} style={{
-                  flex: 1, padding: '7px 0', border: 'none', borderRadius: 6, cursor: 'pointer',
-                  fontSize: 12, fontWeight: 600, transition: 'background 0.15s',
-                  background: entryType === t ? '#1a2535' : 'transparent',
-                  color:      entryType === t ? '#f0f4f8'  : '#4a5a6a',
-                }}>{label}</button>
-              ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              {lbl('From date')}
+              <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              {lbl('To date')}
+              <input type="date" value={toDate} min={fromDate} onChange={e => setToDate(e.target.value)} style={inputStyle} />
             </div>
           </div>
 
-          {/* From / static location */}
+          {toDate < fromDate && (
+            <div style={{ color: '#f87171', fontSize: 12 }}>The end date must be on or after the start date.</div>
+          )}
+
+          <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.6 }}>
+            Choose the voyage start and end dates first. NauticShield will then pull the available connectivity data for the full window in one pass.
+          </div>
+
           <div style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 700, letterSpacing: 0.8 }}>
-              {isUnderway ? '\u2693\ufe0f  DEPARTED FROM' : '\u2693\ufe0f  LOCATION'}
-            </div>
+            <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 700, letterSpacing: 0.8 }}>⚓️  DEPARTED FROM</div>
             <div>
               {lbl('Port / Place name')}
               <input
@@ -559,30 +562,24 @@ function AddEntryModal({ onSave, onClose }: {
             </div>
           </div>
 
-          {/* Destination (underway only) */}
-          {isUnderway && (
-            <div style={{ background: '#080b10', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ color: '#a78bfa', fontSize: 11, fontWeight: 700, letterSpacing: 0.8 }}>⛵  DESTINATION</div>
-              <div>
-                {lbl('Destination port / place')}
-                <input
-                  placeholder="e.g. Nice, France"
-                  value={locTo}
-                  onChange={e => setLocTo(e.target.value)}
-                  onBlur={() => geocodeTo(locTo)}
-                  style={inputStyle}
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <GeoField label="Country"       loading={geoToLoading} placeholder="France"       value={locationToCountry} onChange={setLocationToCountry} />
-                <GeoField label="Region"        loading={geoToLoading} placeholder="C\u00f4te d'Azur" value={locationToRegion}  onChange={setLocationToRegion} />
-              </div>
-              <div>
-                {lbl('ETA (estimated arrival date)')}
-                <input type="date" value={eta} min={date} onChange={e => setEta(e.target.value)} style={inputStyle} />
-              </div>
+          {/* Destination */}
+          <div style={{ background: '#080b10', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ color: '#a78bfa', fontSize: 11, fontWeight: 700, letterSpacing: 0.8 }}>⛵  ARRIVED AT</div>
+            <div>
+              {lbl('Destination port / place (optional)')}
+              <input
+                placeholder="e.g. Nice, France"
+                value={locTo}
+                onChange={e => setLocTo(e.target.value)}
+                onBlur={() => geocodeTo(locTo)}
+                style={inputStyle}
+              />
             </div>
-          )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <GeoField label="Country"       loading={geoToLoading} placeholder="France"       value={locationToCountry} onChange={setLocationToCountry} />
+              <GeoField label="Region"        loading={geoToLoading} placeholder="Côte d'Azur" value={locationToRegion}  onChange={setLocationToRegion} />
+            </div>
+          </div>
 
           {/* Notes */}
           <div>
@@ -605,7 +602,7 @@ function AddEntryModal({ onSave, onClose }: {
             disabled={!canSave}
             style={{ background: canSave ? 'rgba(14,165,233,0.15)' : '#0d1421', color: canSave ? '#7dd3fc' : '#4a5a6a', border: `1px solid ${canSave ? 'rgba(14,165,233,0.35)' : '#1a2535'}`, borderRadius: 9, padding: '9px 22px', fontSize: 13, fontWeight: 600, cursor: canSave ? 'pointer' : 'default' }}
           >
-            Save Entry
+            Save Voyage
           </button>
         </div>
       </div>
@@ -680,13 +677,13 @@ export default function Voyage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
           <div style={{ color: '#f0f4f8', fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>Voyage Log</div>
-          <div style={{ color: '#6b7f92', fontSize: 13, marginTop: 4 }}>Connectivity history and performance across this voyage</div>
+          <div style={{ color: '#6b7f92', fontSize: 13, marginTop: 4 }}>Connectivity history and performance across each completed voyage window</div>
         </div>
         <button
           onClick={() => setShowModal(true)}
           style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(14,165,233,0.1)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.3)', borderRadius: 10, padding: '9px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
         >
-          <Plus size={15} /> Add Entry
+          <Plus size={15} /> Add Voyage
         </button>
       </div>
 

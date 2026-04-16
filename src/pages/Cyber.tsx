@@ -38,7 +38,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Device } from '@/data/mock';
 import { agentApi } from '@/api/client';
-import type { CyberFinding } from '@/api/client';
+import type { CyberFinding, PenTestReportMeta } from '@/api/client';
 
 // ── Design tokens ────────────────────────────────────────────────
 
@@ -1242,8 +1242,14 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
   const latestCompletedTest = [...tests]
     .filter(t => t.result !== 'scheduled')
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  const threeYearsAgo = new Date();
+  threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
   const [lastCompletedDate, setLastCompletedDate] = useState(latestCompletedTest?.date ?? '');
   const [nextDueDate, setNextDueDate] = useState(scheduledTest?.date ?? latestCompletedTest?.nextDue ?? '');
+  const [uploadedReport, setUploadedReport] = useState<PenTestReportMeta | null>(null);
+  const [reportLoading, setReportLoading] = useState(true);
+  const [reportUploading, setReportUploading] = useState(false);
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -1265,6 +1271,13 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
     }
   }, [lastCompletedDate, nextDueDate]);
 
+  useEffect(() => {
+    agentApi.cyber.latestPenTestReport()
+      .then(setUploadedReport)
+      .catch(() => setReportMessage('Unable to load the latest shared pen-test report.'))
+      .finally(() => setReportLoading(false));
+  }, []);
+
   const displayTests = tests.map(test => {
     if (test.result === 'scheduled') {
       return { ...test, date: nextDueDate || test.date, nextDue: nextDueDate || test.nextDue };
@@ -1274,6 +1287,7 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
     }
     return test;
   });
+  const visibleTests = displayTests.filter(test => test.result === 'scheduled' || new Date(`${test.date}T00:00:00`).getTime() >= threeYearsAgo.getTime());
 
   const daysUntil = nextDueDate
     ? Math.ceil((new Date(`${nextDueDate}T00:00:00`).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
@@ -1305,6 +1319,28 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
       setDbFindings(prev => prev.map(f => f.id === id ? { ...f, findingStatus: 'remediated', remediatedAt: new Date().toISOString() } : f));
     } catch { /* ignore */ } finally {
       setRemediatingId(null);
+    }
+  }
+
+  async function handleReportSelected(file: File | null) {
+    if (!file) return;
+    setReportUploading(true);
+    setReportMessage(null);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = '';
+      bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+      const uploaded = await agentApi.cyber.uploadPenTestReport({
+        fileName: file.name,
+        contentType: file.type || 'application/octet-stream',
+        fileDataBase64: btoa(binary),
+      });
+      setUploadedReport(uploaded);
+      setReportMessage('Latest shared pen-test report uploaded successfully.');
+    } catch (error) {
+      setReportMessage(error instanceof Error ? error.message : 'Unable to upload pen-test report.');
+    } finally {
+      setReportUploading(false);
     }
   }
 
@@ -1419,6 +1455,36 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
             style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 9, padding: '10px 12px', color: '#f0f4f8', fontSize: 13 }}
           />
         </label>
+      </div>
+
+      <div style={{ marginBottom: 18, background: '#080b10', border: '1px solid #1a2535', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 700 }}>Latest pen-test report</div>
+            <div style={{ color: '#6b7f92', fontSize: 12, marginTop: 3 }}>Stored in the shared company vault so the latest report is visible across the vessel team.</div>
+          </div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'rgba(14,165,233,0.1)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.28)', borderRadius: 9, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: reportUploading ? 'default' : 'pointer', opacity: reportUploading ? 0.7 : 1 }}>
+            {reportUploading ? 'Uploading…' : 'Upload latest report'}
+            <input type="file" accept=".pdf,.doc,.docx" disabled={reportUploading} onChange={event => void handleReportSelected(event.target.files?.[0] ?? null)} style={{ display: 'none' }} />
+          </label>
+        </div>
+        {reportLoading ? (
+          <div style={{ color: '#4a5a6a', fontSize: 12 }}>Loading shared report details…</div>
+        ) : uploadedReport ? (
+          <div style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.6 }}>
+            {uploadedReport.fileName} · {Math.max(1, Math.round(uploadedReport.sizeBytes / 1024))} KB · added {new Date(uploadedReport.uploadedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {uploadedReport.downloadUrl ? (
+              <>
+                {' '}· <a href={uploadedReport.downloadUrl} target="_blank" rel="noreferrer" style={{ color: '#7dd3fc', textDecoration: 'none' }}>Open report</a>
+              </>
+            ) : null}
+          </div>
+        ) : (
+          <div style={{ color: '#4a5a6a', fontSize: 12 }}>No shared pen-test report has been uploaded yet.</div>
+        )}
+        {reportMessage && (
+          <div style={{ color: reportMessage.includes('successfully') ? '#4ade80' : '#f87171', fontSize: 12 }}>{reportMessage}</div>
+        )}
       </div>
 
       {/* Score trend sparkline */}
@@ -1604,10 +1670,10 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
       <div style={{ marginTop: 20, borderTop: '1px solid #1a2535', paddingTop: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' }}>Professional Pen Test Results</div>
-          <span style={{ color: '#4a5a6a', fontSize: 10 }}>Click any entry to view findings</span>
+          <span style={{ color: '#4a5a6a', fontSize: 10 }}>Last 3 years plus upcoming engagements</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {displayTests.map(t => {
+          {visibleTests.map(t => {
             const color      = t.result === 'pass' ? '#22c55e' : t.result === 'fail' ? '#ef4444' : GOLD;
             const Icon       = t.result === 'pass' ? CalendarCheck : t.result === 'fail' ? CalendarX : Clock;
             const isOpen     = expanded === t.id;

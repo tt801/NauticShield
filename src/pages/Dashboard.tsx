@@ -584,7 +584,7 @@ function AgentStatusBanner({ status, lastSync }: { status: AgentStatus; lastSync
       <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
         background: isConnecting ? '#f59e0b' : isCloud ? '#d4a847' : '#ef4444', display: 'inline-block' }} />
       <span style={{ color: isConnecting ? '#f59e0b' : isCloud ? '#d4a847' : '#ef4444', fontWeight: 600 }}>
-        {isConnecting ? 'Connecting to vessel agent…' : isCloud ? 'Vessel agent unreachable — showing cloud data' : 'Agent offline — showing cached data'}
+        {isConnecting ? 'Connecting to onboard mini PC…' : isCloud ? 'Cannot reach the onboard mini PC — showing cloud data' : 'Cannot reach the onboard mini PC — showing last synced data'}
       </span>
       {lastSync && (
         <span style={{ color: '#6b7f92', fontSize: 12, marginLeft: 'auto' }}>

@@ -12,6 +12,9 @@ import { verifyClerkJWT, assertVesselOwnership } from '../../../lib/auth';
 import { cors } from '../../../lib/cors';
 import { writeAudit } from '../../../lib/audit';
 
+const PEN_TEST_REPORT_BUCKET = 'pen-test-reports';
+const MAX_PEN_TEST_REPORT_BYTES = 10 * 1024 * 1024;
+
 type NotificationCategory = 'new_device' | 'port_scan' | 'internet_down' | 'cyber_critical' | 'device_spike';
 type CategoryPref = { email: boolean; sms: boolean };
 type NotificationPrefs = {
@@ -97,9 +100,69 @@ async function loadNotificationPrefs(orgId: string) {
   return mergeNotificationPrefs(metadata?.preferences);
 }
 
+function sanitizeFileName(fileName: string) {
+  return fileName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').slice(0, 120) || 'pen-test-report.pdf';
+}
+
+async function ensurePenTestBucket() {
+  const { data: buckets, error } = await supabase.storage.listBuckets();
+  if (error) throw error;
+
+  if (buckets?.some(bucket => bucket.name === PEN_TEST_REPORT_BUCKET)) {
+    return;
+  }
+
+  const { error: createError } = await supabase.storage.createBucket(PEN_TEST_REPORT_BUCKET, {
+    public: false,
+    fileSizeLimit: `${MAX_PEN_TEST_REPORT_BYTES}`,
+    allowedMimeTypes: [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ],
+  });
+
+  if (createError && !/already exists/i.test(createError.message)) {
+    throw createError;
+  }
+}
+
+async function getLatestPenTestReport(orgId: string, vesselId: string) {
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('metadata, created_at')
+    .eq('org_id', orgId)
+    .eq('resource', vesselId)
+    .eq('action', 'pen_test.report.uploaded')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data?.metadata) return null;
+
+  const metadata = data.metadata as Record<string, unknown>;
+  const path = typeof metadata.path === 'string' ? metadata.path : '';
+  let downloadUrl: string | null = null;
+
+  if (path) {
+    const signed = await supabase.storage.from(PEN_TEST_REPORT_BUCKET).createSignedUrl(path, 60 * 60);
+    downloadUrl = signed.data?.signedUrl ?? null;
+  }
+
+  return {
+    fileName: typeof metadata.fileName === 'string' ? metadata.fileName : 'Pen test report',
+    contentType: typeof metadata.contentType === 'string' ? metadata.contentType : 'application/octet-stream',
+    sizeBytes: typeof metadata.sizeBytes === 'number' ? metadata.sizeBytes : 0,
+    uploadedAt: typeof metadata.uploadedAt === 'string' ? metadata.uploadedAt : (data.created_at as string),
+    bucket: PEN_TEST_REPORT_BUCKET,
+    path,
+    downloadUrl,
+  };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
-  if (!['GET', 'PUT'].includes(req.method ?? '')) return res.status(405).json({ error: 'Method not allowed' });
+  if (!['GET', 'PUT', 'POST'].includes(req.method ?? '')) return res.status(405).json({ error: 'Method not allowed' });
 
   const auth = await verifyClerkJWT(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
@@ -108,6 +171,62 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!vessel) return res.status(404).json({ error: 'Vessel not found' });
 
   const resource = req.query.resource as string;
+
+  if (req.method === 'POST') {
+    if (resource !== 'pen-test-report') {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName.trim() : '';
+    const contentType = typeof req.body?.contentType === 'string' ? req.body.contentType.trim() : 'application/octet-stream';
+    const fileDataBase64 = typeof req.body?.fileDataBase64 === 'string' ? req.body.fileDataBase64 : '';
+
+    if (!fileName || !fileDataBase64) {
+      return res.status(400).json({ error: 'fileName and fileDataBase64 are required' });
+    }
+
+    const buffer = Buffer.from(fileDataBase64, 'base64');
+    if (!buffer.length) {
+      return res.status(400).json({ error: 'Uploaded file was empty' });
+    }
+    if (buffer.length > MAX_PEN_TEST_REPORT_BYTES) {
+      return res.status(400).json({ error: 'Pen-test reports must be 10 MB or smaller' });
+    }
+
+    try {
+      await ensurePenTestBucket();
+      const safeFileName = sanitizeFileName(fileName);
+      const path = `${vessel.org_id}/${vessel.id}/${Date.now()}-${safeFileName}`;
+      const { error: uploadError } = await supabase.storage.from(PEN_TEST_REPORT_BUCKET).upload(path, buffer, {
+        upsert: true,
+        contentType,
+      });
+
+      if (uploadError) {
+        return res.status(500).json({ error: uploadError.message });
+      }
+
+      const metadata = {
+        fileName: safeFileName,
+        contentType,
+        sizeBytes: buffer.length,
+        path,
+        uploadedAt: new Date().toISOString(),
+      };
+
+      await writeAudit({
+        org_id: vessel.org_id,
+        actor: auth.userId,
+        action: 'pen_test.report.uploaded',
+        resource: vessel.id,
+        metadata,
+      }, req);
+
+      return res.json(await getLatestPenTestReport(vessel.org_id, vessel.id));
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : 'Upload failed' });
+    }
+  }
 
   if (req.method === 'PUT') {
     if (resource !== 'notifications') {
@@ -202,6 +321,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (resource === 'notifications') {
     return res.json(await loadNotificationPrefs(vessel.org_id));
+  }
+
+  if (resource === 'pen-test-report') {
+    return res.json(await getLatestPenTestReport(vessel.org_id, vessel.id));
   }
 
   return res.status(404).json({ error: 'Unknown resource' });

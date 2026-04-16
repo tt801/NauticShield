@@ -21,6 +21,7 @@ import { useClerk } from '@clerk/clerk-react';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 import { useAuthOptional } from '@/context/AuthContext';
 import { getConnectionMode, onConnectionModeChange, type ConnectionMode } from '@/api/client';
+import HelpCenterWidget from '@/components/HelpCenterWidget';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
@@ -58,8 +59,8 @@ function ConnectionBadge({ collapsed }: { collapsed: boolean }) {
   const Icon      = isCloud ? Cloud : WifiOff;
   const label     = isCloud ? 'Cloud mode' : 'Offline';
   const tipText   = isCloud
-    ? 'Vessel agent unreachable — showing cloud data'
-    : 'No connection — data may be stale';
+    ? 'Cannot reach the onboard mini PC — showing cloud data'
+    : 'Cannot reach the onboard mini PC or cloud fallback — data may be stale';
 
   return (
     <div title={tipText} style={{
@@ -95,6 +96,7 @@ const bottomItems = [
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const auth = useAuthOptional();
   useInactivityLogout(auth?.role);
   const hasClerk = !!CLERK_KEY && CLERK_KEY !== 'pk_test_REPLACE_ME' && !isLocalDevHost();
@@ -297,6 +299,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             }
             return (
               <button key={label} title={collapsed ? label : undefined} style={btnStyle}
+                onClick={() => setHelpOpen(true)}
                 onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = '#a0b4c8'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7f92'; }}
               >
@@ -339,6 +342,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <main style={{ flex: 1, overflowY: 'auto', minWidth: 0 }}>
         {children}
       </main>
+      <HelpCenterWidget open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
 }
