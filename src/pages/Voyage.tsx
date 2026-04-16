@@ -471,7 +471,7 @@ function AddEntryModal({ onSave, onClose }: {
   }
 
   const hasDestination = locTo.trim().length > 0;
-  const canSave    = locFrom.trim().length > 0 && fromDate.length > 0 && toDate.length > 0 && toDate >= fromDate;
+  const canSave    = fromDate.length > 0 && toDate.length > 0 && toDate >= fromDate;
 
   function handleSave() {
     if (!canSave) return;
@@ -541,13 +541,13 @@ function AddEntryModal({ onSave, onClose }: {
           )}
 
           <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.6 }}>
-            Choose the voyage start and end dates first. NauticShield will then pull the available connectivity data for the full window in one pass.
+            Choose the voyage start and end dates first. Location fields are optional, so you can save a date-range report even if no departure or arrival port is needed.
           </div>
 
           <div style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 700, letterSpacing: 0.8 }}>⚓️  DEPARTED FROM</div>
+            <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 700, letterSpacing: 0.8 }}>⚓️  DEPARTED FROM (OPTIONAL)</div>
             <div>
-              {lbl('Port / Place name')}
+              {lbl('Port / Place name (optional)')}
               <input
                 placeholder="e.g. Monaco"
                 value={locFrom}

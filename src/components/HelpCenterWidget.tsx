@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Send, X, BookOpen, Wrench } from 'lucide-react';
+import { Send, X, BookOpen, Wrench } from 'lucide-react';
 
 type HelpArticle = {
   id: string;
@@ -140,23 +140,9 @@ export default function HelpCenterWidget({ open, onOpenChange }: { open: boolean
 
   return (
     <>
-      <button
-        onClick={() => onOpenChange(!open)}
-        style={{
-          position: 'fixed', left: 22, bottom: 22, zIndex: 120,
-          display: 'flex', alignItems: 'center', gap: 10,
-          background: 'linear-gradient(135deg, rgba(14,165,233,0.92), rgba(56,189,248,0.78))',
-          color: '#08111c', border: '1px solid rgba(125,211,252,0.45)', borderRadius: 999,
-          padding: '12px 16px', fontSize: 13, fontWeight: 800, cursor: 'pointer',
-          boxShadow: '0 12px 30px rgba(2,132,199,0.28)',
-        }}
-      >
-        <Bot size={16} /> Help Bot
-      </button>
-
       {open && (
         <div style={{
-          position: 'fixed', left: 22, bottom: 78, zIndex: 121,
+          position: 'fixed', right: 22, bottom: 22, zIndex: 121,
           width: 360, maxWidth: 'calc(100vw - 32px)', maxHeight: 'min(72vh, 680px)',
           background: '#0d1421', border: '1px solid #1a2535', borderRadius: 18,
           boxShadow: '0 24px 60px rgba(0,0,0,0.45)', overflow: 'hidden',
