@@ -222,16 +222,29 @@ export const agentApi = {
 
   voyage: {
     list: () =>
-      fetchJSON<VoyageEntry[]>(`${AGENT_URL}/api/voyage`),
+      fetchWithFallback<VoyageEntry[]>('/api/voyage'),
 
     autofill: (date: string) =>
       fetchJSON<{ avgDownMbps: number; avgLatencyMs: number; uptimePct: number; provider: string; incidents: number; blocks: string; hasData: boolean }>(`${AGENT_URL}/api/voyage/autofill?date=${date}`),
 
-    autofillRange: (from: string, to: string) =>
-      fetchJSON<{ avgDownMbps: number; avgLatencyMs: number; uptimePct: number; provider: string; incidents: number; blocks: string; hasData: boolean }>(`${AGENT_URL}/api/voyage/autofill-range?from=${from}&to=${to}`),
+    autofillRange: async (from: string, to: string) => {
+      if (!AGENT_URL) {
+        return {
+          avgDownMbps: 0,
+          avgLatencyMs: 0,
+          uptimePct: 0,
+          provider: '',
+          incidents: 0,
+          blocks: '[]',
+          hasData: false,
+        };
+      }
+
+      return fetchJSON<{ avgDownMbps: number; avgLatencyMs: number; uptimePct: number; provider: string; incidents: number; blocks: string; hasData: boolean }>(`${AGENT_URL}/api/voyage/autofill-range?from=${from}&to=${to}`);
+    },
 
     add: (entry: Omit<VoyageEntry, 'id' | 'createdAt'>) =>
-      fetchJSON<VoyageEntry>(`${AGENT_URL}/api/voyage`, {
+      fetchWithFallback<VoyageEntry>('/api/voyage', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(entry),

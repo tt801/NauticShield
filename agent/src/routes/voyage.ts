@@ -30,13 +30,13 @@ router.get('/autofill', (req, res) => {
 
 router.post('/', (req, res) => {
   const { date, location, region, country, locationTo, locationToCountry, locationToRegion, eta, status, avgDownMbps, avgLatencyMs, uptimePct, provider, incidents, blocks, notes } = req.body as Partial<db.VoyageEntry>;
-  if (!date || !location) {
-    return res.status(400).json({ error: 'date and location are required' });
+  if (!date) {
+    return res.status(400).json({ error: 'date is required' });
   }
   const entry = db.addVoyageEntry({
     id:                randomUUID(),
     date,
-    location,
+    location:          location          ?? '',
     region:            region            ?? '',
     country:           country           ?? '',
     locationTo:        locationTo        ?? '',

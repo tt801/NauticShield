@@ -7,6 +7,7 @@
  * Consolidated into a single serverless function to stay within Vercel Hobby limits.
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { randomUUID } from 'crypto';
 import { supabase }            from '../../../lib/supabase';
 import { verifyClerkJWT, assertVesselOwnership } from '../../../lib/auth';
 import { cors } from '../../../lib/cors';
@@ -173,59 +174,109 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const resource = req.query.resource as string;
 
   if (req.method === 'POST') {
-    if (resource !== 'pen-test-report') {
-      return res.status(405).json({ error: 'Method not allowed' });
-    }
+    if (resource === 'pen-test-report') {
+      const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName.trim() : '';
+      const contentType = typeof req.body?.contentType === 'string' ? req.body.contentType.trim() : 'application/octet-stream';
+      const fileDataBase64 = typeof req.body?.fileDataBase64 === 'string' ? req.body.fileDataBase64 : '';
 
-    const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName.trim() : '';
-    const contentType = typeof req.body?.contentType === 'string' ? req.body.contentType.trim() : 'application/octet-stream';
-    const fileDataBase64 = typeof req.body?.fileDataBase64 === 'string' ? req.body.fileDataBase64 : '';
-
-    if (!fileName || !fileDataBase64) {
-      return res.status(400).json({ error: 'fileName and fileDataBase64 are required' });
-    }
-
-    const buffer = Buffer.from(fileDataBase64, 'base64');
-    if (!buffer.length) {
-      return res.status(400).json({ error: 'Uploaded file was empty' });
-    }
-    if (buffer.length > MAX_PEN_TEST_REPORT_BYTES) {
-      return res.status(400).json({ error: 'Pen-test reports must be 10 MB or smaller' });
-    }
-
-    try {
-      await ensurePenTestBucket();
-      const safeFileName = sanitizeFileName(fileName);
-      const path = `${vessel.org_id}/${vessel.id}/${Date.now()}-${safeFileName}`;
-      const { error: uploadError } = await supabase.storage.from(PEN_TEST_REPORT_BUCKET).upload(path, buffer, {
-        upsert: true,
-        contentType,
-      });
-
-      if (uploadError) {
-        return res.status(500).json({ error: uploadError.message });
+      if (!fileName || !fileDataBase64) {
+        return res.status(400).json({ error: 'fileName and fileDataBase64 are required' });
       }
 
-      const metadata = {
-        fileName: safeFileName,
-        contentType,
-        sizeBytes: buffer.length,
-        path,
-        uploadedAt: new Date().toISOString(),
+      const buffer = Buffer.from(fileDataBase64, 'base64');
+      if (!buffer.length) {
+        return res.status(400).json({ error: 'Uploaded file was empty' });
+      }
+      if (buffer.length > MAX_PEN_TEST_REPORT_BYTES) {
+        return res.status(400).json({ error: 'Pen-test reports must be 10 MB or smaller' });
+      }
+
+      try {
+        await ensurePenTestBucket();
+        const safeFileName = sanitizeFileName(fileName);
+        const path = `${vessel.org_id}/${vessel.id}/${Date.now()}-${safeFileName}`;
+        const { error: uploadError } = await supabase.storage.from(PEN_TEST_REPORT_BUCKET).upload(path, buffer, {
+          upsert: true,
+          contentType,
+        });
+
+        if (uploadError) {
+          return res.status(500).json({ error: uploadError.message });
+        }
+
+        const metadata = {
+          fileName: safeFileName,
+          contentType,
+          sizeBytes: buffer.length,
+          path,
+          uploadedAt: new Date().toISOString(),
+        };
+
+        await writeAudit({
+          org_id: vessel.org_id,
+          actor: auth.userId,
+          action: 'pen_test.report.uploaded',
+          resource: vessel.id,
+          metadata,
+        }, req);
+
+        return res.json(await getLatestPenTestReport(vessel.org_id, vessel.id));
+      } catch (error) {
+        return res.status(500).json({ error: error instanceof Error ? error.message : 'Upload failed' });
+      }
+    }
+
+    if (resource === 'voyage') {
+      const { date, location, region, country, locationTo, locationToCountry, locationToRegion, eta, status, avgDownMbps, avgLatencyMs, uptimePct, provider, incidents, blocks, notes } = req.body ?? {};
+
+      if (typeof date !== 'string' || !date.trim()) {
+        return res.status(400).json({ error: 'date is required' });
+      }
+
+      const entry = {
+        id: randomUUID(),
+        date: date.trim(),
+        location: typeof location === 'string' ? location.trim() : '',
+        region: typeof region === 'string' ? region.trim() : '',
+        country: typeof country === 'string' ? country.trim() : '',
+        locationTo: typeof locationTo === 'string' ? locationTo.trim() : '',
+        locationToCountry: typeof locationToCountry === 'string' ? locationToCountry.trim() : '',
+        locationToRegion: typeof locationToRegion === 'string' ? locationToRegion.trim() : '',
+        eta: typeof eta === 'string' ? eta.trim() : '',
+        status: typeof status === 'string' && status.trim() ? status.trim() : 'completed',
+        avgDownMbps: typeof avgDownMbps === 'number' ? avgDownMbps : 0,
+        avgLatencyMs: typeof avgLatencyMs === 'number' ? avgLatencyMs : 0,
+        uptimePct: typeof uptimePct === 'number' ? uptimePct : 100,
+        provider: typeof provider === 'string' && provider.trim() ? provider.trim() : 'Starlink',
+        incidents: typeof incidents === 'number' ? incidents : 0,
+        blocks: typeof blocks === 'string' ? blocks : JSON.stringify(blocks ?? []),
+        notes: typeof notes === 'string' ? notes.trim() : '',
+        createdAt: new Date().toISOString(),
       };
+
+      const { error } = await supabase.from('voyage_log').upsert({
+        id: entry.id,
+        vessel_id: vessel.id,
+        data: entry,
+        synced_at: new Date().toISOString(),
+      }, { onConflict: 'id,vessel_id' });
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
 
       await writeAudit({
         org_id: vessel.org_id,
         actor: auth.userId,
-        action: 'pen_test.report.uploaded',
+        action: 'voyage.entry.created',
         resource: vessel.id,
-        metadata,
+        metadata: { voyageId: entry.id, date: entry.date },
       }, req);
 
-      return res.json(await getLatestPenTestReport(vessel.org_id, vessel.id));
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Upload failed' });
+      return res.status(201).json(entry);
     }
+
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   if (req.method === 'PUT') {

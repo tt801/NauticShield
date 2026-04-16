@@ -11,7 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Settings,
-  HelpCircle,
+  Bot,
   ShieldCheck,
   LogOut,
   Cloud,
@@ -91,7 +91,7 @@ const premiumNavItems = [
 
 const bottomItems = [
   { label: 'Settings', icon: Settings, to: '/settings' },
-  { label: 'Help',     icon: HelpCircle, to: null },
+  { label: 'Help Bot', icon: Bot, to: null },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
