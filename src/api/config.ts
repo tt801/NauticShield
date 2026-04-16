@@ -12,8 +12,22 @@ function readEnvString(key: string) {
 	return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export const AGENT_URL     = readEnvString('VITE_AGENT_URL') ?? 'http://vessel-agent.local:3000';
+function isSecurePage() {
+	if (typeof window === 'undefined') return false;
+	return window.location.protocol === 'https:';
+}
+
+function canUseDirectAgent(url: string) {
+	if (!isSecurePage()) return true;
+	return url.startsWith('https://');
+}
+
+const configuredAgentUrl = readEnvString('VITE_AGENT_URL') ?? 'http://vessel-agent.local:3000';
+
+// Never attempt insecure local HTTP/WS from the public HTTPS app.
+// The browser blocks it as active mixed content and marks the page insecure.
+export const AGENT_URL     = canUseDirectAgent(configuredAgentUrl) ? configuredAgentUrl : '';
 export const CLOUD_API_URL = readEnvString('VITE_CLOUD_API_URL') ?? 'https://nautic-shield.vercel.app';
 export const VESSEL_ID     = readEnvString('VITE_VESSEL_ID') ?? '';
-export const AGENT_WS_URL  = AGENT_URL.replace(/^http/, 'ws');
+export const AGENT_WS_URL  = AGENT_URL ? AGENT_URL.replace(/^http/, 'ws') : '';
 export const API_TIMEOUT   = 4_000; // ms before trying cloud fallback

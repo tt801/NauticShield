@@ -75,6 +75,11 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
   // ── WebSocket ────────────────────────────────────────────────
 
   const connectWebSocket = useCallback(() => {
+    if (!AGENT_WS_URL) {
+      setAgentStatus(getConnectionMode() === 'cloud' ? 'cloud' : 'offline');
+      return;
+    }
+
     // Prevent duplicate connections
     if (wsRef.current?.readyState === WebSocket.CONNECTING ||
         wsRef.current?.readyState === WebSocket.OPEN) return;
