@@ -324,6 +324,10 @@ export default function Report() {
   const [scheduleLoading,  setScheduleLoading]  = useState(true);
   const [scheduleSaving,   setScheduleSaving]   = useState(false);
   const [scheduleError,    setScheduleError]    = useState('');
+  const [scheduleNotice,   setScheduleNotice]   = useState('');
+  const [sendingScheduleId,setSendingScheduleId]= useState<string | null>(null);
+  const [hoveredScheduleId,setHoveredScheduleId]= useState<string | null>(null);
+  const [pressedScheduleId,setPressedScheduleId]= useState<string | null>(null);
   const [editorOpen,       setEditorOpen]       = useState(false);
   const [draft,            setDraft]            = useState<ScheduleDraft>(createScheduleDraft());
 
@@ -393,6 +397,7 @@ export default function Report() {
   async function persistSchedules(next: ReportSchedule[]) {
     setScheduleSaving(true);
     setScheduleError('');
+    setScheduleNotice('');
     try {
       const saved = await agentApi.reports.saveSchedules(next);
       setSchedules(saved);
@@ -407,12 +412,14 @@ export default function Report() {
 
   function openNewSchedule() {
     setScheduleError('');
+    setScheduleNotice('');
     setDraft(createScheduleDraft());
     setEditorOpen(true);
   }
 
   function openEditSchedule(schedule: ReportSchedule) {
     setScheduleError('');
+    setScheduleNotice('');
     setDraft(createScheduleDraft(schedule));
     setEditorOpen(true);
   }
@@ -1256,11 +1263,16 @@ export default function Report() {
 
   async function runScheduledReport(schedule: ReportSchedule) {
     setScheduleError('');
+    setScheduleNotice('');
+    setSendingScheduleId(schedule.id);
     try {
       const updated = await agentApi.reports.sendNow(schedule.id);
       setSchedules(updated);
+      setScheduleNotice(`Sent "${schedule.name}" to ${schedule.recipient}.`);
     } catch (error) {
       setScheduleError(error instanceof Error ? error.message : 'Report email could not be sent.');
+    } finally {
+      setSendingScheduleId(null);
     }
   }
 
@@ -1625,6 +1637,11 @@ export default function Report() {
       {/* Scheduled Reports */}
       <Card>
         <SectionTitle>Scheduled Reports</SectionTitle>
+        {scheduleNotice && !editorOpen ? (
+          <div style={{ marginBottom: 10, color: '#86efac', fontSize: 12, lineHeight: 1.6 }}>
+            {scheduleNotice}
+          </div>
+        ) : null}
         {scheduleError && !editorOpen ? (
           <div style={{ marginBottom: 10, color: '#fca5a5', fontSize: 12, lineHeight: 1.6 }}>
             <div>{scheduleError}</div>
@@ -1658,9 +1675,54 @@ export default function Report() {
                   <div style={{ color: '#6b7f92' }}>Last: {formatLastSent(schedule.lastSentAt)}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <button onClick={() => runScheduledReport(schedule)} style={{ background: 'rgba(14,165,233,0.12)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.25)', borderRadius: 8, padding: '7px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Play size={12} /> Email now
+                  {(() => {
+                    const isSending = sendingScheduleId === schedule.id;
+                    const isHovered = hoveredScheduleId === schedule.id;
+                    const isPressed = pressedScheduleId === schedule.id;
+
+                    return (
+                  <button
+                    onClick={() => runScheduledReport(schedule)}
+                    disabled={isSending}
+                    onMouseEnter={() => setHoveredScheduleId(schedule.id)}
+                    onMouseLeave={() => {
+                      setHoveredScheduleId(current => current === schedule.id ? null : current);
+                      setPressedScheduleId(current => current === schedule.id ? null : current);
+                    }}
+                    onMouseDown={() => setPressedScheduleId(schedule.id)}
+                    onMouseUp={() => setPressedScheduleId(current => current === schedule.id ? null : current)}
+                    onBlur={() => {
+                      setHoveredScheduleId(current => current === schedule.id ? null : current);
+                      setPressedScheduleId(current => current === schedule.id ? null : current);
+                    }}
+                    style={{
+                      background: isSending || isPressed
+                        ? 'rgba(14,165,233,0.22)'
+                        : isHovered
+                          ? 'rgba(14,165,233,0.16)'
+                          : 'rgba(14,165,233,0.12)',
+                      color: '#7dd3fc',
+                      border: isHovered || isPressed
+                        ? '1px solid rgba(125,211,252,0.42)'
+                        : '1px solid rgba(14,165,233,0.25)',
+                      borderRadius: 8,
+                      padding: '7px 10px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: isSending ? 'default' : 'pointer',
+                      opacity: isSending ? 0.8 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      boxShadow: isHovered || isPressed ? '0 0 0 1px rgba(125,211,252,0.12), 0 10px 24px rgba(14,165,233,0.12)' : 'none',
+                      transform: isPressed ? 'translateY(1px) scale(0.99)' : isHovered ? 'translateY(-1px)' : 'translateY(0)',
+                      transition: 'background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease, opacity 120ms ease',
+                    }}
+                  >
+                    <Play size={12} /> {isSending ? 'Sending…' : 'Email now'}
                   </button>
+                    );
+                  })()}
                   <button onClick={() => openEditSchedule(schedule)} style={{ background: 'transparent', color: '#d4a847', border: '1px solid rgba(212,168,71,0.25)', borderRadius: 8, padding: '7px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Pencil size={12} /> Edit
                   </button>
