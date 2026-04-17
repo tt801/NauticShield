@@ -17,6 +17,10 @@ services:
     env_file:
       - .env
 
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+
     # ── Persistence ────────────────────────────────────────────────
     # SQLite database and any other data survive container restarts
     volumes:
