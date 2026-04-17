@@ -165,22 +165,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           onClick={() => setCollapsed(c => !c)}
           style={{
             position: 'absolute',
-            top: 20,
-            right: -12,
-            width: 24,
-            height: 24,
+            top: 18,
+            right: 10,
+            width: 28,
+            height: 28,
             borderRadius: '50%',
-            background: '#1a2535',
-            border: '1px solid #2a3a50',
-            color: '#8899aa',
+            background: '#223047',
+            border: '1px solid #35506d',
+            boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+            color: '#d6dee7',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
             zIndex: 10,
           }}
-          onMouseEnter={e => (e.currentTarget.style.background = '#223047')}
-          onMouseLeave={e => (e.currentTarget.style.background = '#1a2535')}
+          onMouseEnter={e => (e.currentTarget.style.background = '#2c405c')}
+          onMouseLeave={e => (e.currentTarget.style.background = '#223047')}
         >
           {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
         </button>
