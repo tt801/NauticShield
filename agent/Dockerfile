@@ -3,6 +3,8 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+RUN apk add --no-cache python3 make g++ linux-headers
+
 # Install dependencies (including devDeps for tsc)
 COPY package*.json ./
 RUN npm ci
@@ -17,7 +19,7 @@ FROM node:22-alpine AS runtime
 
 # net-tools / nmap for network scanning (vessel LAN)
 # nmap is optional — remove if you don't use raw socket scanning
-RUN apk add --no-cache nmap nmap-scripts
+RUN apk add --no-cache nmap nmap-scripts python3 make g++ linux-headers
 
 WORKDIR /app
 
