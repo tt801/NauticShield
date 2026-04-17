@@ -20,6 +20,7 @@ import {
 import { useClerk } from '@clerk/clerk-react';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 import { useAuthOptional } from '@/context/AuthContext';
+import { AGENT_URL } from '@/api/config';
 import { getConnectionMode, getResolvedCloudVesselId, onConnectionModeChange, type ConnectionMode } from '@/api/client';
 import HelpCenterWidget from '@/components/HelpCenterWidget';
 
@@ -55,11 +56,14 @@ function ConnectionBadge({ collapsed }: { collapsed: boolean }) {
   if (mode === 'local') return null; // normal state — no badge needed
 
   const isCloud   = mode === 'cloud';
+  const isRemoteCloudView = isCloud && !AGENT_URL;
   const color     = isCloud ? '#d4a847' : '#ef4444';
   const Icon      = isCloud ? Cloud : WifiOff;
-  const label     = isCloud ? 'Cloud mode' : 'Offline';
+  const label     = isCloud ? (isRemoteCloudView ? 'Cloud sync' : 'Cloud mode') : 'Offline';
   const tipText   = isCloud
-    ? 'Cannot reach the onboard mini PC — showing cloud data'
+    ? (isRemoteCloudView
+        ? 'Viewing this vessel through secure cloud sync. Direct onboard access is only available on the local network.'
+        : 'Cannot reach the onboard mini PC — showing cloud data')
     : 'Cannot reach the onboard mini PC or cloud fallback — data may be stale';
 
   return (
