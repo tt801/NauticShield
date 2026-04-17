@@ -215,7 +215,7 @@ async function loadReportSchedules(orgId: string, vesselId: string) {
 
 function getReportDeliveryConfig() {
   const resendApiKey = (process.env.RESEND_API_KEY ?? '').trim();
-  const fromEmail = (process.env.REPORTS_FROM_EMAIL ?? '').trim();
+  const fromEmail = (process.env.REPORTS_FROM_EMAIL ?? '').trim() || 'reports@nauticshield.io';
   return { resendApiKey, fromEmail };
 }
 
@@ -263,8 +263,8 @@ async function sendReportScheduleNow(orgId: string, vesselId: string, vesselName
     hasResendApiKey: resendApiKey.length > 0,
     hasFromEmail: fromEmail.length > 0,
   });
-  if (!resendApiKey || !fromEmail) {
-    throw new Error('Scheduled report email delivery is not configured.');
+  if (!resendApiKey) {
+    throw new Error('Scheduled report email delivery is not configured: RESEND_API_KEY is missing.');
   }
 
   const resend = new Resend(resendApiKey);

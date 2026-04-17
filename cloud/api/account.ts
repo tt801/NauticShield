@@ -17,6 +17,41 @@ type StripeSubscription = Awaited<ReturnType<StripeClient['subscriptions']['list
 
 const MANAGED_SUBSCRIPTION_STATUSES = new Set(['trialing', 'active', 'past_due', 'unpaid']);
 
+function normalizePlan(plan?: string | null): string | null {
+  switch ((plan ?? '').toLowerCase()) {
+    case 'starter':
+    case 'basic':
+    case 'coastal':
+      return 'coastal';
+    case 'pro':
+    case 'superyacht':
+      return 'superyacht';
+    case 'enterprise':
+    case 'fleet':
+      return 'fleet';
+    default:
+      return null;
+  }
+}
+
+function planFromSubscription(subscription: StripeSubscription | null): string | null {
+  if (!subscription) return null;
+
+  const metadataPlan = normalizePlan(subscription.metadata?.plan ?? null);
+  if (metadataPlan) return metadataPlan;
+
+  const priceIds = subscription.items.data
+    .map(item => item.price?.id)
+    .filter((value): value is string => Boolean(value));
+
+  const coastalPriceId = process.env.STRIPE_PRICE_COASTAL;
+  const superyachtPriceId = process.env.STRIPE_PRICE_SUPERYACHT;
+
+  if (superyachtPriceId && priceIds.includes(superyachtPriceId)) return 'superyacht';
+  if (coastalPriceId && priceIds.includes(coastalPriceId)) return 'coastal';
+  return null;
+}
+
 function isDeletedCustomer(customer: StripeCustomer | null): customer is Extract<StripeCustomerLookup, { deleted: true }> {
   return Boolean(customer && 'deleted' in customer && customer.deleted);
 }
@@ -194,6 +229,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const subscription = await findManagedSubscription(stripe, activeCustomer, vessel?.stripe_subscription_id ?? null);
     const paymentMethod = await getDefaultPaymentMethod(stripe, activeCustomer, subscription);
     const customerAddress = activeCustomer?.address ?? null;
+    const derivedPlan = planFromSubscription(subscription) ?? vessel?.plan ?? null;
+    const subscriptionWithPeriod = subscription as unknown as { current_period_end?: number } | null;
+    const subscriptionPeriodEnd = typeof subscriptionWithPeriod?.current_period_end === 'number'
+      ? subscriptionWithPeriod.current_period_end
+      : null;
+    const derivedPeriodEnd = subscriptionPeriodEnd ? new Date(subscriptionPeriodEnd * 1000).toISOString() : vessel?.current_period_end ?? null;
+    const derivedTrialEnd = subscription?.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : vessel?.trial_ends_at ?? null;
+    const derivedStatus = subscription
+      ? (subscription.cancel_at_period_end ? 'canceling' : subscription.status)
+      : (vessel?.subscription_status ?? null);
+
+    if (vessel) {
+      const nextState: Partial<VesselBillingRow> = {};
+      if (derivedPlan && derivedPlan !== vessel.plan) nextState.plan = derivedPlan;
+      if (subscription?.id && subscription.id !== vessel.stripe_subscription_id) nextState.stripe_subscription_id = subscription.id;
+      if (activeCustomer?.id && activeCustomer.id !== vessel.stripe_customer_id) nextState.stripe_customer_id = activeCustomer.id;
+      if (derivedStatus && derivedStatus !== vessel.subscription_status) nextState.subscription_status = derivedStatus;
+      if (derivedPeriodEnd !== vessel.current_period_end) nextState.current_period_end = derivedPeriodEnd;
+      if (derivedTrialEnd !== vessel.trial_ends_at) nextState.trial_ends_at = derivedTrialEnd;
+
+      if (Object.keys(nextState).length > 0) {
+        await supabase.from('vessels').update(nextState).eq('id', vessel.id);
+      }
+    }
 
     return res.json({
       profile: {
@@ -216,11 +275,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } : null,
       } : null,
       subscription: {
-        plan: vessel?.plan ?? null,
-        status: vessel?.subscription_status ?? subscription?.status ?? null,
-        currentPeriodEnd: vessel?.current_period_end ?? null,
-        trialEnd: vessel?.trial_ends_at
-          ?? (subscription?.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null),
+        plan: derivedPlan,
+        status: derivedStatus,
+        currentPeriodEnd: derivedPeriodEnd,
+        trialEnd: derivedTrialEnd,
         cancelAtPeriodEnd: subscription?.cancel_at_period_end ?? false,
         paymentMethod,
         customerPortalAvailable: Boolean(activeCustomer),

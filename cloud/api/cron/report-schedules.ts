@@ -193,7 +193,7 @@ function renderHtml(vesselName: string, schedule: ReportSchedule, snapshot: any,
 
 function getReportDeliveryConfig() {
   const resendApiKey = (process.env.RESEND_API_KEY ?? '').trim();
-  const fromEmail = (process.env.REPORTS_FROM_EMAIL ?? '').trim();
+  const fromEmail = (process.env.REPORTS_FROM_EMAIL ?? '').trim() || 'reports@nauticshield.io';
   return { resendApiKey, fromEmail };
 }
 
@@ -210,8 +210,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     hasResendApiKey: resendApiKey.length > 0,
     hasFromEmail: fromEmail.length > 0,
   });
-  if (!resendApiKey || !fromEmail) {
-    return res.status(200).json({ ok: true, skipped: 'RESEND_API_KEY or REPORTS_FROM_EMAIL missing' });
+  if (!resendApiKey) {
+    return res.status(200).json({ ok: true, skipped: 'RESEND_API_KEY missing' });
   }
 
   const resend = new Resend(resendApiKey);
