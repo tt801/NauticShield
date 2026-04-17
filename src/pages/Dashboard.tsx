@@ -21,6 +21,7 @@ import {
   Camera,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { AGENT_URL } from '@/api/config';
 import type { ConnectionStatus, AlertSeverity } from '@/data/mock';
 import { useVesselData } from '@/context/VesselDataProvider';
 import type { AgentStatus } from '@/context/VesselDataProvider';
@@ -574,6 +575,7 @@ function AgentStatusBanner({ status, lastSync }: { status: AgentStatus; lastSync
   if (status === 'online') return null;
   const isConnecting = status === 'connecting';
   const isCloud = status === 'cloud';
+  const isRemoteCloudView = isCloud && !AGENT_URL;
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10,
@@ -584,7 +586,13 @@ function AgentStatusBanner({ status, lastSync }: { status: AgentStatus; lastSync
       <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
         background: isConnecting ? '#f59e0b' : isCloud ? '#d4a847' : '#ef4444', display: 'inline-block' }} />
       <span style={{ color: isConnecting ? '#f59e0b' : isCloud ? '#d4a847' : '#ef4444', fontWeight: 600 }}>
-        {isConnecting ? 'Connecting to onboard mini PC…' : isCloud ? 'Cannot reach the onboard mini PC — showing cloud data' : 'Cannot reach the onboard mini PC — showing last synced data'}
+        {isConnecting
+          ? 'Connecting to onboard mini PC…'
+          : isCloud
+            ? (isRemoteCloudView
+                ? 'Viewing this vessel through secure cloud sync'
+                : 'Cannot reach the onboard mini PC — showing cloud data')
+            : 'Cannot reach the onboard mini PC — showing last synced data'}
       </span>
       {lastSync && (
         <span style={{ color: '#6b7f92', fontSize: 12, marginLeft: 'auto' }}>
