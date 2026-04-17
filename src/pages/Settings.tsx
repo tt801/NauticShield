@@ -528,6 +528,21 @@ export default function Settings() {
       .catch(() => setCloudVessels([]));
   }, [activeTab]);
 
+  useEffect(() => {
+    if (!cloudVessels?.length) return;
+
+    const matchingVessel = cloudVessels.find(vessel => vessel.id === cloudVesselId.trim());
+    const preferredVessel = matchingVessel ?? cloudVessels[0];
+
+    if (preferredVessel && preferredVessel.id !== cloudVesselId) {
+      setCloudVesselId(preferredVessel.id);
+    }
+
+    if (preferredVessel && !cloudName.trim()) {
+      setCloudName(preferredVessel.name ?? '');
+    }
+  }, [cloudVessels, cloudVesselId, cloudName]);
+
   async function handleRegisterVessel() {
     if (!cloudVesselId.trim() || !CLOUD_API_URL) return;
     setCloudRegistering(true);
