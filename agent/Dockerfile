@@ -18,8 +18,8 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 
 # net-tools / nmap for network scanning (vessel LAN)
-# nmap is optional — remove if you don't use raw socket scanning
-RUN apk add --no-cache nmap nmap-scripts python3 make g++ linux-headers
+# openssh-client is required for router sync; bash is required for the remote shell relay PTY.
+RUN apk add --no-cache nmap nmap-scripts python3 make g++ linux-headers openssh-client bash
 
 WORKDIR /app
 
