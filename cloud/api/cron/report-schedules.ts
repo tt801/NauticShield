@@ -191,6 +191,12 @@ function renderHtml(vesselName: string, schedule: ReportSchedule, snapshot: any,
   `;
 }
 
+function getReportDeliveryConfig() {
+  const resendApiKey = (process.env.RESEND_API_KEY ?? '').trim();
+  const fromEmail = (process.env.REPORTS_FROM_EMAIL ?? '').trim();
+  return { resendApiKey, fromEmail };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.authorization;
@@ -199,8 +205,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const resendApiKey = process.env.RESEND_API_KEY;
-  const fromEmail = process.env.REPORTS_FROM_EMAIL;
+  const { resendApiKey, fromEmail } = getReportDeliveryConfig();
+  console.log('[report delivery cron]', {
+    hasResendApiKey: resendApiKey.length > 0,
+    hasFromEmail: fromEmail.length > 0,
+  });
   if (!resendApiKey || !fromEmail) {
     return res.status(200).json({ ok: true, skipped: 'RESEND_API_KEY or REPORTS_FROM_EMAIL missing' });
   }

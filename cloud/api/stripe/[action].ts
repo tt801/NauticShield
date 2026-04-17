@@ -133,7 +133,6 @@ async function handleCheckout(req: VercelRequest, res: VercelResponse) {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: successUrl ?? defaultSuccess,
       cancel_url: cancelUrl ?? defaultCancel,
-      customer_creation: 'always',
       customer_email: customerEmail,
       client_reference_id: auth?.userId,
       billing_address_collection: 'required',

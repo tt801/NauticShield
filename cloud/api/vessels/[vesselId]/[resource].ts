@@ -213,6 +213,12 @@ async function loadReportSchedules(orgId: string, vesselId: string) {
     .filter((entry): entry is ReportSchedule => entry !== null);
 }
 
+function getReportDeliveryConfig() {
+  const resendApiKey = (process.env.RESEND_API_KEY ?? '').trim();
+  const fromEmail = (process.env.REPORTS_FROM_EMAIL ?? '').trim();
+  return { resendApiKey, fromEmail };
+}
+
 function renderScheduleEmailHtml(vesselName: string, schedule: ReportSchedule, snapshot: any, openFindings: any[]) {
   const internet = snapshot?.internet_status ?? {};
   const devices = Array.isArray(snapshot?.devices) ? snapshot.devices : [];
@@ -252,8 +258,11 @@ function renderScheduleEmailHtml(vesselName: string, schedule: ReportSchedule, s
 }
 
 async function sendReportScheduleNow(orgId: string, vesselId: string, vesselName: string | null, schedule: ReportSchedule, actor: string, req: VercelRequest) {
-  const resendApiKey = process.env.RESEND_API_KEY;
-  const fromEmail = process.env.REPORTS_FROM_EMAIL;
+  const { resendApiKey, fromEmail } = getReportDeliveryConfig();
+  console.log('[report delivery manual]', {
+    hasResendApiKey: resendApiKey.length > 0,
+    hasFromEmail: fromEmail.length > 0,
+  });
   if (!resendApiKey || !fromEmail) {
     throw new Error('Scheduled report email delivery is not configured.');
   }
