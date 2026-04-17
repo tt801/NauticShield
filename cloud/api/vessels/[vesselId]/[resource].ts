@@ -399,17 +399,18 @@ async function getLatestPenTestReport(orgId: string, vesselId: string) {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
-  if (!['GET', 'PUT', 'POST'].includes(req.method ?? '')) return res.status(405).json({ error: 'Method not allowed' });
+  if (!['GET', 'PUT', 'POST', 'PATCH', 'DELETE'].includes(req.method ?? '')) return res.status(405).json({ error: 'Method not allowed' });
 
-  const auth = await verifyClerkJWT(req);
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const auth = await verifyClerkJWT(req);
+    if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const vessel = await assertVesselOwnership(req.query.vesselId as string, auth);
-  if (!vessel) return res.status(404).json({ error: 'Vessel not found' });
+    const vessel = await assertVesselOwnership(req.query.vesselId as string, auth);
+    if (!vessel) return res.status(404).json({ error: 'Vessel not found' });
 
-  const resource = req.query.resource as string;
+    const resource = req.query.resource as string;
 
-  if (req.method === 'POST') {
+    if (req.method === 'POST') {
     if (resource === 'guest-network-speed-test') {
       const current = await loadGuestNetworkSettings(vessel.org_id, vessel.id);
       const snapshot = await latestSnapshot(vessel.id);
@@ -780,4 +781,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   return res.status(404).json({ error: 'Unknown resource' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Request failed';
+    console.error('[vessel resource handler]', req.method, req.query.resource, message);
+    return res.status(500).json({ error: message });
+  }
 }

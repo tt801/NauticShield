@@ -154,6 +154,10 @@ async function handleCheckout(req: VercelRequest, res: VercelResponse) {
       allow_promotion_codes: true,
     });
 
+    if (!session.url) {
+      throw new Error('Stripe checkout session did not return a redirect URL');
+    }
+
     return res.json({ url: session.url });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Stripe error';
@@ -272,6 +276,10 @@ async function handlePortal(req: VercelRequest, res: VercelResponse) {
       return_url: returnUrl || 'https://app.nauticshield.io/settings',
     });
 
+    if (!session.url) {
+      throw new Error('Stripe billing portal did not return a redirect URL');
+    }
+
     await writeAudit({
       org_id: orgId,
       actor: auth.userId,
@@ -290,10 +298,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const action = String(req.query.action ?? '').toLowerCase();
-  if (action === 'checkout') return handleCheckout(req, res);
-  if (action === 'cancel') return handleCancel(req, res);
-  if (action === 'portal') return handlePortal(req, res);
+  try {
+    const action = String(req.query.action ?? '').toLowerCase();
+    if (action === 'checkout') return handleCheckout(req, res);
+    if (action === 'cancel') return handleCancel(req, res);
+    if (action === 'portal') return handlePortal(req, res);
 
-  return res.status(404).json({ error: 'Unknown Stripe action' });
+    return res.status(404).json({ error: 'Unknown Stripe action' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Stripe request failed';
+    console.error('[stripe handler]', req.query.action, message);
+    return res.status(500).json({ error: message });
+  }
 }

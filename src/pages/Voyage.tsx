@@ -633,6 +633,7 @@ export default function Voyage() {
   const [log,       setLog]       = useState<VoyageEntry[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const fetchLog = useCallback(async () => {
     try {
@@ -648,32 +649,38 @@ export default function Voyage() {
   useEffect(() => { fetchLog(); }, [fetchLog]);
 
   async function handleAdd(entry: Omit<VoyageEntry, 'id' | 'createdAt'>) {
+    setActionError('');
     try {
       const created = await agentApi.voyage.add(entry);
       setLog(l => [created, ...l]);
       setShowModal(false);
     } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to add voyage entry.');
       console.error('Failed to add voyage entry', err);
       throw err;
     }
   }
 
   async function handleDelete(id: string) {
+    setActionError('');
     try {
       await agentApi.voyage.delete(id);
       setLog(l => l.filter(e => e.id !== id));
     } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to delete voyage entry.');
       console.error('Failed to delete voyage entry', err);
     }
   }
 
   async function handleUpdate(id: string, patch: Partial<Omit<VoyageEntry, 'id' | 'createdAt'>>) {
     // Optimistic update — apply patch immediately so the UI responds without waiting for the agent
+    setActionError('');
     setLog(l => l.map(e => e.id === id ? { ...e, ...patch } : e));
     try {
       const updated = await agentApi.voyage.update(id, patch);
       setLog(l => l.map(e => e.id === id ? updated : e));
     } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to update voyage entry.');
       console.error('Failed to update voyage entry — agent may be offline', err);
     }
   }
@@ -690,6 +697,12 @@ export default function Voyage() {
 
   return (
     <div style={{ padding: 28, maxWidth: 1150, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {actionError && (
+        <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.28)', color: '#fca5a5', borderRadius: 12, padding: '12px 14px', fontSize: 13 }}>
+          {actionError}
+        </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>

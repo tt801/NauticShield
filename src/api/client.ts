@@ -220,6 +220,9 @@ async function toCloudVesselPath(path: string) {
   if (!vesselId) {
     throw new Error(NO_CLOUD_VESSEL_MESSAGE);
   }
+  if (path === '/api/vessels/quota') {
+    return `/api/vessels/${vesselId}/quota`;
+  }
   return path.replace(/^\/api\//, `/api/vessels/${vesselId}/`);
 }
 
@@ -267,9 +270,13 @@ export async function fetchWithFallback<T>(path: string, init?: RequestInit): Pr
       const result = await fetchJSON<T>(cloudUrl, init);
       setMode('cloud');
       return result;
-    } catch {
-      setMode('offline');
-      throw localErr; // surface the original local error
+    } catch (cloudErr) {
+      const isCloudNetworkError = cloudErr instanceof Error &&
+        (cloudErr.name === 'AbortError' || cloudErr.message.startsWith('Failed to fetch') ||
+         cloudErr.message.startsWith('NetworkError') || cloudErr.message.includes('fetch'));
+
+      setMode(isCloudNetworkError ? 'offline' : 'cloud');
+      throw (cloudErr instanceof Error ? cloudErr : localErr);
     }
   }
 }
