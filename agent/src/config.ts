@@ -13,6 +13,17 @@ export interface BootstrapConfig {
 
 const CONFIG_PATH = process.env.BOOTSTRAP_CONFIG_PATH ?? path.resolve(process.cwd(), 'data/bootstrap-config.json');
 
+function readConfigValue(value: string | undefined | null, fallback: string | null = '') {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+
+  return fallback ?? '';
+}
+
 function readPersistedConfig(): BootstrapConfig | null {
   try {
     if (!fs.existsSync(CONFIG_PATH)) return null;
@@ -32,11 +43,11 @@ export function getAgentConfig() {
   const persisted = readPersistedConfig();
 
   return {
-    vesselId: process.env.VESSEL_ID ?? persisted?.vesselId ?? 'unknown',
-    vesselName: process.env.VESSEL_NAME ?? persisted?.vesselName ?? null,
-    cloudSyncUrl: process.env.CLOUD_SYNC_URL ?? persisted?.cloudSyncUrl ?? '',
-    cloudApiKey: process.env.CLOUD_API_KEY ?? persisted?.cloudApiKey ?? '',
-    relayUrl: process.env.RELAY_URL ?? persisted?.relayUrl ?? '',
-    relaySecret: process.env.RELAY_SECRET ?? persisted?.relaySecret ?? '',
+    vesselId: readConfigValue(process.env.VESSEL_ID, persisted?.vesselId ?? 'unknown'),
+    vesselName: readConfigValue(process.env.VESSEL_NAME, persisted?.vesselName ?? null),
+    cloudSyncUrl: readConfigValue(process.env.CLOUD_SYNC_URL, persisted?.cloudSyncUrl ?? ''),
+    cloudApiKey: readConfigValue(process.env.CLOUD_API_KEY, persisted?.cloudApiKey ?? ''),
+    relayUrl: readConfigValue(process.env.RELAY_URL, persisted?.relayUrl ?? ''),
+    relaySecret: readConfigValue(process.env.RELAY_SECRET, persisted?.relaySecret ?? ''),
   };
 }

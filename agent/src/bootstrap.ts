@@ -5,7 +5,10 @@ const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN?.trim();
 
 export async function bootstrapAgent() {
   const config = getAgentConfig();
-  if (config.cloudApiKey && config.vesselId !== 'unknown') {
+  const hasProvisionedCloud = config.cloudApiKey && config.cloudSyncUrl && config.vesselId !== 'unknown';
+  const hasProvisionedRelay = config.relayUrl && config.relaySecret;
+
+  if (hasProvisionedCloud && hasProvisionedRelay) {
     return;
   }
   if (!BOOTSTRAP_URL || !BOOTSTRAP_TOKEN) {
