@@ -18,9 +18,11 @@ import actionsRouter       from './routes/actions';
 import voyageRouter        from './routes/voyage';
 import cyberRouter         from './routes/cyber';
 import notificationsRouter from './routes/notifications';
+import guestNetworkRouter  from './routes/guestNetwork';
 import vesselsRouter       from './routes/vessels';
 import { startCloudSync, getLastSyncAt } from './sync';
 import { startShellRelay } from './shellRelay';
+import { bootstrapAgent } from './bootstrap';
 import type { VesselSnapshot, WsClientMessage } from './types';
 
 const PORT    = parseInt(process.env.PORT    ?? '3000', 10);
@@ -102,6 +104,7 @@ app.use('/api/actions',       actionsRouter);
 app.use('/api/voyage',        voyageRouter);
 app.use('/api/cyber',         cyberRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/guest-network', guestNetworkRouter);
 app.use('/api/vessels',       vesselsRouter);
 
 // Snapshot endpoint
@@ -195,11 +198,13 @@ async function runCycle(): Promise<void> {
 
 // ── Start ─────────────────────────────────────────────────────────
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log('\n🚢  NauticShield Agent');
   console.log(`    REST  → http://localhost:${PORT}/api`);
   console.log(`    WS   → ws://localhost:${PORT}`);
   console.log(`    Subnet: ${SUBNET}.0/24   Interval: ${SCAN_MS / 1000}s\n`);
+
+  await bootstrapAgent();
 
   // Start cloud sync timer (no-op if env vars not set)
   startCloudSync();

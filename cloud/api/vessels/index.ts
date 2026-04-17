@@ -6,11 +6,22 @@
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClerkClient }  from '@clerk/backend';
-import { randomUUID }         from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { supabase }           from '../../lib/supabase';
 import { verifyClerkJWT, hashApiKey } from '../../lib/auth';
 import { cors }               from '../../lib/cors';
 import { writeAudit }         from '../../lib/audit';
+
+function hashBootstrapToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function cloudBaseUrl(req: VercelRequest) {
+  const configured = process.env.CLOUD_PUBLIC_URL?.trim();
+  if (configured) return configured.replace(/\/$/, '');
+  const host = req.headers.host;
+  return host ? `https://${host}` : 'https://nautic-shield.vercel.app';
+}
 
 function errorStatus(err: unknown): number {
   const e = err as {
@@ -57,6 +68,61 @@ function maxVesselsForPlan(plan: string): number {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
+
+  if (req.method === 'POST' && typeof req.body?.bootstrapToken === 'string') {
+    const bootstrapToken = req.body.bootstrapToken.trim();
+    if (!bootstrapToken) return res.status(400).json({ error: 'bootstrapToken is required' });
+
+    const tokenHash = hashBootstrapToken(bootstrapToken);
+    const { data } = await supabase
+      .from('audit_log')
+      .select('org_id, resource, metadata, created_at')
+      .eq('action', 'vessel.bootstrap.issued')
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    const match = (data ?? []).find((entry) => {
+      const metadata = (entry.metadata ?? {}) as Record<string, unknown>;
+      return metadata.tokenHash === tokenHash && typeof metadata.expiresAt === 'string' && metadata.expiresAt > new Date().toISOString();
+    });
+
+    if (!match?.resource || !match.org_id) {
+      return res.status(401).json({ error: 'Invalid or expired bootstrap token' });
+    }
+
+    const apiKey = randomUUID();
+    const apiKeyHash = hashApiKey(apiKey);
+    const { data: vessel, error } = await supabase
+      .from('vessels')
+      .update({ api_key_hash: apiKeyHash })
+      .eq('id', match.resource)
+      .eq('org_id', match.org_id)
+      .select('id, name')
+      .single();
+
+    if (error || !vessel) {
+      return res.status(404).json({ error: 'Vessel not found for bootstrap token' });
+    }
+
+    await writeAudit({
+      org_id: match.org_id,
+      actor: 'system',
+      action: 'vessel.bootstrap.consumed',
+      resource: vessel.id,
+      metadata: { issuedAt: match.created_at },
+    }, req);
+
+    return res.status(201).json({
+      vesselId: vessel.id,
+      vesselName: vessel.name,
+      cloudSyncUrl: cloudBaseUrl(req),
+      cloudApiKey: apiKey,
+      relayUrl: process.env.RELAY_URL ?? null,
+      relaySecret: process.env.RELAY_SECRET ?? null,
+      provisionedAt: new Date().toISOString(),
+    });
+  }
+
   const auth = await verifyClerkJWT(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -80,6 +146,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 2) Register mode:   { vesselId, name? } -> generates vessel API key
   if (req.method === 'POST') {
     const { vesselId, name } = req.body ?? {};
+
+    if (req.body?.issueBootstrapToken) {
+      if (typeof vesselId !== 'string' || !vesselId.trim()) {
+        return res.status(400).json({ error: 'vesselId is required' });
+      }
+
+      const { data: vessel } = await supabase
+        .from('vessels')
+        .select('id')
+        .eq('id', vesselId)
+        .eq('org_id', orgId)
+        .single();
+
+      if (!vessel) return res.status(404).json({ error: 'Vessel not found' });
+
+      const bootstrapToken = `${randomUUID()}${randomUUID()}`;
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      await writeAudit({
+        org_id: orgId,
+        actor: auth.userId,
+        action: 'vessel.bootstrap.issued',
+        resource: vesselId,
+        metadata: {
+          tokenHash: hashBootstrapToken(bootstrapToken),
+          expiresAt,
+        },
+      }, req);
+
+      return res.status(201).json({ vesselId, bootstrapToken, expiresAt });
+    }
 
     // Onboarding mode: create a new Clerk organization for this customer
     if (!vesselId) {

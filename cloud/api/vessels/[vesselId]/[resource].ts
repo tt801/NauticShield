@@ -23,6 +23,52 @@ type NotificationPrefs = {
   phoneTo: string;
   categories: Record<NotificationCategory, CategoryPref>;
 };
+type ReportPeriod = 'live' | 'daily' | 'weekly' | 'monthly';
+type ReportCadence = 'daily' | 'weekly' | 'monthly';
+type ReportSchedule = {
+  id: string;
+  name: string;
+  recipient: string;
+  period: ReportPeriod;
+  cadence: ReportCadence;
+  sendTime: string;
+  dayOfWeek: number | null;
+  dayOfMonth: number | null;
+  active: boolean;
+  lastSentAt: string | null;
+  updatedAt: string;
+};
+type GuestDeviceAccess = 'approved' | 'blocked' | 'pending';
+type GuestSplashType = 'tos' | 'click' | 'none';
+type GuestNetworkSpeedResult = {
+  dl: number;
+  ul: number;
+  ping: number;
+  testedAt: string;
+};
+type GuestNetworkSettings = {
+  wifiEnabled: boolean;
+  portalEnabled: boolean;
+  ssid: string;
+  wifiPass: string;
+  splashType: GuestSplashType;
+  accessMap: Record<string, GuestDeviceAccess>;
+  bandwidthMap: Record<string, string>;
+  lastSpeedTest: GuestNetworkSpeedResult | null;
+  updatedAt: string;
+};
+
+const DEFAULT_GUEST_NETWORK_SETTINGS: GuestNetworkSettings = {
+  wifiEnabled: true,
+  portalEnabled: true,
+  ssid: 'Aurora Guest',
+  wifiPass: 'Yacht2026!',
+  splashType: 'tos',
+  accessMap: {},
+  bandwidthMap: {},
+  lastSpeedTest: null,
+  updatedAt: '',
+};
 
 const DEFAULT_NOTIFICATION_CATEGORIES: Record<NotificationCategory, CategoryPref> = {
   new_device: { email: true, sms: false },
@@ -101,6 +147,110 @@ async function loadNotificationPrefs(orgId: string) {
   return mergeNotificationPrefs(metadata?.preferences);
 }
 
+function normalizeReportSchedule(value: unknown, fallbackId?: string): ReportSchedule | null {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<ReportSchedule>;
+  const cadence = source.cadence === 'daily' || source.cadence === 'weekly' || source.cadence === 'monthly'
+    ? source.cadence
+    : 'weekly';
+  const period = source.period === 'live' || source.period === 'daily' || source.period === 'weekly' || source.period === 'monthly'
+    ? source.period
+    : 'weekly';
+  const sendTime = typeof source.sendTime === 'string' && /^\d{2}:\d{2}$/.test(source.sendTime)
+    ? source.sendTime
+    : '07:00';
+  const recipient = typeof source.recipient === 'string' ? source.recipient.trim() : '';
+  const name = typeof source.name === 'string' ? source.name.trim() : '';
+  const id = typeof source.id === 'string' && source.id.trim() ? source.id.trim() : (fallbackId ?? randomUUID());
+
+  if (!recipient || !name) return null;
+
+  return {
+    id,
+    name,
+    recipient,
+    period,
+    cadence,
+    sendTime,
+    dayOfWeek: cadence === 'weekly' && typeof source.dayOfWeek === 'number' ? Math.max(0, Math.min(6, Math.round(source.dayOfWeek))) : null,
+    dayOfMonth: cadence === 'monthly' && typeof source.dayOfMonth === 'number' ? Math.max(1, Math.min(28, Math.round(source.dayOfMonth))) : null,
+    active: typeof source.active === 'boolean' ? source.active : true,
+    lastSentAt: typeof source.lastSentAt === 'string' && source.lastSentAt.trim() ? source.lastSentAt : null,
+    updatedAt: typeof source.updatedAt === 'string' && source.updatedAt.trim() ? source.updatedAt : new Date().toISOString(),
+  };
+}
+
+async function loadReportSchedules(orgId: string, vesselId: string) {
+  const { data } = await supabase
+    .from('audit_log')
+    .select('metadata')
+    .eq('org_id', orgId)
+    .eq('resource', vesselId)
+    .eq('action', 'report.schedules.updated')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const metadata = (data?.metadata ?? null) as Record<string, unknown> | null;
+  const schedules = Array.isArray(metadata?.schedules) ? metadata.schedules : [];
+
+  return schedules
+    .map((entry, index) => normalizeReportSchedule(entry, `schedule-${index + 1}`))
+    .filter((entry): entry is ReportSchedule => entry !== null);
+}
+
+function normalizeGuestNetworkSettings(value: unknown): GuestNetworkSettings {
+  if (!value || typeof value !== 'object') return DEFAULT_GUEST_NETWORK_SETTINGS;
+  const source = value as Partial<GuestNetworkSettings>;
+  return {
+    wifiEnabled: typeof source.wifiEnabled === 'boolean' ? source.wifiEnabled : DEFAULT_GUEST_NETWORK_SETTINGS.wifiEnabled,
+    portalEnabled: typeof source.portalEnabled === 'boolean' ? source.portalEnabled : DEFAULT_GUEST_NETWORK_SETTINGS.portalEnabled,
+    ssid: typeof source.ssid === 'string' && source.ssid.trim() ? source.ssid.trim() : DEFAULT_GUEST_NETWORK_SETTINGS.ssid,
+    wifiPass: typeof source.wifiPass === 'string' && source.wifiPass.trim() ? source.wifiPass : DEFAULT_GUEST_NETWORK_SETTINGS.wifiPass,
+    splashType: source.splashType === 'click' || source.splashType === 'none' ? source.splashType : 'tos',
+    accessMap: source.accessMap && typeof source.accessMap === 'object' ? source.accessMap : {},
+    bandwidthMap: source.bandwidthMap && typeof source.bandwidthMap === 'object' ? source.bandwidthMap : {},
+    lastSpeedTest: source.lastSpeedTest && typeof source.lastSpeedTest === 'object' ? source.lastSpeedTest : null,
+    updatedAt: typeof source.updatedAt === 'string' && source.updatedAt ? source.updatedAt : new Date().toISOString(),
+  };
+}
+
+async function loadGuestNetworkSettings(orgId: string, vesselId: string) {
+  const { data } = await supabase
+    .from('audit_log')
+    .select('metadata')
+    .eq('org_id', orgId)
+    .eq('resource', vesselId)
+    .eq('action', 'guest.network.updated')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const metadata = (data?.metadata ?? null) as Record<string, unknown> | null;
+  return normalizeGuestNetworkSettings(metadata?.settings);
+}
+
+async function saveGuestNetworkSettings(orgId: string, vesselId: string, actor: string, settings: GuestNetworkSettings, req: VercelRequest) {
+  await writeAudit({
+    org_id: orgId,
+    actor,
+    action: 'guest.network.updated',
+    resource: vesselId,
+    metadata: { settings },
+  }, req);
+  return settings;
+}
+
+async function latestSnapshot(vesselId: string) {
+  const { data } = await supabase
+    .from('vessel_snapshots')
+    .select('devices, internet_status')
+    .eq('vessel_id', vesselId)
+    .single();
+
+  return data as { devices?: Array<{ status?: string }>; internet_status?: { downloadMbps?: number; uploadMbps?: number; latencyMs?: number } } | null;
+}
+
 function sanitizeFileName(fileName: string) {
   return fileName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').slice(0, 120) || 'pen-test-report.pdf';
 }
@@ -174,6 +324,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const resource = req.query.resource as string;
 
   if (req.method === 'POST') {
+    if (resource === 'guest-network-speed-test') {
+      const current = await loadGuestNetworkSettings(vessel.org_id, vessel.id);
+      const snapshot = await latestSnapshot(vessel.id);
+      const activeDevices = (snapshot?.devices ?? []).filter(device => device?.status === 'online').length;
+      const baseDownload = Math.max(4, snapshot?.internet_status?.downloadMbps ?? 35);
+      const baseUpload = Math.max(2, snapshot?.internet_status?.uploadMbps ?? Math.max(8, baseDownload / 3));
+      const result: GuestNetworkSpeedResult = {
+        dl: Math.max(2, +(baseDownload * Math.max(0.55, 1 - activeDevices * 0.03)).toFixed(1)),
+        ul: Math.max(1, +(baseUpload * Math.max(0.6, 1 - activeDevices * 0.025)).toFixed(1)),
+        ping: Math.max(12, Math.round((snapshot?.internet_status?.latencyMs ?? 45) + activeDevices * 2)),
+        testedAt: new Date().toISOString(),
+      };
+
+      await saveGuestNetworkSettings(vessel.org_id, vessel.id, auth.userId, {
+        ...current,
+        lastSpeedTest: result,
+        updatedAt: new Date().toISOString(),
+      }, req);
+
+      return res.json(result);
+    }
+
     if (resource === 'pen-test-report') {
       const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName.trim() : '';
       const contentType = typeof req.body?.contentType === 'string' ? req.body.contentType.trim() : 'application/octet-stream';
@@ -280,22 +452,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === 'PUT') {
-    if (resource !== 'notifications') {
-      return res.status(405).json({ error: 'Method not allowed' });
+    if (resource === 'notifications') {
+      const current = await loadNotificationPrefs(vessel.org_id);
+      const preferences = mergeNotificationPrefs(req.body, current);
+
+      await writeAudit({
+        org_id: vessel.org_id,
+        actor: auth.userId,
+        action: 'notification.preferences.updated',
+        resource: vessel.id,
+        metadata: { preferences },
+      }, req);
+
+      return res.json(preferences);
     }
 
-    const current = await loadNotificationPrefs(vessel.org_id);
-    const preferences = mergeNotificationPrefs(req.body, current);
+    if (resource === 'report-schedules') {
+      const schedules = Array.isArray(req.body?.schedules)
+        ? req.body.schedules.map((entry: unknown) => normalizeReportSchedule(entry)).filter((entry: ReportSchedule | null): entry is ReportSchedule => entry !== null)
+        : [];
 
-    await writeAudit({
-      org_id: vessel.org_id,
-      actor: auth.userId,
-      action: 'notification.preferences.updated',
-      resource: vessel.id,
-      metadata: { preferences },
-    }, req);
+      await writeAudit({
+        org_id: vessel.org_id,
+        actor: auth.userId,
+        action: 'report.schedules.updated',
+        resource: vessel.id,
+        metadata: { schedules },
+      }, req);
 
-    return res.json(preferences);
+      return res.json(schedules);
+    }
+
+    if (resource === 'guest-network') {
+      const current = await loadGuestNetworkSettings(vessel.org_id, vessel.id);
+      const settings = normalizeGuestNetworkSettings({ ...current, ...(req.body ?? {}) });
+      await saveGuestNetworkSettings(vessel.org_id, vessel.id, auth.userId, settings, req);
+      return res.json(settings);
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   if (resource === 'alerts' || resource === 'devices') {
@@ -372,6 +567,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (resource === 'notifications') {
     return res.json(await loadNotificationPrefs(vessel.org_id));
+  }
+
+  if (resource === 'report-schedules') {
+    return res.json(await loadReportSchedules(vessel.org_id, vessel.id));
+  }
+
+  if (resource === 'guest-network') {
+    return res.json(await loadGuestNetworkSettings(vessel.org_id, vessel.id));
   }
 
   if (resource === 'pen-test-report') {

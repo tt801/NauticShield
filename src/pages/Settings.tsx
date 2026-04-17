@@ -22,7 +22,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { fetchJSON, fetchWithFallback } from '@/api/client';
+import { agentApi, fetchJSON, fetchWithFallback } from '@/api/client';
 import { CLOUD_API_URL, VESSEL_ID } from '@/api/config';
 
 // ── Plan definitions ─────────────────────────────────────────────
@@ -517,6 +517,9 @@ export default function Settings() {
   const [cloudMsg,         setCloudMsg]         = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [cloudVessels,     setCloudVessels]     = useState<Array<{ id: string; name: string; last_synced_at: string | null }> | null>(null);
   const [cloudCopied,      setCloudCopied]      = useState(false);
+  const [bootstrapToken,   setBootstrapToken]   = useState('');
+  const [bootstrapExpiry,  setBootstrapExpiry]  = useState('');
+  const [bootstrapLoading, setBootstrapLoading] = useState(false);
 
   useEffect(() => {
     if (activeTab !== 'cloud' || !CLOUD_API_URL) return;
@@ -553,6 +556,22 @@ export default function Settings() {
     navigator.clipboard.writeText(cloudApiKey);
     setCloudCopied(true);
     setTimeout(() => setCloudCopied(false), 2000);
+  }
+
+  async function handleCreateBootstrapToken() {
+    if (!cloudVesselId.trim()) return;
+    setBootstrapLoading(true);
+    setCloudMsg(null);
+    try {
+      const result = await agentApi.cloud.createBootstrapToken(cloudVesselId.trim());
+      setBootstrapToken(result.bootstrapToken);
+      setBootstrapExpiry(result.expiresAt);
+      setCloudMsg({ type: 'ok', text: 'Bootstrap token generated. Use it once on the shipped mini PC to auto-provision cloud sync and relay access.' });
+    } catch (error) {
+      setCloudMsg({ type: 'err', text: error instanceof Error ? error.message : 'Bootstrap token generation failed' });
+    } finally {
+      setBootstrapLoading(false);
+    }
   }
 
   const tabs: { id: typeof activeTab; label: string; icon: React.ElementType; require?: boolean }[] = [
@@ -1626,6 +1645,42 @@ export default function Settings() {
                   </div>
                 </div>
               )}
+
+              <div style={{ marginTop: 18, padding: 16, background: '#050912', border: '1px solid #1a2535', borderRadius: 10 }}>
+                <div style={{ color: '#f0f4f8', fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Plug-and-Play Bootstrap</div>
+                <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
+                  Generate a one-time bootstrap token for a pre-built mini PC. On first boot, the agent can exchange it for the vessel ID, cloud sync key, and relay credentials automatically.
+                </div>
+                <button
+                  onClick={handleCreateBootstrapToken}
+                  disabled={!cloudVesselId.trim() || !CLOUD_API_URL || bootstrapLoading}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    background: '#0d1421', color: '#d4a847', border: '1px solid rgba(212,168,71,0.25)', borderRadius: 9,
+                    padding: '10px 16px', fontSize: 13, fontWeight: 700,
+                    cursor: (!cloudVesselId.trim() || !CLOUD_API_URL || bootstrapLoading) ? 'not-allowed' : 'pointer',
+                    opacity: (!cloudVesselId.trim() || !CLOUD_API_URL || bootstrapLoading) ? 0.6 : 1,
+                  }}
+                >
+                  <Cloud size={14} /> {bootstrapLoading ? 'Generating…' : 'Generate Bootstrap Token'}
+                </button>
+
+                {bootstrapToken && (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ color: '#22c55e', fontSize: 12, fontWeight: 700, marginBottom: 8 }}>One-time bootstrap token</div>
+                    <code style={{ display: 'block', background: '#0d1421', color: '#f0f4f8', borderRadius: 8, padding: '10px 12px', wordBreak: 'break-all', fontSize: 13 }}>{bootstrapToken}</code>
+                    <div style={{ color: '#6b7f92', fontSize: 12, marginTop: 10, lineHeight: 1.7 }}>
+                      Expires: {new Date(bootstrapExpiry).toLocaleString()}
+                      <br />
+                      Mini PC env:
+                      <br />
+                      <code style={{ color: '#d4a847' }}>BOOTSTRAP_URL={CLOUD_API_URL}</code>
+                      <br />
+                      <code style={{ color: '#d4a847' }}>BOOTSTRAP_TOKEN={bootstrapToken}</code>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </Card>
 

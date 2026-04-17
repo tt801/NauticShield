@@ -2,6 +2,29 @@ import { useUser, UserButton } from '@clerk/clerk-react'
 import { NavLink } from 'react-router-dom'
 import { LayoutDashboard, Users, CreditCard, ScrollText, ShieldCheck, Terminal } from 'lucide-react'
 
+const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined
+
+function isLocalDevHost() {
+  if (typeof window === 'undefined') return false
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname)
+}
+
+function ClerkUserFooter() {
+  const { user } = useUser()
+
+  return (
+    <>
+      <UserButton appearance={{ elements: { avatarBox: { width: 28, height: 28 } } }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#e8edf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {user?.firstName ?? user?.emailAddresses[0]?.emailAddress ?? 'Admin'}
+        </div>
+        <div style={{ fontSize: 11, color: '#22c55e' }}>Admin</div>
+      </div>
+    </>
+  )
+}
+
 const NAV = [
   { to: '/fleet',     icon: LayoutDashboard, label: 'Fleet' },
   { to: '/customers', icon: Users,           label: 'Customers' },
@@ -26,7 +49,8 @@ const S = {
 };
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  const { user } = useUser();
+  const hasClerk = !!CLERK_KEY && !isLocalDevHost()
+
   return (
     <div style={S.shell}>
       <aside style={S.sidebar}>
@@ -44,13 +68,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div style={S.footer}>
-          <UserButton appearance={{ elements: { avatarBox: { width: 28, height: 28 } } }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#e8edf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.firstName ?? user?.emailAddresses[0]?.emailAddress ?? 'Admin'}
-            </div>
-            <div style={{ fontSize: 11, color: '#22c55e' }}>Admin</div>
-          </div>
+          {hasClerk ? (
+            <ClerkUserFooter />
+          ) : (
+            <>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#131e2d', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#22c55e', fontSize: 12, fontWeight: 700 }}>
+                A
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#e8edf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  Local Admin
+                </div>
+                <div style={{ fontSize: 11, color: '#22c55e' }}>Dev mode</div>
+              </div>
+            </>
+          )}
         </div>
       </aside>
       <main style={S.main}>{children}</main>

@@ -609,3 +609,144 @@ export function setNotificationPrefs(prefs: Partial<NotificationPrefs>): Notific
   `).run(next.emailTo, next.phoneTo, JSON.stringify(next.categories));
   return next;
 }
+
+// ── Guest Network Settings ───────────────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS guest_network_settings (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    wifiEnabled   INTEGER NOT NULL DEFAULT 1,
+    portalEnabled INTEGER NOT NULL DEFAULT 1,
+    ssid          TEXT NOT NULL DEFAULT 'Aurora Guest',
+    wifiPass      TEXT NOT NULL DEFAULT 'Yacht2026!',
+    splashType    TEXT NOT NULL DEFAULT 'tos',
+    accessMap     TEXT NOT NULL DEFAULT '{}',
+    bandwidthMap  TEXT NOT NULL DEFAULT '{}',
+    lastSpeedTest TEXT,
+    updatedAt     TEXT NOT NULL DEFAULT ''
+  );
+  INSERT OR IGNORE INTO guest_network_settings (
+    id, wifiEnabled, portalEnabled, ssid, wifiPass, splashType, accessMap, bandwidthMap, lastSpeedTest, updatedAt
+  ) VALUES (1, 1, 1, 'Aurora Guest', 'Yacht2026!', 'tos', '{}', '{}', NULL, '');
+`);
+
+export type GuestDeviceAccess = 'approved' | 'blocked' | 'pending';
+export type GuestSplashType = 'tos' | 'click' | 'none';
+
+export interface GuestNetworkSpeedResult {
+  dl: number;
+  ul: number;
+  ping: number;
+  testedAt: string;
+}
+
+export interface GuestNetworkSettings {
+  wifiEnabled: boolean;
+  portalEnabled: boolean;
+  ssid: string;
+  wifiPass: string;
+  splashType: GuestSplashType;
+  accessMap: Record<string, GuestDeviceAccess>;
+  bandwidthMap: Record<string, string>;
+  lastSpeedTest: GuestNetworkSpeedResult | null;
+  updatedAt: string;
+}
+
+const DEFAULT_GUEST_NETWORK_SETTINGS: GuestNetworkSettings = {
+  wifiEnabled: true,
+  portalEnabled: true,
+  ssid: 'Aurora Guest',
+  wifiPass: 'Yacht2026!',
+  splashType: 'tos',
+  accessMap: {},
+  bandwidthMap: {},
+  lastSpeedTest: null,
+  updatedAt: '',
+};
+
+export function getGuestNetworkSettings(): GuestNetworkSettings {
+  const row = db.prepare('SELECT * FROM guest_network_settings WHERE id = 1').get() as {
+    wifiEnabled: number;
+    portalEnabled: number;
+    ssid: string;
+    wifiPass: string;
+    splashType: string;
+    accessMap: string;
+    bandwidthMap: string;
+    lastSpeedTest: string | null;
+    updatedAt: string;
+  } | undefined;
+
+  if (!row) return DEFAULT_GUEST_NETWORK_SETTINGS;
+
+  let accessMap: Record<string, GuestDeviceAccess> = {};
+  let bandwidthMap: Record<string, string> = {};
+  let lastSpeedTest: GuestNetworkSpeedResult | null = null;
+
+  try { accessMap = JSON.parse(row.accessMap); } catch { /* ignore */ }
+  try { bandwidthMap = JSON.parse(row.bandwidthMap); } catch { /* ignore */ }
+  try { lastSpeedTest = row.lastSpeedTest ? JSON.parse(row.lastSpeedTest) : null; } catch { /* ignore */ }
+
+  return {
+    wifiEnabled: Boolean(row.wifiEnabled),
+    portalEnabled: Boolean(row.portalEnabled),
+    ssid: row.ssid,
+    wifiPass: row.wifiPass,
+    splashType: row.splashType === 'click' || row.splashType === 'none' ? row.splashType : 'tos',
+    accessMap,
+    bandwidthMap,
+    lastSpeedTest,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function setGuestNetworkSettings(patch: Partial<GuestNetworkSettings>): GuestNetworkSettings {
+  const current = getGuestNetworkSettings();
+  const next: GuestNetworkSettings = {
+    wifiEnabled: typeof patch.wifiEnabled === 'boolean' ? patch.wifiEnabled : current.wifiEnabled,
+    portalEnabled: typeof patch.portalEnabled === 'boolean' ? patch.portalEnabled : current.portalEnabled,
+    ssid: typeof patch.ssid === 'string' ? patch.ssid : current.ssid,
+    wifiPass: typeof patch.wifiPass === 'string' ? patch.wifiPass : current.wifiPass,
+    splashType: patch.splashType ?? current.splashType,
+    accessMap: patch.accessMap ?? current.accessMap,
+    bandwidthMap: patch.bandwidthMap ?? current.bandwidthMap,
+    lastSpeedTest: patch.lastSpeedTest ?? current.lastSpeedTest,
+    updatedAt: new Date().toISOString(),
+  };
+
+  db.prepare(`
+    UPDATE guest_network_settings
+    SET wifiEnabled = ?, portalEnabled = ?, ssid = ?, wifiPass = ?, splashType = ?, accessMap = ?, bandwidthMap = ?, lastSpeedTest = ?, updatedAt = ?
+    WHERE id = 1
+  `).run(
+    next.wifiEnabled ? 1 : 0,
+    next.portalEnabled ? 1 : 0,
+    next.ssid,
+    next.wifiPass,
+    next.splashType,
+    JSON.stringify(next.accessMap),
+    JSON.stringify(next.bandwidthMap),
+    next.lastSpeedTest ? JSON.stringify(next.lastSpeedTest) : null,
+    next.updatedAt,
+  );
+
+  return next;
+}
+
+export function runGuestNetworkSpeedTest(): GuestNetworkSpeedResult {
+  const internet = getInternetStatus();
+  const activeDevices = getDevices().filter(device => device.status === 'online').length;
+  const baseDownload = Math.max(4, internet?.downloadMbps ?? 35);
+  const baseUpload = Math.max(2, internet?.uploadMbps ?? Math.max(8, baseDownload / 3));
+  const dl = Math.max(2, +(baseDownload * Math.max(0.55, 1 - activeDevices * 0.03)).toFixed(1));
+  const ul = Math.max(1, +(baseUpload * Math.max(0.6, 1 - activeDevices * 0.025)).toFixed(1));
+  const ping = Math.max(12, Math.round((internet?.latencyMs ?? 45) + activeDevices * 2));
+  const result: GuestNetworkSpeedResult = {
+    dl,
+    ul,
+    ping,
+    testedAt: new Date().toISOString(),
+  };
+  setGuestNetworkSettings({ lastSpeedTest: result });
+  return result;
+}

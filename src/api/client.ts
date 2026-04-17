@@ -66,10 +66,61 @@ export interface PenTestReportMeta {
   downloadUrl: string | null;
 }
 
+export type ReportPeriod = 'live' | 'daily' | 'weekly' | 'monthly';
+export type ReportCadence = 'daily' | 'weekly' | 'monthly';
+
+export interface ReportSchedule {
+  id: string;
+  name: string;
+  recipient: string;
+  period: ReportPeriod;
+  cadence: ReportCadence;
+  sendTime: string;
+  dayOfWeek: number | null;
+  dayOfMonth: number | null;
+  active: boolean;
+  lastSentAt: string | null;
+  updatedAt: string;
+}
+
+export type GuestDeviceAccess = 'approved' | 'blocked' | 'pending';
+export type GuestSplashType = 'tos' | 'click' | 'none';
+
+export interface GuestNetworkSpeedResult {
+  dl: number;
+  ul: number;
+  ping: number;
+  testedAt: string;
+}
+
+export interface GuestNetworkSettings {
+  wifiEnabled: boolean;
+  portalEnabled: boolean;
+  ssid: string;
+  wifiPass: string;
+  splashType: GuestSplashType;
+  accessMap: Record<string, GuestDeviceAccess>;
+  bandwidthMap: Record<string, string>;
+  lastSpeedTest: GuestNetworkSpeedResult | null;
+  updatedAt: string;
+}
+
+export interface CloudBootstrapBundle {
+  vesselId: string;
+  vesselName: string | null;
+  cloudSyncUrl: string;
+  cloudApiKey: string;
+  relayUrl: string | null;
+  relaySecret: string | null;
+  provisionedAt: string;
+}
+
 // ── JWT token provider (set by AuthTokenBridge) ──────────────────
 // Avoids importing Clerk hooks directly into this module (non-React file).
 
 let _getToken: (() => Promise<string | null>) | null = null;
+let _resolvedVesselId: string | null = VESSEL_ID || null;
+let _resolveVesselIdPromise: Promise<string | null> | null = null;
 
 export function setTokenProvider(fn: () => Promise<string | null>) {
   _getToken = fn;
@@ -130,10 +181,33 @@ function setMode(m: ConnectionMode) {
   }
 }
 
-function toCloudPath(path: string) {
-  return VESSEL_ID
-    ? path.replace(/^\/api\//, `/api/vessels/${VESSEL_ID}/`)
-    : path;
+async function resolveCloudVesselId() {
+  if (_resolvedVesselId) return _resolvedVesselId;
+  if (_resolveVesselIdPromise) return _resolveVesselIdPromise;
+  if (!CLOUD_API_URL) return null;
+
+  _resolveVesselIdPromise = (async () => {
+    try {
+      const vessels = await fetchJSON<Array<{ id: string }>>(`${CLOUD_API_URL}/api/vessels`);
+      const vesselId = vessels[0]?.id ?? null;
+      _resolvedVesselId = vesselId;
+      return vesselId;
+    } catch {
+      return null;
+    } finally {
+      _resolveVesselIdPromise = null;
+    }
+  })();
+
+  return _resolveVesselIdPromise;
+}
+
+async function toCloudVesselPath(path: string) {
+  const vesselId = await resolveCloudVesselId();
+  if (!vesselId) {
+    throw new Error('Cloud vessel is not configured for this account.');
+  }
+  return path.replace(/^\/api\//, `/api/vessels/${vesselId}/`);
 }
 
 /**
@@ -146,13 +220,13 @@ export async function fetchWithFallback<T>(path: string, init?: RequestInit): Pr
   if (!AGENT_URL) {
     if (!CLOUD_API_URL) { setMode('offline'); throw new Error('No agent or cloud URL configured'); }
     try {
-      const cloudPath = toCloudPath(path);
+      const cloudPath = await toCloudVesselPath(path);
       const result = await fetchJSON<T>(`${CLOUD_API_URL}${cloudPath}`, init);
       setMode('cloud');
       return result;
-    } catch {
+    } catch (error) {
       setMode('offline');
-      throw new Error('Cloud API unreachable');
+      throw error instanceof Error ? error : new Error('Cloud API unreachable');
     }
   }
 
@@ -175,7 +249,7 @@ export async function fetchWithFallback<T>(path: string, init?: RequestInit): Pr
 
     // Try cloud fallback — map /api/foo → /api/vessels/:vesselId/foo
     try {
-      const cloudPath = toCloudPath(path);
+      const cloudPath = await toCloudVesselPath(path);
       const cloudUrl = `${CLOUD_API_URL}${cloudPath}`;
       const result = await fetchJSON<T>(cloudUrl, init);
       setMode('cloud');
@@ -263,7 +337,7 @@ export const agentApi = {
         setMode('local');
         return result;
       } catch (error) {
-        const shouldRetryInCloud = error instanceof Error && CLOUD_API_URL && VESSEL_ID && (
+        const shouldRetryInCloud = error instanceof Error && CLOUD_API_URL && (
           /date and location are required/i.test(error.message) ||
           /date is required/i.test(error.message) ||
           /method not allowed/i.test(error.message) ||
@@ -274,7 +348,7 @@ export const agentApi = {
           throw error;
         }
 
-        const cloudPath = toCloudPath('/api/voyage');
+        const cloudPath = await toCloudVesselPath('/api/voyage');
         const created = await fetchJSON<VoyageEntry>(`${CLOUD_API_URL}${cloudPath}`, init);
         setMode('cloud');
         return created;
@@ -328,6 +402,60 @@ export const agentApi = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+      });
+    },
+  },
+
+  reports: {
+    listSchedules: async () => {
+      if (!CLOUD_API_URL) {
+        return Promise.resolve([] as ReportSchedule[]);
+      }
+      const vesselId = await resolveCloudVesselId();
+      if (!vesselId) return [];
+      return fetchJSON<ReportSchedule[]>(`${CLOUD_API_URL}/api/vessels/${vesselId}/report-schedules`);
+    },
+
+    saveSchedules: async (schedules: ReportSchedule[]) => {
+      if (!CLOUD_API_URL) {
+        return Promise.reject(new Error('Cloud report schedules are not configured for this vessel.'));
+      }
+      const vesselId = await resolveCloudVesselId();
+      if (!vesselId) {
+        return Promise.reject(new Error('Cloud vessel is not configured for this account.'));
+      }
+      return fetchJSON<ReportSchedule[]>(`${CLOUD_API_URL}/api/vessels/${vesselId}/report-schedules`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schedules }),
+      });
+    },
+  },
+
+  guestNetwork: {
+    load: () =>
+      fetchWithFallback<GuestNetworkSettings>('/api/guest-network'),
+
+    save: (settings: Partial<GuestNetworkSettings>) =>
+      fetchWithFallback<GuestNetworkSettings>('/api/guest-network', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      }),
+
+    runSpeedTest: () =>
+      fetchWithFallback<GuestNetworkSpeedResult>('/api/guest-network/speed-test', {
+        method: 'POST',
+      }),
+  },
+
+  cloud: {
+    createBootstrapToken: async (vesselId: string) => {
+      if (!CLOUD_API_URL) throw new Error('Cloud API URL is not configured.');
+      return fetchJSON<{ vesselId: string; bootstrapToken: string; expiresAt: string }>(`${CLOUD_API_URL}/api/vessels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vesselId, issueBootstrapToken: true }),
       });
     },
   },

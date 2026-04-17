@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import type { Device, DeviceType } from '@/data/mock';
 import { useVesselData } from '@/context/VesselDataProvider';
+import { agentApi } from '@/api/client';
+import type { GuestNetworkSpeedResult } from '@/api/client';
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -212,6 +214,8 @@ export default function GuestNetwork() {
   // Initial state: unknown devices = pending, known = approved
   const [accessMap, setAccessMap] = useState<Record<string, DeviceAccess>>({});
   const [bwMap,     setBwMap]     = useState<Record<string, string>>({});
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsError, setSettingsError] = useState('');
 
   // Sync new guest devices into maps as they appear
   useEffect(() => {
@@ -227,8 +231,37 @@ export default function GuestNetwork() {
     });
   }, [guestDevices]);
 
-  const setAccess = (id: string, v: DeviceAccess) => setAccessMap(m => ({ ...m, [id]: v }));
-  const setBw     = (id: string, v: string)        => setBwMap(m => ({ ...m, [id]: v }));
+  useEffect(() => {
+    if (settingsLoading) return;
+    const nextAccess = { ...accessMap };
+    const nextBandwidth = { ...bwMap };
+    let changed = false;
+    guestDevices.forEach(device => {
+      if (!(device.id in nextAccess)) {
+        nextAccess[device.id] = device.type === 'unknown' ? 'pending' : 'approved';
+        changed = true;
+      }
+      if (!(device.id in nextBandwidth)) {
+        nextBandwidth[device.id] = 'unlimited';
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    setAccessMap(nextAccess);
+    setBwMap(nextBandwidth);
+    void saveSettings({ accessMap: nextAccess, bandwidthMap: nextBandwidth });
+  }, [guestDevices, settingsLoading]);
+
+  const setAccess = (id: string, v: DeviceAccess) => {
+    const next = { ...accessMap, [id]: v };
+    setAccessMap(next);
+    void saveSettings({ accessMap: next });
+  };
+  const setBw = (id: string, v: string) => {
+    const next = { ...bwMap, [id]: v };
+    setBwMap(next);
+    void saveSettings({ bandwidthMap: next });
+  };
 
   const [wifiEnabled,   setWifiEnabled]   = useState(true);
   const [portalEnabled, setPortalEnabled] = useState(true);
@@ -237,15 +270,69 @@ export default function GuestNetwork() {
   const [wifiPass,      setWifiPass]      = useState('Yacht2026!');
   const [splashType,    setSplashType]    = useState<'tos' | 'click' | 'none'>('tos');
   const [speedRunning,  setSpeedRunning]  = useState(false);
-  const [speedResult,   setSpeedResult]   = useState<{dl: number; ul: number; ping: number} | null>(null);
+  const [speedResult,   setSpeedResult]   = useState<GuestNetworkSpeedResult | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    agentApi.guestNetwork.load().then(settings => {
+      if (cancelled) return;
+      setWifiEnabled(settings.wifiEnabled);
+      setPortalEnabled(settings.portalEnabled);
+      setSsid(settings.ssid);
+      setWifiPass(settings.wifiPass);
+      setSplashType(settings.splashType);
+      setAccessMap(settings.accessMap);
+      setBwMap(settings.bandwidthMap);
+      setSpeedResult(settings.lastSpeedTest);
+      setSettingsError('');
+    }).catch(error => {
+      if (cancelled) return;
+      setSettingsError(error instanceof Error ? error.message : 'Guest network settings could not be loaded.');
+    }).finally(() => {
+      if (!cancelled) setSettingsLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function saveSettings(patch: {
+    wifiEnabled?: boolean;
+    portalEnabled?: boolean;
+    ssid?: string;
+    wifiPass?: string;
+    splashType?: 'tos' | 'click' | 'none';
+    accessMap?: Record<string, DeviceAccess>;
+    bandwidthMap?: Record<string, string>;
+  }) {
+    try {
+      const saved = await agentApi.guestNetwork.save(patch);
+      setWifiEnabled(saved.wifiEnabled);
+      setPortalEnabled(saved.portalEnabled);
+      setSsid(saved.ssid);
+      setWifiPass(saved.wifiPass);
+      setSplashType(saved.splashType);
+      setAccessMap(saved.accessMap);
+      setBwMap(saved.bandwidthMap);
+      setSpeedResult(saved.lastSpeedTest);
+      setSettingsError('');
+    } catch (error) {
+      setSettingsError(error instanceof Error ? error.message : 'Guest network settings could not be saved.');
+    }
+  }
 
   function runSpeedTest() {
     setSpeedRunning(true);
     setSpeedResult(null);
-    setTimeout(() => {
-      setSpeedResult({ dl: 47 + Math.random() * 15, ul: 18 + Math.random() * 8, ping: 28 + Math.random() * 20 });
+    agentApi.guestNetwork.runSpeedTest().then(result => {
+      setSpeedResult(result);
+      setSettingsError('');
+    }).catch(error => {
+      setSettingsError(error instanceof Error ? error.message : 'Speed test failed.');
+    }).finally(() => {
       setSpeedRunning(false);
-    }, 2400);
+    });
   }
 
   const approved = guestDevices.filter(d => accessMap[d.id] === 'approved').length;
@@ -254,23 +341,27 @@ export default function GuestNetwork() {
   const unknown  = guestDevices.filter(d => d.type === 'unknown').length;
 
   function blockAllUnknown() {
-    setAccessMap(m => {
-      const next = { ...m };
-      guestDevices.filter(d => d.type === 'unknown').forEach(d => { next[d.id] = 'blocked'; });
-      return next;
-    });
+    const next = { ...accessMap };
+    guestDevices.filter(d => d.type === 'unknown').forEach(d => { next[d.id] = 'blocked'; });
+    setAccessMap(next);
+    void saveSettings({ accessMap: next });
   }
 
   function approveAll() {
-    setAccessMap(m => {
-      const next = { ...m };
-      guestDevices.forEach(d => { next[d.id] = 'approved'; });
-      return next;
-    });
+    const next = { ...accessMap };
+    guestDevices.forEach(d => { next[d.id] = 'approved'; });
+    setAccessMap(next);
+    void saveSettings({ accessMap: next });
   }
 
   return (
     <div style={{ padding: 28, maxWidth: 1000, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {settingsError ? (
+        <div style={{ color: '#fca5a5', fontSize: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px 14px' }}>
+          {settingsError}
+        </div>
+      ) : null}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -303,7 +394,11 @@ export default function GuestNetwork() {
             </div>
           </div>
           <button
-            onClick={() => setWifiEnabled(v => !v)}
+            onClick={() => {
+              const next = !wifiEnabled;
+              setWifiEnabled(next);
+              void saveSettings({ wifiEnabled: next });
+            }}
             style={{
               padding: '10px 24px', borderRadius: 10, fontSize: 13, fontWeight: 700,
               border: 'none', cursor: 'pointer',
@@ -346,7 +441,11 @@ export default function GuestNetwork() {
             </div>
           </div>
           <button
-            onClick={() => setPortalEnabled(v => !v)}
+            onClick={() => {
+              const next = !portalEnabled;
+              setPortalEnabled(next);
+              void saveSettings({ portalEnabled: next });
+            }}
             style={{ padding: '10px 24px', borderRadius: 10, fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer', background: portalEnabled ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}
           >
             {portalEnabled ? 'Disable' : 'Enable'}
@@ -361,6 +460,7 @@ export default function GuestNetwork() {
               <input
                 value={ssid}
                 onChange={e => setSsid(e.target.value)}
+                onBlur={() => void saveSettings({ ssid })}
                 style={{ width: '100%', background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, color: '#f0f4f8', fontSize: 13, padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
@@ -372,6 +472,7 @@ export default function GuestNetwork() {
                   type={showPass ? 'text' : 'password'}
                   value={wifiPass}
                   onChange={e => setWifiPass(e.target.value)}
+                  onBlur={() => void saveSettings({ wifiPass })}
                   style={{ flex: 1, background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, color: '#f0f4f8', fontSize: 13, padding: '8px 12px', outline: 'none' }}
                 />
                 <button onClick={() => setShowPass(v => !v)} style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', color: '#6b7f92', display: 'flex', alignItems: 'center' }}>
@@ -386,7 +487,10 @@ export default function GuestNetwork() {
                 {([['tos','Accept T&Cs'],['click','Click-through'],['none','No Page']] as const).map(([v, lbl]) => (
                   <button
                     key={v}
-                    onClick={() => setSplashType(v)}
+                    onClick={() => {
+                      setSplashType(v);
+                      void saveSettings({ splashType: v });
+                    }}
                     style={{
                       flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 11, fontWeight: 600,
                       border: '1px solid', cursor: 'pointer',
@@ -436,6 +540,7 @@ export default function GuestNetwork() {
             ))}
           </div>
         )}
+        {speedResult ? <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 10 }}>Last tested {new Date(speedResult.testedAt).toLocaleString()}</div> : null}
       </Card>
 
       {/* Bulk actions */}

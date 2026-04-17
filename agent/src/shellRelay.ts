@@ -10,24 +10,23 @@
 import crypto from 'crypto';
 import * as pty from 'node-pty';
 import WebSocket from 'ws';
-
-const RELAY_URL    = process.env.RELAY_URL;
-const VESSEL_ID    = process.env.VESSEL_ID ?? 'UNKNOWN';
-const RELAY_SECRET = process.env.RELAY_SECRET;
+import { getAgentConfig } from './config';
 
 function makeAgentToken(): string {
+  const config = getAgentConfig();
   const w = Math.floor(Date.now() / 30000);
   return crypto
-    .createHmac('sha256', RELAY_SECRET!)
-    .update(`${VESSEL_ID}:agent:${w}`)
+    .createHmac('sha256', config.relaySecret)
+    .update(`${config.vesselId}:agent:${w}`)
     .digest('hex');
 }
 
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function connect(): void {
+  const config = getAgentConfig();
   const token = makeAgentToken();
-  const url   = `${RELAY_URL}/ws?type=agent&vesselId=${encodeURIComponent(VESSEL_ID)}&token=${token}`;
+  const url   = `${config.relayUrl}/ws?type=agent&vesselId=${encodeURIComponent(config.vesselId)}&token=${token}`;
 
   const ws = new WebSocket(url);
   let shell: pty.IPty | null = null;
@@ -46,7 +45,7 @@ function connect(): void {
       if (ws.readyState === WebSocket.OPEN) ws.send(Buffer.from(data, 'binary'));
     });
 
-    shell.onExit(({ exitCode }) => {
+    shell.onExit(({ exitCode }: { exitCode: number }) => {
       console.log(`[shell-relay] Shell exited (code ${exitCode})`);
       ws.close();
     });
@@ -83,10 +82,11 @@ function connect(): void {
 }
 
 export function startShellRelay(): void {
-  if (!RELAY_URL || !RELAY_SECRET) {
+  const config = getAgentConfig();
+  if (!config.relayUrl || !config.relaySecret) {
     console.log('[shell-relay] RELAY_URL or RELAY_SECRET not set — shell relay disabled');
     return;
   }
-  console.log(`[shell-relay] Connecting to ${RELAY_URL} as vessel ${VESSEL_ID}`);
+  console.log(`[shell-relay] Connecting to ${config.relayUrl} as vessel ${config.vesselId}`);
   connect();
 }
