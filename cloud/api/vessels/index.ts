@@ -8,7 +8,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClerkClient }  from '@clerk/backend';
 import { createHash, randomUUID } from 'crypto';
 import { supabase }           from '../../lib/supabase';
-import { verifyClerkJWT, hashApiKey, listAccessibleOrgIds } from '../../lib/auth';
+import { verifyClerkJWT, hashApiKey, listAccessibleOrgIds, resolvePreferredOrgId } from '../../lib/auth';
 import { cors }               from '../../lib/cors';
 import { writeAudit }         from '../../lib/audit';
 
@@ -126,7 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await verifyClerkJWT(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const orgId = auth.orgId ?? auth.userId;
+  const orgId = await resolvePreferredOrgId(req, auth);
   const accessibleOrgIds = await listAccessibleOrgIds(auth);
 
   // ── GET /api/vessels ─────────────────────────────────────────────

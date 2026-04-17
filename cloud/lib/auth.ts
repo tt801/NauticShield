@@ -41,6 +41,22 @@ export async function listAccessibleOrgIds(auth: ClerkAuth): Promise<string[]> {
   }
 }
 
+export async function resolvePreferredOrgId(req: VercelRequest, auth: ClerkAuth): Promise<string> {
+  const accessibleOrgIds = await listAccessibleOrgIds(auth);
+
+  if (auth.orgId && accessibleOrgIds.includes(auth.orgId)) {
+    return auth.orgId;
+  }
+
+  const requestedOrgIdHeader = req.headers['x-nauticshield-org-id'];
+  const requestedOrgId = Array.isArray(requestedOrgIdHeader) ? requestedOrgIdHeader[0] : requestedOrgIdHeader;
+  if (requestedOrgId && accessibleOrgIds.includes(requestedOrgId)) {
+    return requestedOrgId;
+  }
+
+  return accessibleOrgIds[0] ?? auth.userId;
+}
+
 export async function verifyClerkJWT(req: VercelRequest): Promise<ClerkAuth | null> {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return null;

@@ -122,6 +122,7 @@ export interface CloudBootstrapBundle {
 let _getToken: (() => Promise<string | null>) | null = null;
 let _resolvedVesselId: string | null = null;
 let _resolveVesselIdPromise: Promise<string | null> | null = null;
+const ACTIVE_ORG_STORAGE_KEY = 'nauticshield.activeOrgId';
 
 export function setTokenProvider(fn: () => Promise<string | null>) {
   _getToken = fn;
@@ -134,9 +135,11 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
   const timer      = setTimeout(() => controller.abort(new DOMException('Request timed out', 'AbortError')), API_TIMEOUT);
   try {
     const token = _getToken ? await _getToken() : null;
+    const activeOrgId = typeof window === 'undefined' ? null : window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
     const headers: HeadersInit = {
       ...(init?.headers ?? {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(activeOrgId ? { 'X-NauticShield-Org-Id': activeOrgId } : {}),
     };
     const res = await fetch(url, { ...init, headers, signal: controller.signal });
     if (!res.ok) {
