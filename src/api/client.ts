@@ -389,14 +389,14 @@ export const agentApi = {
         setMode('local');
         return updated;
       } catch (error) {
-        const isNetworkError = error instanceof Error && (
+        const shouldRetryInCloud = error instanceof Error && CLOUD_API_URL && ((
           error.name === 'AbortError' ||
           error.message.startsWith('Failed to fetch') ||
           error.message.startsWith('NetworkError') ||
           error.message.includes('fetch')
-        );
+        ) || /entry not found/i.test(error.message) || /method not allowed/i.test(error.message) || /http 4\d\d/i.test(error.message));
 
-        if (!isNetworkError || !CLOUD_API_URL) {
+        if (!shouldRetryInCloud) {
           throw error;
         }
 
@@ -422,14 +422,14 @@ export const agentApi = {
         setMode('local');
         return deleted;
       } catch (error) {
-        const isNetworkError = error instanceof Error && (
+        const shouldRetryInCloud = error instanceof Error && CLOUD_API_URL && ((
           error.name === 'AbortError' ||
           error.message.startsWith('Failed to fetch') ||
           error.message.startsWith('NetworkError') ||
           error.message.includes('fetch')
-        );
+        ) || /entry not found/i.test(error.message) || /method not allowed/i.test(error.message) || /http 4\d\d/i.test(error.message));
 
-        if (!isNetworkError || !CLOUD_API_URL) {
+        if (!shouldRetryInCloud) {
           throw error;
         }
 
@@ -514,6 +514,21 @@ export const agentApi = {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ schedules }),
+      });
+    },
+
+    sendNow: async (scheduleId: string) => {
+      if (!CLOUD_API_URL) {
+        return Promise.reject(new Error('Cloud report delivery is not configured for this vessel.'));
+      }
+      const vesselId = await resolveCloudVesselId();
+      if (!vesselId) {
+        return Promise.reject(new Error(NO_CLOUD_VESSEL_MESSAGE));
+      }
+      return fetchJSON<ReportSchedule[]>(`${CLOUD_API_URL}/api/vessels/${vesselId}/report-schedules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send-now', scheduleId }),
       });
     },
   },

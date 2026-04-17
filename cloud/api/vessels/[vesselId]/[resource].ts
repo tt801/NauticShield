@@ -8,6 +8,7 @@
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { randomUUID } from 'crypto';
+import { Resend } from 'resend';
 import { supabase }            from '../../../lib/supabase';
 import { verifyClerkJWT, assertVesselOwnership } from '../../../lib/auth';
 import { cors } from '../../../lib/cors';
@@ -210,6 +211,78 @@ async function loadReportSchedules(orgId: string, vesselId: string) {
   return schedules
     .map((entry, index) => normalizeReportSchedule(entry, `schedule-${index + 1}`))
     .filter((entry): entry is ReportSchedule => entry !== null);
+}
+
+function renderScheduleEmailHtml(vesselName: string, schedule: ReportSchedule, snapshot: any, openFindings: any[]) {
+  const internet = snapshot?.internet_status ?? {};
+  const devices = Array.isArray(snapshot?.devices) ? snapshot.devices : [];
+  const alerts = Array.isArray(snapshot?.alerts) ? snapshot.alerts : [];
+  const activeAlerts = alerts.filter((alert: any) => !alert?.resolved);
+  const sections = new Set(schedule.sections);
+  const zoneGroups = devices.reduce((acc: Record<string, { total: number; online: number }>, device: any) => {
+    const zone = typeof device?.location === 'string' && device.location.trim() ? device.location.trim() : 'Unassigned';
+    if (!acc[zone]) acc[zone] = { total: 0, online: 0 };
+    acc[zone].total += 1;
+    if (device?.status === 'online') acc[zone].online += 1;
+    return acc;
+  }, {});
+  const zoneRows = Object.entries(zoneGroups as Record<string, { total: number; online: number }>).map(([zone, counts]) => `<li>${zone}: ${counts.online}/${counts.total} online</li>`).join('');
+  const findingItems = openFindings.slice(0, 5).map((finding: any) => `<li>${finding.check_name} (${finding.status})</li>`).join('');
+  const alertItems = activeAlerts.slice(0, 5).map((alert: any) => `<li>${alert.title}</li>`).join('');
+
+  return `
+    <div style="font-family:Arial,sans-serif;background:#080b10;color:#f0f4f8;padding:24px;line-height:1.6">
+      <h1 style="margin:0 0 12px;font-size:22px;">${schedule.name}</h1>
+      <p style="margin:0 0 16px;color:#9fb0c0;">${vesselName} · ${schedule.period.toUpperCase()} report</p>
+      ${sections.has('overview') ? `
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px;">
+        <div style="background:#0d1421;border:1px solid #1a2535;border-radius:12px;padding:14px;"><div style="color:#6b7f92;font-size:12px;">Download</div><div style="font-size:24px;font-weight:700;">${internet.downloadMbps ?? 0} Mbps</div></div>
+        <div style="background:#0d1421;border:1px solid #1a2535;border-radius:12px;padding:14px;"><div style="color:#6b7f92;font-size:12px;">Latency</div><div style="font-size:24px;font-weight:700;">${internet.latencyMs ?? 0} ms</div></div>
+        <div style="background:#0d1421;border:1px solid #1a2535;border-radius:12px;padding:14px;"><div style="color:#6b7f92;font-size:12px;">Devices Online</div><div style="font-size:24px;font-weight:700;">${devices.filter((device: any) => device?.status === 'online').length}</div></div>
+        <div style="background:#0d1421;border:1px solid #1a2535;border-radius:12px;padding:14px;"><div style="color:#6b7f92;font-size:12px;">Active Alerts</div><div style="font-size:24px;font-weight:700;">${activeAlerts.length}</div></div>
+      </div>` : ''}
+      ${sections.has('connectivity') ? `<h2 style="font-size:16px;margin:0 0 8px;">Internet & Connectivity</h2><ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;"><li>Provider: ${internet.provider ?? 'Unknown'}</li><li>Download: ${internet.downloadMbps ?? 0} Mbps</li><li>Upload: ${internet.uploadMbps ?? 0} Mbps</li><li>Latency: ${internet.latencyMs ?? 0} ms</li></ul>` : ''}
+      ${sections.has('devices') ? `<h2 style="font-size:16px;margin:0 0 8px;">Device Status</h2><ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;"><li>${devices.filter((device: any) => device?.status === 'online').length} devices online</li><li>${devices.filter((device: any) => device?.status === 'offline').length} devices offline</li><li>${devices.filter((device: any) => device?.type === 'unknown').length} unrecognised devices</li></ul>` : ''}
+      ${sections.has('zones') ? `<h2 style="font-size:16px;margin:0 0 8px;">Zone Health</h2><ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">${zoneRows || '<li>No zone data available.</li>'}</ul>` : ''}
+      ${sections.has('security') ? `<h2 style="font-size:16px;margin:0 0 8px;">Security Posture</h2><ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;"><li>${activeAlerts.length} active alerts</li><li>${openFindings.length} open cyber findings</li></ul>` : ''}
+      ${sections.has('alerts') ? `<h2 style="font-size:16px;margin:0 0 8px;">Active Alerts</h2><ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">${alertItems || '<li>No active alerts.</li>'}</ul>` : ''}
+      ${sections.has('cyber') ? `<h2 style="font-size:16px;margin:0 0 8px;">Open Security Findings</h2><ul style="padding-left:20px;color:#dce8f4;">${findingItems || '<li>No open findings.</li>'}</ul>` : ''}
+    </div>
+  `;
+}
+
+async function sendReportScheduleNow(orgId: string, vesselId: string, vesselName: string | null, schedule: ReportSchedule, actor: string, req: VercelRequest) {
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const fromEmail = process.env.REPORTS_FROM_EMAIL;
+  if (!resendApiKey || !fromEmail) {
+    throw new Error('Scheduled report email delivery is not configured.');
+  }
+
+  const resend = new Resend(resendApiKey);
+  const [{ data: snapshot }, { data: findings }] = await Promise.all([
+    supabase.from('vessel_snapshots').select('devices, alerts, internet_status').eq('vessel_id', vesselId).single(),
+    supabase.from('cyber_findings').select('data').eq('vessel_id', vesselId).order('synced_at', { ascending: false }).limit(20),
+  ]);
+
+  const openFindings = (findings ?? []).map((entry: any) => entry.data).filter((finding: any) => finding?.findingStatus !== 'remediated');
+  const result = await resend.emails.send({
+    from: fromEmail,
+    to: schedule.recipient,
+    subject: `${vesselName ?? vesselId} · ${schedule.name}`,
+    html: renderScheduleEmailHtml(vesselName ?? vesselId, schedule, snapshot, openFindings),
+  });
+
+  if (result.error) {
+    throw new Error(result.error.message || 'Report email could not be delivered.');
+  }
+
+  await writeAudit({
+    org_id: orgId,
+    actor,
+    action: 'report.schedule.sent',
+    resource: vesselId,
+    metadata: { scheduleId: schedule.id, recipient: schedule.recipient, manual: true },
+  }, req);
 }
 
 function normalizeGuestNetworkSettings(value: unknown): GuestNetworkSettings {
@@ -459,6 +532,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }, req);
 
       return res.status(201).json(entry);
+    }
+
+    if (resource === 'report-schedules' && req.body?.action === 'send-now') {
+      const scheduleId = typeof req.body?.scheduleId === 'string' ? req.body.scheduleId.trim() : '';
+      if (!scheduleId) {
+        return res.status(400).json({ error: 'scheduleId is required' });
+      }
+
+      const schedules = await loadReportSchedules(vessel.org_id, vessel.id);
+      const schedule = schedules.find(entry => entry.id === scheduleId);
+      if (!schedule) {
+        return res.status(404).json({ error: 'Schedule not found' });
+      }
+
+      await sendReportScheduleNow(vessel.org_id, vessel.id, vessel.name ?? null, schedule, auth.userId, req);
+
+      const stamped = schedules.map(entry => entry.id === scheduleId
+        ? { ...entry, lastSentAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        : entry);
+
+      await writeAudit({
+        org_id: vessel.org_id,
+        actor: auth.userId,
+        action: 'report.schedules.updated',
+        resource: vessel.id,
+        metadata: { schedules: stamped },
+      }, req);
+
+      return res.json(stamped);
     }
 
     return res.status(405).json({ error: 'Method not allowed' });

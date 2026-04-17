@@ -106,6 +106,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const customerId = sub.customer as string;
         const status     = sub.status   as string;
         const plan       = planFromSubscription(sub);
+        const orgId      = typeof (sub.metadata as Record<string, unknown> | undefined)?.orgId === 'string'
+          ? (sub.metadata as Record<string, string>).orgId
+          : null;
         const periodEnd  = new Date((sub.current_period_end as number) * 1000).toISOString();
         const trialEnd   = (sub.trial_end as number | null)
           ? new Date((sub.trial_end as number) * 1000).toISOString()
@@ -122,15 +125,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           updatePayload.plan = plan;
         }
 
-        await supabase
+        const updateQuery = supabase
           .from('vessels')
           .update(updatePayload)
           .eq('stripe_customer_id', customerId);
 
+        const { data: matchedRows } = await supabase
+          .from('vessels')
+          .select('id')
+          .eq('stripe_customer_id', customerId)
+          .limit(1);
+
+        if (matchedRows && matchedRows.length > 0) {
+          await updateQuery;
+        } else if (orgId) {
+          await supabase
+            .from('vessels')
+            .update({ ...updatePayload, stripe_customer_id: customerId })
+            .eq('org_id', orgId);
+        } else {
+          await updateQuery;
+        }
+
         await writeAudit({
           actor:    'stripe',
           action:   `subscription.${event.type === 'customer.subscription.created' ? 'created' : 'updated'}`,
-          metadata: { customerId, status, plan, periodEnd, trialEnd, cancelAtPeriodEnd },
+          metadata: { customerId, status, plan, periodEnd, trialEnd, cancelAtPeriodEnd, orgId },
         });
         break;
       }

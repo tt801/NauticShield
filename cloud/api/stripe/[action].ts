@@ -118,38 +118,14 @@ async function handleCheckout(req: VercelRequest, res: VercelResponse) {
   const defaultSuccess = 'https://app.nauticshield.io/onboarding?checkout=success';
   const defaultCancel = 'https://nauticshield.io/#pricing';
   const auth = await verifyClerkJWT(req);
+  const orgId = auth?.orgId ?? auth?.userId ?? '';
 
   try {
-    let customer: Awaited<ReturnType<typeof findExistingCustomerForUser>> = null;
     let customerEmail: string | undefined;
-    let customerName: string | undefined;
 
     if (auth) {
       const checkoutUser = await getCheckoutUser(auth.userId);
       customerEmail = checkoutUser.email;
-      customerName = checkoutUser.name;
-
-      customer = await findExistingCustomerForUser(stripe, auth.userId, customerEmail);
-      if (!customer) {
-        customer = await stripe.customers.create({
-          email: customerEmail,
-          name: customerName,
-          metadata: {
-            userId: auth.userId,
-            plan,
-          },
-        });
-      } else if (customer.metadata.userId !== auth.userId || customer.name !== customerName || customer.email !== customerEmail) {
-        customer = await stripe.customers.update(customer.id, {
-          email: customerEmail,
-          name: customerName,
-          metadata: {
-            ...customer.metadata,
-            userId: auth.userId,
-            plan,
-          },
-        });
-      }
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -157,19 +133,23 @@ async function handleCheckout(req: VercelRequest, res: VercelResponse) {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: successUrl ?? defaultSuccess,
       cancel_url: cancelUrl ?? defaultCancel,
-      customer: customer?.id,
-      customer_creation: customer ? undefined : 'always',
-      customer_email: customer ? undefined : customerEmail,
+      customer_creation: 'always',
+      customer_email: customerEmail,
       client_reference_id: auth?.userId,
       billing_address_collection: 'required',
       tax_id_collection: { enabled: true },
-      customer_update: customer ? { address: 'auto', name: 'auto' } : undefined,
       subscription_data: {
         metadata: {
           plan,
           userId: auth?.userId ?? '',
+          orgId,
         },
         trial_period_days: 14,
+      },
+      metadata: {
+        plan,
+        userId: auth?.userId ?? '',
+        orgId,
       },
       allow_promotion_codes: true,
     });

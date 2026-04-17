@@ -241,12 +241,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .filter((finding: any) => finding?.findingStatus !== 'remediated');
 
     for (const schedule of dueSchedules) {
-      await resend.emails.send({
+      const result = await resend.emails.send({
         from: fromEmail,
         to: schedule.recipient,
         subject: `${vessel?.name ?? vesselId} · ${schedule.name}`,
         html: renderHtml(vessel?.name ?? vesselId, schedule, snapshot, openFindings),
       });
+
+      if (result.error) {
+        throw new Error(result.error.message || `Failed to send scheduled report ${schedule.id}`);
+      }
 
       schedule.lastSentAt = now.toISOString();
       schedule.updatedAt = now.toISOString();

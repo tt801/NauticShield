@@ -1255,9 +1255,13 @@ export default function Report() {
   }
 
   async function runScheduledReport(schedule: ReportSchedule) {
-    downloadPDF(schedule.period);
-    const stamped = schedules.map(entry => entry.id === schedule.id ? { ...entry, lastSentAt: new Date().toISOString(), updatedAt: new Date().toISOString() } : entry);
-    await persistSchedules(stamped);
+    setScheduleError('');
+    try {
+      const updated = await agentApi.reports.sendNow(schedule.id);
+      setSchedules(updated);
+    } catch (error) {
+      setScheduleError(error instanceof Error ? error.message : 'Report email could not be sent.');
+    }
   }
 
   return (
@@ -1655,7 +1659,7 @@ export default function Report() {
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button onClick={() => runScheduledReport(schedule)} style={{ background: 'rgba(14,165,233,0.12)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.25)', borderRadius: 8, padding: '7px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Play size={12} /> Run now
+                    <Play size={12} /> Email now
                   </button>
                   <button onClick={() => openEditSchedule(schedule)} style={{ background: 'transparent', color: '#d4a847', border: '1px solid rgba(212,168,71,0.25)', borderRadius: 8, padding: '7px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Pencil size={12} /> Edit
