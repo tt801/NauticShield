@@ -64,11 +64,17 @@ type ScheduleDraft = {
   period: ReportPeriod;
   cadence: ReportCadence;
   sendTime: string;
+  timeZone: string;
   dayOfWeek: number;
   dayOfMonth: number;
   active: boolean;
   lastSentAt: string | null;
 };
+
+const DEFAULT_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+const TIME_ZONES = typeof Intl.supportedValuesOf === 'function'
+  ? Intl.supportedValuesOf('timeZone')
+  : ['UTC', DEFAULT_TIME_ZONE];
 
 function createScheduleDraft(schedule?: ReportSchedule): ScheduleDraft {
   return {
@@ -78,6 +84,7 @@ function createScheduleDraft(schedule?: ReportSchedule): ScheduleDraft {
     period: schedule?.period ?? 'weekly',
     cadence: schedule?.cadence ?? 'weekly',
     sendTime: schedule?.sendTime ?? '07:00',
+    timeZone: schedule?.timeZone ?? DEFAULT_TIME_ZONE,
     dayOfWeek: schedule?.dayOfWeek ?? 1,
     dayOfMonth: schedule?.dayOfMonth ?? 1,
     active: schedule?.active ?? true,
@@ -93,6 +100,7 @@ function toSchedule(draft: ScheduleDraft): ReportSchedule {
     period: draft.period,
     cadence: draft.cadence,
     sendTime: draft.sendTime,
+    timeZone: draft.timeZone,
     dayOfWeek: draft.cadence === 'weekly' ? draft.dayOfWeek : null,
     dayOfMonth: draft.cadence === 'monthly' ? draft.dayOfMonth : null,
     active: draft.active,
@@ -102,9 +110,9 @@ function toSchedule(draft: ScheduleDraft): ReportSchedule {
 }
 
 function formatScheduleFrequency(schedule: ReportSchedule) {
-  if (schedule.cadence === 'daily') return `Daily at ${schedule.sendTime}`;
-  if (schedule.cadence === 'weekly') return `${WEEKDAYS[schedule.dayOfWeek ?? 1]} at ${schedule.sendTime}`;
-  return `Day ${schedule.dayOfMonth ?? 1} at ${schedule.sendTime}`;
+  if (schedule.cadence === 'daily') return `Daily at ${schedule.sendTime} (${schedule.timeZone})`;
+  if (schedule.cadence === 'weekly') return `${WEEKDAYS[schedule.dayOfWeek ?? 1]} at ${schedule.sendTime} (${schedule.timeZone})`;
+  return `Day ${schedule.dayOfMonth ?? 1} at ${schedule.sendTime} (${schedule.timeZone})`;
 }
 
 function formatLastSent(value: string | null) {
@@ -171,6 +179,12 @@ function ScheduleEditor({
           <div>
             <div style={labelStyle}>Send Time</div>
             <input type="time" value={draft.sendTime} onChange={event => onChange({ sendTime: event.target.value })} style={inputStyle} />
+          </div>
+          <div>
+            <div style={labelStyle}>Time Zone</div>
+            <select value={draft.timeZone} onChange={event => onChange({ timeZone: event.target.value })} style={inputStyle}>
+              {TIME_ZONES.map(value => <option key={value} value={value}>{value}</option>)}
+            </select>
           </div>
           {draft.cadence === 'weekly' && (
             <div>

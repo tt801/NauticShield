@@ -32,6 +32,7 @@ type ReportSchedule = {
   period: ReportPeriod;
   cadence: ReportCadence;
   sendTime: string;
+  timeZone: string;
   dayOfWeek: number | null;
   dayOfMonth: number | null;
   active: boolean;
@@ -172,6 +173,7 @@ function normalizeReportSchedule(value: unknown, fallbackId?: string): ReportSch
     period,
     cadence,
     sendTime,
+    timeZone: typeof source.timeZone === 'string' && source.timeZone.trim() ? source.timeZone : 'UTC',
     dayOfWeek: cadence === 'weekly' && typeof source.dayOfWeek === 'number' ? Math.max(0, Math.min(6, Math.round(source.dayOfWeek))) : null,
     dayOfMonth: cadence === 'monthly' && typeof source.dayOfMonth === 'number' ? Math.max(1, Math.min(28, Math.round(source.dayOfMonth))) : null,
     active: typeof source.active === 'boolean' ? source.active : true,

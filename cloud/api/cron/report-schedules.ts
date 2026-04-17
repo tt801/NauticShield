@@ -12,6 +12,7 @@ type ReportSchedule = {
   period: ReportPeriod;
   cadence: ReportCadence;
   sendTime: string;
+  timeZone: string;
   dayOfWeek: number | null;
   dayOfMonth: number | null;
   active: boolean;
@@ -30,6 +31,7 @@ function normalizeReportSchedule(value: unknown): ReportSchedule | null {
     period: source.period === 'live' || source.period === 'daily' || source.period === 'monthly' ? source.period : 'weekly',
     cadence: source.cadence === 'daily' || source.cadence === 'monthly' ? source.cadence : 'weekly',
     sendTime: typeof source.sendTime === 'string' ? source.sendTime : '07:00',
+    timeZone: typeof source.timeZone === 'string' && source.timeZone.trim() ? source.timeZone : 'UTC',
     dayOfWeek: typeof source.dayOfWeek === 'number' ? source.dayOfWeek : null,
     dayOfMonth: typeof source.dayOfMonth === 'number' ? source.dayOfMonth : null,
     active: source.active !== false,
@@ -38,23 +40,55 @@ function normalizeReportSchedule(value: unknown): ReportSchedule | null {
   };
 }
 
+function getZonedParts(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+
+  const lookup = Object.fromEntries(formatter.formatToParts(date).map(part => [part.type, part.value]));
+  const weekdayMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+
+  return {
+    dateKey: `${lookup.year}-${lookup.month}-${lookup.day}`,
+    weekday: weekdayMap[lookup.weekday] ?? 0,
+    dayOfMonth: Number(lookup.day ?? '1'),
+    hour: Number(lookup.hour ?? '0'),
+    minute: Number(lookup.minute ?? '0'),
+  };
+}
+
 function isDue(schedule: ReportSchedule, now: Date) {
   if (!schedule.active) return false;
+  const zonedNow = getZonedParts(now, schedule.timeZone);
   const [hours, minutes] = schedule.sendTime.split(':').map(Number);
-  if (now.getUTCHours() !== hours || now.getUTCMinutes() >= minutes + 15 || now.getUTCMinutes() < minutes) {
+  if (zonedNow.hour !== hours || zonedNow.minute < minutes || zonedNow.minute >= minutes + 15) {
     return false;
   }
 
   if (schedule.lastSentAt) {
-    const last = new Date(schedule.lastSentAt);
-    const sameDay = last.toISOString().slice(0, 10) === now.toISOString().slice(0, 10);
+    const sameDay = getZonedParts(new Date(schedule.lastSentAt), schedule.timeZone).dateKey === zonedNow.dateKey;
     if (schedule.cadence === 'daily' && sameDay) return false;
     if (schedule.cadence === 'weekly' && sameDay) return false;
     if (schedule.cadence === 'monthly' && sameDay) return false;
   }
 
-  if (schedule.cadence === 'weekly') return (schedule.dayOfWeek ?? 1) === now.getUTCDay();
-  if (schedule.cadence === 'monthly') return (schedule.dayOfMonth ?? 1) === now.getUTCDate();
+  if (schedule.cadence === 'weekly') return (schedule.dayOfWeek ?? 1) === zonedNow.weekday;
+  if (schedule.cadence === 'monthly') return (schedule.dayOfMonth ?? 1) === zonedNow.dayOfMonth;
   return true;
 }
 

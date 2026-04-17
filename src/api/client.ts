@@ -76,6 +76,7 @@ export interface ReportSchedule {
   period: ReportPeriod;
   cadence: ReportCadence;
   sendTime: string;
+  timeZone: string;
   dayOfWeek: number | null;
   dayOfMonth: number | null;
   active: boolean;
@@ -119,7 +120,7 @@ export interface CloudBootstrapBundle {
 // Avoids importing Clerk hooks directly into this module (non-React file).
 
 let _getToken: (() => Promise<string | null>) | null = null;
-let _resolvedVesselId: string | null = VESSEL_ID || null;
+let _resolvedVesselId: string | null = null;
 let _resolveVesselIdPromise: Promise<string | null> | null = null;
 
 export function setTokenProvider(fn: () => Promise<string | null>) {
@@ -189,7 +190,9 @@ async function resolveCloudVesselId() {
   _resolveVesselIdPromise = (async () => {
     try {
       const vessels = await fetchJSON<Array<{ id: string }>>(`${CLOUD_API_URL}/api/vessels`);
-      const vesselId = vessels[0]?.id ?? null;
+      const vesselId = VESSEL_ID && vessels.some(vessel => vessel.id === VESSEL_ID)
+        ? VESSEL_ID
+        : (vessels[0]?.id ?? null);
       _resolvedVesselId = vesselId;
       return vesselId;
     } catch {
@@ -388,17 +391,24 @@ export const agentApi = {
       }),
 
     latestPenTestReport: () => {
-      if (!CLOUD_API_URL || !VESSEL_ID) {
+      if (!CLOUD_API_URL) {
         return Promise.resolve(null as PenTestReportMeta | null);
       }
-      return fetchJSON<PenTestReportMeta | null>(`${CLOUD_API_URL}/api/vessels/${VESSEL_ID}/pen-test-report`);
+      return resolveCloudVesselId().then(vesselId => {
+        if (!vesselId) return null;
+        return fetchJSON<PenTestReportMeta | null>(`${CLOUD_API_URL}/api/vessels/${vesselId}/pen-test-report`);
+      });
     },
 
-    uploadPenTestReport: (payload: { fileName: string; contentType: string; fileDataBase64: string }) => {
-      if (!CLOUD_API_URL || !VESSEL_ID) {
-        return Promise.reject(new Error('Cloud upload is not configured for this vessel.'));
+    uploadPenTestReport: async (payload: { fileName: string; contentType: string; fileDataBase64: string }) => {
+      if (!CLOUD_API_URL) {
+        throw new Error('Cloud upload is not configured for this vessel.');
       }
-      return fetchJSON<PenTestReportMeta>(`${CLOUD_API_URL}/api/vessels/${VESSEL_ID}/pen-test-report`, {
+      const vesselId = await resolveCloudVesselId();
+      if (!vesselId) {
+        throw new Error('Cloud vessel is not configured for this account.');
+      }
+      return fetchJSON<PenTestReportMeta>(`${CLOUD_API_URL}/api/vessels/${vesselId}/pen-test-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
