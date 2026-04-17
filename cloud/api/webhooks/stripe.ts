@@ -45,9 +45,37 @@ function verifyStripeSignature(payload: string, header: string, secret: string):
   }
 }
 
-// ── Subscription status → plan mapping ──────────────────────────────────────
-function planFromMetadata(metadata: Record<string, string>): string {
-  return metadata?.plan ?? 'starter';
+function normalizePlan(plan?: string | null): string | null {
+  switch ((plan ?? '').toLowerCase()) {
+    case 'starter':
+    case 'basic':
+    case 'coastal':
+      return 'coastal';
+    case 'pro':
+    case 'superyacht':
+      return 'superyacht';
+    case 'enterprise':
+    case 'fleet':
+      return 'fleet';
+    default:
+      return null;
+  }
+}
+
+function planFromSubscription(sub: Record<string, unknown>): string | null {
+  const metadataPlan = normalizePlan((sub.metadata as Record<string, string> | undefined)?.plan ?? null);
+  if (metadataPlan) return metadataPlan;
+
+  const priceIds = Array.isArray((sub.items as { data?: Array<{ price?: { id?: string } }> } | undefined)?.data)
+    ? ((sub.items as { data: Array<{ price?: { id?: string } }> }).data.map(item => item.price?.id).filter((value): value is string => Boolean(value)))
+    : [];
+
+  const coastalPriceId = process.env.STRIPE_PRICE_COASTAL;
+  const superyachtPriceId = process.env.STRIPE_PRICE_SUPERYACHT;
+
+  if (superyachtPriceId && priceIds.includes(superyachtPriceId)) return 'superyacht';
+  if (coastalPriceId && priceIds.includes(coastalPriceId)) return 'coastal';
+  return null;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -77,22 +105,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const sub        = event.data.object;
         const customerId = sub.customer as string;
         const status     = sub.status   as string;
-        const plan       = planFromMetadata(sub.metadata as Record<string, string>);
+        const plan       = planFromSubscription(sub);
         const periodEnd  = new Date((sub.current_period_end as number) * 1000).toISOString();
         const trialEnd   = (sub.trial_end as number | null)
           ? new Date((sub.trial_end as number) * 1000).toISOString()
           : null;
         const cancelAtPeriodEnd = Boolean(sub.cancel_at_period_end);
 
+        const updatePayload: Record<string, string | null> = {
+          stripe_subscription_id: sub.id as string,
+          subscription_status: cancelAtPeriodEnd ? 'canceling' : status,
+          current_period_end: periodEnd,
+          trial_ends_at: trialEnd,
+        };
+        if (plan) {
+          updatePayload.plan = plan;
+        }
+
         await supabase
           .from('vessels')
-          .update({
-            stripe_subscription_id: sub.id,
-            subscription_status:    cancelAtPeriodEnd ? 'canceling' : status,
-            plan,
-            current_period_end:     periodEnd,
-            trial_ends_at:          trialEnd,
-          })
+          .update(updatePayload)
           .eq('stripe_customer_id', customerId);
 
         await writeAudit({

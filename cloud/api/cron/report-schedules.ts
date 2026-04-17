@@ -10,6 +10,7 @@ type ReportSchedule = {
   name: string;
   recipient: string;
   period: ReportPeriod;
+  sections: Array<'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber'>;
   cadence: ReportCadence;
   sendTime: string;
   timeZone: string;
@@ -20,6 +21,15 @@ type ReportSchedule = {
   updatedAt: string;
 };
 
+const DEFAULT_REPORT_SECTIONS: ReportSchedule['sections'] = ['overview', 'connectivity', 'devices', 'zones', 'security', 'alerts', 'cyber'];
+
+function normalizeReportSections(value: unknown): ReportSchedule['sections'] {
+  if (!Array.isArray(value) || value.length === 0) return DEFAULT_REPORT_SECTIONS;
+  const allowed = new Set(DEFAULT_REPORT_SECTIONS);
+  const normalized = value.filter((entry): entry is ReportSchedule['sections'][number] => typeof entry === 'string' && allowed.has(entry as ReportSchedule['sections'][number]));
+  return normalized.length > 0 ? normalized : DEFAULT_REPORT_SECTIONS;
+}
+
 function normalizeReportSchedule(value: unknown): ReportSchedule | null {
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<ReportSchedule>;
@@ -29,6 +39,7 @@ function normalizeReportSchedule(value: unknown): ReportSchedule | null {
     name: source.name,
     recipient: source.recipient,
     period: source.period === 'live' || source.period === 'daily' || source.period === 'monthly' ? source.period : 'weekly',
+    sections: normalizeReportSections(source.sections),
     cadence: source.cadence === 'daily' || source.cadence === 'monthly' ? source.cadence : 'weekly',
     sendTime: typeof source.sendTime === 'string' ? source.sendTime : '07:00',
     timeZone: typeof source.timeZone === 'string' && source.timeZone.trim() ? source.timeZone : 'UTC',
@@ -97,10 +108,24 @@ function renderHtml(vesselName: string, schedule: ReportSchedule, snapshot: any,
   const devices = Array.isArray(snapshot?.devices) ? snapshot.devices : [];
   const alerts = Array.isArray(snapshot?.alerts) ? snapshot.alerts : [];
   const activeAlerts = alerts.filter((alert: any) => !alert?.resolved);
+  const sections = new Set(schedule.sections);
+  const offlineDevices = devices.filter((device: any) => device?.status === 'offline');
+  const zoneGroups = devices.reduce((acc: Record<string, { total: number; online: number; offline: number }>, device: any) => {
+    const zone = typeof device?.location === 'string' && device.location.trim() ? device.location.trim() : 'Unassigned';
+    if (!acc[zone]) acc[zone] = { total: 0, online: 0, offline: 0 };
+    acc[zone].total += 1;
+    if (device?.status === 'online') acc[zone].online += 1;
+    else acc[zone].offline += 1;
+    return acc;
+  }, {});
+  const zoneRows = Object.entries(zoneGroups as Record<string, { total: number; online: number; offline: number }>).map(([zone, counts]) => `<li>${zone}: ${counts.online}/${counts.total} online</li>`).join('');
+  const findingItems = openFindings.slice(0, 5).map((finding: any) => `<li>${finding.check_name} (${finding.status})</li>`).join('');
+  const alertItems = activeAlerts.slice(0, 5).map((alert: any) => `<li>${alert.title}</li>`).join('');
   return `
     <div style="font-family:Arial,sans-serif;background:#080b10;color:#f0f4f8;padding:24px;line-height:1.6">
       <h1 style="margin:0 0 12px;font-size:22px;">${schedule.name}</h1>
       <p style="margin:0 0 16px;color:#9fb0c0;">${vesselName} · ${schedule.period.toUpperCase()} report</p>
+      ${sections.has('overview') ? `
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px;">
         <div style="background:#0d1421;border:1px solid #1a2535;border-radius:12px;padding:14px;">
           <div style="color:#6b7f92;font-size:12px;">Download</div>
@@ -119,10 +144,49 @@ function renderHtml(vesselName: string, schedule: ReportSchedule, snapshot: any,
           <div style="font-size:24px;font-weight:700;">${activeAlerts.length}</div>
         </div>
       </div>
+      ` : ''}
+      ${sections.has('connectivity') ? `
+      <h2 style="font-size:16px;margin:0 0 8px;">Internet & Connectivity</h2>
+      <ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">
+        <li>Provider: ${internet.provider ?? 'Unknown'}</li>
+        <li>Download: ${internet.downloadMbps ?? 0} Mbps</li>
+        <li>Upload: ${internet.uploadMbps ?? 0} Mbps</li>
+        <li>Latency: ${internet.latencyMs ?? 0} ms</li>
+      </ul>
+      ` : ''}
+      ${sections.has('devices') ? `
+      <h2 style="font-size:16px;margin:0 0 8px;">Device Status</h2>
+      <ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">
+        <li>${devices.filter((device: any) => device?.status === 'online').length} devices online</li>
+        <li>${offlineDevices.length} devices offline</li>
+        <li>${devices.filter((device: any) => device?.type === 'unknown').length} unrecognised devices</li>
+      </ul>
+      ` : ''}
+      ${sections.has('zones') ? `
+      <h2 style="font-size:16px;margin:0 0 8px;">Zone Health</h2>
+      <ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">
+        ${zoneRows || '<li>No zone data available.</li>'}
+      </ul>
+      ` : ''}
+      ${sections.has('security') ? `
+      <h2 style="font-size:16px;margin:0 0 8px;">Security Posture</h2>
+      <ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">
+        <li>${activeAlerts.length} active alerts</li>
+        <li>${openFindings.length} open cyber findings</li>
+      </ul>
+      ` : ''}
+      ${sections.has('alerts') ? `
+      <h2 style="font-size:16px;margin:0 0 8px;">Active Alerts</h2>
+      <ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">
+        ${alertItems || '<li>No active alerts.</li>'}
+      </ul>
+      ` : ''}
+      ${sections.has('cyber') ? `
       <h2 style="font-size:16px;margin:0 0 8px;">Open Security Findings</h2>
       <ul style="padding-left:20px;color:#dce8f4;">
-        ${(openFindings.slice(0, 5).map((finding: any) => `<li>${finding.check_name} (${finding.status})</li>`).join('')) || '<li>No open findings.</li>'}
+        ${findingItems || '<li>No open findings.</li>'}
       </ul>
+      ` : ''}
     </div>
   `;
 }

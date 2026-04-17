@@ -68,12 +68,14 @@ export interface PenTestReportMeta {
 
 export type ReportPeriod = 'live' | 'daily' | 'weekly' | 'monthly';
 export type ReportCadence = 'daily' | 'weekly' | 'monthly';
+export type ReportSection = 'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber';
 
 export interface ReportSchedule {
   id: string;
   name: string;
   recipient: string;
   period: ReportPeriod;
+  sections: ReportSection[];
   cadence: ReportCadence;
   sendTime: string;
   timeZone: string;
@@ -366,15 +368,81 @@ export const agentApi = {
       }
     },
 
-    update: (id: string, patch: Partial<Omit<VoyageEntry, 'id' | 'createdAt'>>) =>
-      fetchJSON<VoyageEntry>(`${AGENT_URL}/api/voyage/${id}`, {
-        method:  'PATCH',
+    update: async (id: string, patch: Partial<Omit<VoyageEntry, 'id' | 'createdAt'>>) => {
+      const init: RequestInit = {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(patch),
-      }),
+        body: JSON.stringify({ id, ...patch }),
+      };
 
-    delete: (id: string) =>
-      fetchJSON<{ ok: boolean }>(`${AGENT_URL}/api/voyage/${id}`, { method: 'DELETE' }),
+      if (!AGENT_URL) {
+        const cloudPath = await toCloudVesselPath('/api/voyage');
+        return fetchJSON<VoyageEntry>(`${CLOUD_API_URL}${cloudPath}`, init);
+      }
+
+      try {
+        const updated = await fetchJSON<VoyageEntry>(`${AGENT_URL}/api/voyage/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        });
+        setMode('local');
+        return updated;
+      } catch (error) {
+        const isNetworkError = error instanceof Error && (
+          error.name === 'AbortError' ||
+          error.message.startsWith('Failed to fetch') ||
+          error.message.startsWith('NetworkError') ||
+          error.message.includes('fetch')
+        );
+
+        if (!isNetworkError || !CLOUD_API_URL) {
+          throw error;
+        }
+
+        const cloudPath = await toCloudVesselPath('/api/voyage');
+        const updated = await fetchJSON<VoyageEntry>(`${CLOUD_API_URL}${cloudPath}`, init);
+        setMode('cloud');
+        return updated;
+      }
+    },
+
+    delete: async (id: string) => {
+      if (!AGENT_URL) {
+        const cloudPath = await toCloudVesselPath('/api/voyage');
+        return fetchJSON<{ ok: boolean }>(`${CLOUD_API_URL}${cloudPath}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+      }
+
+      try {
+        const deleted = await fetchJSON<{ ok: boolean }>(`${AGENT_URL}/api/voyage/${id}`, { method: 'DELETE' });
+        setMode('local');
+        return deleted;
+      } catch (error) {
+        const isNetworkError = error instanceof Error && (
+          error.name === 'AbortError' ||
+          error.message.startsWith('Failed to fetch') ||
+          error.message.startsWith('NetworkError') ||
+          error.message.includes('fetch')
+        );
+
+        if (!isNetworkError || !CLOUD_API_URL) {
+          throw error;
+        }
+
+        const cloudPath = await toCloudVesselPath('/api/voyage');
+        const deleted = await fetchJSON<{ ok: boolean }>(`${CLOUD_API_URL}${cloudPath}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+        setMode('cloud');
+        return deleted;
+      }
+    },
   },
 
   cyber: {

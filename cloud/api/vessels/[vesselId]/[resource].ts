@@ -30,6 +30,7 @@ type ReportSchedule = {
   name: string;
   recipient: string;
   period: ReportPeriod;
+  sections: Array<'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber'>;
   cadence: ReportCadence;
   sendTime: string;
   timeZone: string;
@@ -39,6 +40,15 @@ type ReportSchedule = {
   lastSentAt: string | null;
   updatedAt: string;
 };
+
+const DEFAULT_REPORT_SECTIONS: ReportSchedule['sections'] = ['overview', 'connectivity', 'devices', 'zones', 'security', 'alerts', 'cyber'];
+
+function normalizeReportSections(value: unknown): ReportSchedule['sections'] {
+  if (!Array.isArray(value) || value.length === 0) return DEFAULT_REPORT_SECTIONS;
+  const allowed = new Set(DEFAULT_REPORT_SECTIONS);
+  const normalized = value.filter((entry): entry is ReportSchedule['sections'][number] => typeof entry === 'string' && allowed.has(entry as ReportSchedule['sections'][number]));
+  return normalized.length > 0 ? normalized : DEFAULT_REPORT_SECTIONS;
+}
 type GuestDeviceAccess = 'approved' | 'blocked' | 'pending';
 type GuestSplashType = 'tos' | 'click' | 'none';
 type GuestNetworkSpeedResult = {
@@ -171,6 +181,7 @@ function normalizeReportSchedule(value: unknown, fallbackId?: string): ReportSch
     name,
     recipient,
     period,
+    sections: normalizeReportSections(source.sections),
     cadence,
     sendTime,
     timeZone: typeof source.timeZone === 'string' && source.timeZone.trim() ? source.timeZone : 'UTC',
@@ -493,6 +504,89 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  if (req.method === 'PATCH') {
+    if (resource !== 'voyage') {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    const { id, ...patch } = req.body ?? {};
+    if (typeof id !== 'string' || !id.trim()) {
+      return res.status(400).json({ error: 'id is required' });
+    }
+
+    const { data: existingRow, error: loadError } = await supabase
+      .from('voyage_log')
+      .select('data')
+      .eq('vessel_id', vessel.id)
+      .eq('id', id)
+      .maybeSingle();
+
+    if (loadError) {
+      return res.status(500).json({ error: loadError.message });
+    }
+    if (!existingRow?.data || typeof existingRow.data !== 'object') {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+
+    const merged = {
+      ...(existingRow.data as Record<string, unknown>),
+      ...patch,
+      id,
+    };
+
+    const { error } = await supabase.from('voyage_log').upsert({
+      id,
+      vessel_id: vessel.id,
+      data: merged,
+      synced_at: new Date().toISOString(),
+    }, { onConflict: 'id,vessel_id' });
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    await writeAudit({
+      org_id: vessel.org_id,
+      actor: auth.userId,
+      action: 'voyage.entry.updated',
+      resource: vessel.id,
+      metadata: { voyageId: id },
+    }, req);
+
+    return res.json(merged);
+  }
+
+  if (req.method === 'DELETE') {
+    if (resource !== 'voyage') {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    const id = typeof req.body?.id === 'string' ? req.body.id.trim() : '';
+    if (!id) {
+      return res.status(400).json({ error: 'id is required' });
+    }
+
+    const { error } = await supabase
+      .from('voyage_log')
+      .delete()
+      .eq('vessel_id', vessel.id)
+      .eq('id', id);
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    await writeAudit({
+      org_id: vessel.org_id,
+      actor: auth.userId,
+      action: 'voyage.entry.deleted',
+      resource: vessel.id,
+      metadata: { voyageId: id },
+    }, req);
+
+    return res.json({ ok: true });
   }
 
   if (resource === 'alerts' || resource === 'devices') {

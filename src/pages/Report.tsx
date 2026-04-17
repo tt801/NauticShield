@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useVesselData } from '@/context/VesselDataProvider';
 import { agentApi } from '@/api/client';
-import type { CyberAssessment, CyberFinding, ReportCadence, ReportPeriod, ReportSchedule } from '@/api/client';
+import type { CyberAssessment, CyberFinding, ReportCadence, ReportPeriod, ReportSchedule, ReportSection } from '@/api/client';
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -56,12 +56,39 @@ const CADENCE_LABELS: Record<ReportCadence, string> = {
   weekly: 'Weekly',
   monthly: 'Monthly',
 };
+const REPORT_SECTION_OPTIONS: Array<{ id: ReportSection; label: string }> = [
+  { id: 'overview', label: 'Overview & summary' },
+  { id: 'connectivity', label: 'Internet & connectivity' },
+  { id: 'devices', label: 'Device status' },
+  { id: 'zones', label: 'Zone health' },
+  { id: 'security', label: 'Security posture' },
+  { id: 'alerts', label: 'Active & resolved alerts' },
+  { id: 'cyber', label: 'Cyber findings' },
+];
+const DEFAULT_REPORT_SECTIONS = REPORT_SECTION_OPTIONS.map(option => option.id);
+
+function normalizeSections(sections?: ReportSection[] | null) {
+  if (!Array.isArray(sections) || sections.length === 0) {
+    return DEFAULT_REPORT_SECTIONS;
+  }
+
+  const allowed = new Set<ReportSection>(DEFAULT_REPORT_SECTIONS);
+  const normalized = sections.filter((section): section is ReportSection => allowed.has(section));
+  return normalized.length > 0 ? normalized : DEFAULT_REPORT_SECTIONS;
+}
+
+function formatSectionSummary(sections?: ReportSection[] | null) {
+  const normalized = normalizeSections(sections);
+  if (normalized.length === DEFAULT_REPORT_SECTIONS.length) return 'All sections';
+  return normalized.map(section => REPORT_SECTION_OPTIONS.find(option => option.id === section)?.label ?? section).join(', ');
+}
 
 type ScheduleDraft = {
   id: string;
   name: string;
   recipient: string;
   period: ReportPeriod;
+  sections: ReportSection[];
   cadence: ReportCadence;
   sendTime: string;
   timeZone: string;
@@ -82,6 +109,7 @@ function createScheduleDraft(schedule?: ReportSchedule): ScheduleDraft {
     name: schedule?.name ?? '',
     recipient: schedule?.recipient ?? '',
     period: schedule?.period ?? 'weekly',
+    sections: normalizeSections(schedule?.sections),
     cadence: schedule?.cadence ?? 'weekly',
     sendTime: schedule?.sendTime ?? '07:00',
     timeZone: schedule?.timeZone ?? DEFAULT_TIME_ZONE,
@@ -98,6 +126,7 @@ function toSchedule(draft: ScheduleDraft): ReportSchedule {
     name: draft.name.trim(),
     recipient: draft.recipient.trim(),
     period: draft.period,
+    sections: normalizeSections(draft.sections),
     cadence: draft.cadence,
     sendTime: draft.sendTime,
     timeZone: draft.timeZone,
@@ -124,6 +153,13 @@ function formatLastSent(value: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function scheduleErrorHint(error: string) {
+  if (/No cloud vessel is registered/i.test(error)) {
+    return 'Scheduled reports are cloud-delivered. Open Settings > Cloud Sync, register this vessel, then return here and save again.';
+  }
+  return '';
 }
 
 function ScheduleEditor({
@@ -169,6 +205,29 @@ function ScheduleEditor({
             <select value={draft.period} onChange={event => onChange({ period: event.target.value as ReportPeriod })} style={inputStyle}>
               {Object.entries(PERIOD_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={labelStyle}>Included Sections</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+              {REPORT_SECTION_OPTIONS.map(option => {
+                const checked = draft.sections.includes(option.id);
+                return (
+                  <label key={option.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#080b10', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 10px', color: '#dce8f4', fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={event => {
+                        const next = event.target.checked
+                          ? [...draft.sections, option.id]
+                          : draft.sections.filter(section => section !== option.id);
+                        onChange({ sections: normalizeSections(next) });
+                      }}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
           <div>
             <div style={labelStyle}>Cadence</div>
@@ -1261,6 +1320,13 @@ export default function Report() {
 
       {/* Overall health */}
       <Card>
+        <SectionTitle>Report Configuration</SectionTitle>
+        <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.7 }}>
+          Scheduled reports now keep their own content selection, so owner, captain, and crew recipients do not all receive the same report.
+        </div>
+      </Card>
+
+      <Card>
         <SectionTitle>Overall System Health</SectionTitle>
         <ScoreRing score={networkHealth.score} />
       </Card>
@@ -1555,7 +1621,12 @@ export default function Report() {
       {/* Scheduled Reports */}
       <Card>
         <SectionTitle>Scheduled Reports</SectionTitle>
-        {scheduleError && !editorOpen ? <div style={{ marginBottom: 10, color: '#fca5a5', fontSize: 12 }}>{scheduleError}</div> : null}
+        {scheduleError && !editorOpen ? (
+          <div style={{ marginBottom: 10, color: '#fca5a5', fontSize: 12, lineHeight: 1.6 }}>
+            <div>{scheduleError}</div>
+            {scheduleErrorHint(scheduleError) ? <div style={{ color: '#fcd34d', marginTop: 4 }}>{scheduleErrorHint(scheduleError)}</div> : null}
+          </div>
+        ) : null}
         {scheduleLoading ? (
           <div style={{ color: '#4a5a6a', fontSize: 13, padding: '16px 0' }}>Loading schedules…</div>
         ) : schedules.length === 0 ? (
@@ -1573,6 +1644,7 @@ export default function Report() {
                     <span style={{ background: schedule.active ? 'rgba(34,197,94,0.14)' : 'rgba(107,127,146,0.12)', color: schedule.active ? '#22c55e' : '#6b7f92', borderRadius: 999, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>{schedule.active ? 'ACTIVE' : 'PAUSED'}</span>
                   </div>
                   <div style={{ color: '#6b7f92', fontSize: 11, marginTop: 2 }}>{schedule.recipient} · {PERIOD_LABELS[schedule.period]}</div>
+                  <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 4 }}>{formatSectionSummary(schedule.sections)}</div>
                 </div>
                 <div style={{ color: '#4a5a6a', fontSize: 11, textAlign: 'right', flexShrink: 0, minWidth: 150 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', marginBottom: 2 }}>
