@@ -163,6 +163,8 @@ async function getDefaultPaymentMethod(
 async function findManagedSubscription(
   stripe: StripeClient,
   customer: StripeCustomer | null,
+  orgId: string,
+  userId: string,
   knownSubscriptionId?: string | null,
 ) {
   if (knownSubscriptionId) {
@@ -179,9 +181,39 @@ async function findManagedSubscription(
     limit: 10,
   });
 
-  return subscriptions.data.find(subscription =>
+  const matched = subscriptions.data.find(subscription =>
     subscription.cancel_at_period_end || MANAGED_SUBSCRIPTION_STATUSES.has(subscription.status),
   ) ?? subscriptions.data[0] ?? null;
+
+  if (matched) {
+    return matched;
+  }
+
+  const subscriptionSearch = stripe.subscriptions as typeof stripe.subscriptions & {
+    search?: (params: { query: string; limit?: number }) => Promise<{ data: StripeSubscription[] }>;
+  };
+
+  if (!subscriptionSearch.search) {
+    return null;
+  }
+
+  const queries = [
+    `metadata['orgId']:'${orgId}'`,
+    `metadata['userId']:'${userId}'`,
+  ];
+
+  for (const query of queries) {
+    const result = await subscriptionSearch.search({ query, limit: 10 });
+    const subscription = result.data.find(entry =>
+      entry.cancel_at_period_end || MANAGED_SUBSCRIPTION_STATUSES.has(entry.status),
+    ) ?? result.data[0] ?? null;
+
+    if (subscription) {
+      return subscription;
+    }
+  }
+
+  return null;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -225,8 +257,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       orgId,
       user.primaryEmailAddress?.emailAddress ?? null,
     );
-    const activeCustomer = customer && !isDeletedCustomer(customer) ? customer : null;
-    const subscription = await findManagedSubscription(stripe, activeCustomer, vessel?.stripe_subscription_id ?? null);
+    let activeCustomer = customer && !isDeletedCustomer(customer) ? customer : null;
+    const subscription = await findManagedSubscription(stripe, activeCustomer, orgId, auth.userId, vessel?.stripe_subscription_id ?? null);
+
+    if (!activeCustomer && subscription?.customer && typeof subscription.customer === 'string') {
+      const fetchedCustomer = await stripe.customers.retrieve(subscription.customer);
+      activeCustomer = !('deleted' in fetchedCustomer && fetchedCustomer.deleted) ? fetchedCustomer : null;
+    }
+
     const paymentMethod = await getDefaultPaymentMethod(stripe, activeCustomer, subscription);
     const customerAddress = activeCustomer?.address ?? null;
     const derivedPlan = planFromSubscription(subscription) ?? vessel?.plan ?? null;
