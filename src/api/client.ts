@@ -169,6 +169,7 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
 export type ConnectionMode = 'local' | 'cloud' | 'offline';
 let _connectionMode: ConnectionMode = 'local';
 export const getConnectionMode = () => _connectionMode;
+const NO_CLOUD_VESSEL_MESSAGE = 'No cloud vessel is registered for this account. Go to Settings > Cloud Sync and register or re-register this vessel first.';
 
 // Callbacks registered by the UI to react to mode changes
 const _modeListeners: Array<(mode: ConnectionMode) => void> = [];
@@ -205,10 +206,14 @@ async function resolveCloudVesselId() {
   return _resolveVesselIdPromise;
 }
 
+export async function getResolvedCloudVesselId() {
+  return resolveCloudVesselId();
+}
+
 async function toCloudVesselPath(path: string) {
   const vesselId = await resolveCloudVesselId();
   if (!vesselId) {
-    throw new Error('Cloud vessel is not configured for this account.');
+    throw new Error(NO_CLOUD_VESSEL_MESSAGE);
   }
   return path.replace(/^\/api\//, `/api/vessels/${vesselId}/`);
 }
@@ -406,7 +411,7 @@ export const agentApi = {
       }
       const vesselId = await resolveCloudVesselId();
       if (!vesselId) {
-        throw new Error('Cloud vessel is not configured for this account.');
+        throw new Error(NO_CLOUD_VESSEL_MESSAGE);
       }
       return fetchJSON<PenTestReportMeta>(`${CLOUD_API_URL}/api/vessels/${vesselId}/pen-test-report`, {
         method: 'POST',
@@ -432,7 +437,7 @@ export const agentApi = {
       }
       const vesselId = await resolveCloudVesselId();
       if (!vesselId) {
-        return Promise.reject(new Error('Cloud vessel is not configured for this account.'));
+        return Promise.reject(new Error(NO_CLOUD_VESSEL_MESSAGE));
       }
       return fetchJSON<ReportSchedule[]>(`${CLOUD_API_URL}/api/vessels/${vesselId}/report-schedules`, {
         method: 'PUT',

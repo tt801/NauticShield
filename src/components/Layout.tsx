@@ -20,7 +20,7 @@ import {
 import { useClerk } from '@clerk/clerk-react';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 import { useAuthOptional } from '@/context/AuthContext';
-import { getConnectionMode, onConnectionModeChange, type ConnectionMode } from '@/api/client';
+import { getConnectionMode, getResolvedCloudVesselId, onConnectionModeChange, type ConnectionMode } from '@/api/client';
 import HelpCenterWidget from '@/components/HelpCenterWidget';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
@@ -97,9 +97,30 @@ const bottomItems = [
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [cloudVesselId, setCloudVesselId] = useState<string | null>(null);
   const auth = useAuthOptional();
   useInactivityLogout(auth?.role);
   const hasClerk = !!CLERK_KEY && CLERK_KEY !== 'pk_test_REPLACE_ME' && !isLocalDevHost();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getResolvedCloudVesselId()
+      .then(value => {
+        if (!cancelled) {
+          setCloudVesselId(value);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCloudVesselId(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div style={{ display: 'flex', height: '100%', minHeight: '100vh', background: '#080b10' }}>
@@ -326,9 +347,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <div
                     style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
-                    {auth?.vesselName ?? 'Vessel'}
+                    {auth?.vesselName ?? 'Organisation'}
                   </div>
-                  <div style={{ color: '#3a4a5a', fontSize: 11, marginTop: 1 }}>Last sync: just now</div>
+                  <div style={{ color: '#3a4a5a', fontSize: 11, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Org: {auth?.vesselName ?? 'Unknown'}
+                  </div>
+                  <div style={{ color: '#3a4a5a', fontSize: 11, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Cloud vessel: {cloudVesselId ?? 'Not registered'}
+                  </div>
                 </div>
               </div>
               {hasClerk && <SignOutButton />}
@@ -337,7 +363,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         ) : (
           <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, borderTop: '1px solid #1a2535' }}>
             <ConnectionBadge collapsed={true} />
-            <div title={`${auth?.vesselName ?? 'Vessel'} — connected`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+            <div title={`Org: ${auth?.vesselName ?? 'Unknown'} · Cloud vessel: ${cloudVesselId ?? 'Not registered'}`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
             {hasClerk && <SignOutButton />}
           </div>
         )}
