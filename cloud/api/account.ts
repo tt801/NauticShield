@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClerkClient } from '@clerk/backend';
 import Stripe from 'stripe';
 import { cors } from '../lib/cors';
-import { verifyClerkJWT } from '../lib/auth';
+import { resolvePreferredOrgId, verifyClerkJWT } from '../lib/auth';
 import { supabase } from '../lib/supabase';
 
 function createStripeClient(secretKey: string) {
@@ -151,10 +151,30 @@ async function findManagedSubscription(
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  if (!['GET', 'PATCH'].includes(req.method ?? '')) return res.status(405).json({ error: 'Method not allowed' });
 
   const auth = await verifyClerkJWT(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  if (req.method === 'PATCH') {
+    const organizationName = typeof req.body?.organizationName === 'string' ? req.body.organizationName.trim() : '';
+    if (!organizationName) {
+      return res.status(400).json({ error: 'organizationName is required' });
+    }
+
+    const secretKey = process.env.CLERK_SECRET_KEY;
+    if (!secretKey) return res.status(500).json({ error: 'Clerk not configured' });
+
+    try {
+      const clerk = createClerkClient({ secretKey });
+      const orgId = await resolvePreferredOrgId(req, auth);
+      const org = await clerk.organizations.updateOrganization(orgId, { name: organizationName });
+      return res.json({ orgId: org.id, name: org.name });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update organisation name';
+      return res.status(500).json({ error: message });
+    }
+  }
 
   const stripeKey = process.env.STRIPE_SECRET_KEY;
   if (!stripeKey) return res.status(500).json({ error: 'Stripe not configured' });
@@ -162,7 +182,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const stripe = createStripeClient(stripeKey);
     const user = await getClerkUser(auth.userId);
-    const orgId = auth.orgId ?? auth.userId;
+    const orgId = await resolvePreferredOrgId(req, auth);
     const vessel = await getPrimaryVessel(orgId);
     const customer = await findStripeCustomer(
       stripe,

@@ -209,6 +209,8 @@ export default function Settings() {
   };
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const [accountLoading, setAccountLoading] = useState(Boolean(CLOUD_API_URL));
+  const [orgNameUpdating, setOrgNameUpdating] = useState(false);
+  const [orgNameMsg, setOrgNameMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // ── Notification prefs ────────────────────────────────────────
   type CategoryPref = { email: boolean; sms: boolean };
@@ -431,6 +433,29 @@ export default function Settings() {
       setBillingMsg({ type: 'err', text: error instanceof Error ? error.message : 'Unable to open billing portal' });
     } finally {
       setPortalLoading(null);
+    }
+  }
+
+  async function handleUseStripeBillingName() {
+    const organizationName = accountInfo?.billing?.name?.trim();
+    if (!organizationName || !CLOUD_API_URL) {
+      return;
+    }
+
+    setOrgNameUpdating(true);
+    setOrgNameMsg(null);
+    try {
+      await fetchJSON<{ orgId: string; name: string }>(`${CLOUD_API_URL}/api/account`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationName }),
+      });
+      setOrgNameMsg({ type: 'ok', text: `Organisation renamed to ${organizationName}. Refreshing…` });
+      window.setTimeout(() => window.location.reload(), 700);
+    } catch (error) {
+      setOrgNameMsg({ type: 'err', text: error instanceof Error ? error.message : 'Unable to update organisation name' });
+    } finally {
+      setOrgNameUpdating(false);
     }
   }
 
@@ -715,6 +740,34 @@ export default function Settings() {
                 </div>
               </div>
             </div>
+            {accountInfo?.billing?.name && accountInfo.billing.name !== organization?.name ? (
+              <div style={{ marginTop: 16, padding: 14, background: '#050912', border: '1px solid #1a2535', borderRadius: 10 }}>
+                <div style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Stripe billing name available</div>
+                <div style={{ color: '#6b7f92', fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
+                  Current organisation: <span style={{ color: '#f0f4f8' }}>{organization?.name ?? '—'}</span>
+                  <br />
+                  Stripe billing name: <span style={{ color: '#d4a847' }}>{accountInfo.billing.name}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={handleUseStripeBillingName}
+                    disabled={orgNameUpdating || !CLOUD_API_URL}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 8,
+                      background: 'rgba(212,168,71,0.1)', color: '#d4a847', border: '1px solid rgba(212,168,71,0.25)', borderRadius: 9,
+                      padding: '9px 14px', fontSize: 12, fontWeight: 700,
+                      cursor: orgNameUpdating || !CLOUD_API_URL ? 'not-allowed' : 'pointer',
+                      opacity: orgNameUpdating || !CLOUD_API_URL ? 0.6 : 1,
+                    }}
+                  >
+                    <Building2 size={13} /> {orgNameUpdating ? 'Updating…' : 'Use Stripe Billing Name'}
+                  </button>
+                  {orgNameMsg ? (
+                    <span style={{ fontSize: 12, color: orgNameMsg.type === 'ok' ? '#22c55e' : '#ef4444' }}>{orgNameMsg.text}</span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </Card>
 
           <Card>
