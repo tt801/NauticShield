@@ -165,8 +165,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           onClick={() => setCollapsed(c => !c)}
           style={{
             position: 'absolute',
-            top: 18,
-            right: 10,
+            top: collapsed ? 92 : 18,
+            right: collapsed ? 18 : 10,
             width: 28,
             height: 28,
             borderRadius: '50%',
@@ -179,6 +179,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             justifyContent: 'center',
             cursor: 'pointer',
             zIndex: 10,
+            transition: 'top 0.22s cubic-bezier(0.4,0,0.2,1), right 0.22s cubic-bezier(0.4,0,0.2,1), background 0.15s',
           }}
           onMouseEnter={e => (e.currentTarget.style.background = '#2c405c')}
           onMouseLeave={e => (e.currentTarget.style.background = '#223047')}
