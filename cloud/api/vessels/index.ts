@@ -8,7 +8,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClerkClient }  from '@clerk/backend';
 import { createHash, randomUUID } from 'crypto';
 import { supabase }           from '../../lib/supabase';
-import { verifyClerkJWT, hashApiKey } from '../../lib/auth';
+import { verifyClerkJWT, hashApiKey, listAccessibleOrgIds } from '../../lib/auth';
 import { cors }               from '../../lib/cors';
 import { writeAudit }         from '../../lib/audit';
 
@@ -127,13 +127,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
   const orgId = auth.orgId ?? auth.userId;
+  const accessibleOrgIds = await listAccessibleOrgIds(auth);
 
   // ── GET /api/vessels ─────────────────────────────────────────────
   if (req.method === 'GET') {
     const { data, error } = await supabase
       .from('vessels')
       .select('id, name, last_synced_at, created_at')
-      .eq('org_id', orgId)
+      .in('org_id', accessibleOrgIds)
       .order('created_at', { ascending: true });
 
     if (error) return res.status(500).json({ error: error.message });
@@ -156,7 +157,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .from('vessels')
         .select('id')
         .eq('id', vesselId)
-        .eq('org_id', orgId)
+        .in('org_id', accessibleOrgIds)
         .single();
 
       if (!vessel) return res.status(404).json({ error: 'Vessel not found' });

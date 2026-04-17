@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { verifyToken } from '@clerk/backend';
+import { createClerkClient, verifyToken } from '@clerk/backend';
 import type { VercelRequest } from '@vercel/node';
 import { supabase } from './supabase';
 
@@ -16,6 +16,29 @@ export function hashApiKey(key: string): string {
 export interface ClerkAuth {
   userId: string;
   orgId:  string | null;
+}
+
+export async function listAccessibleOrgIds(auth: ClerkAuth): Promise<string[]> {
+  if (auth.orgId) {
+    return [auth.orgId];
+  }
+
+  const secret = process.env.CLERK_SECRET_KEY;
+  if (!secret) {
+    return [auth.userId];
+  }
+
+  try {
+    const clerk = createClerkClient({ secretKey: secret });
+    const memberships = await clerk.users.getOrganizationMembershipList({ userId: auth.userId, limit: 100 });
+    const orgIds = memberships.data
+      .map(membership => membership.organization.id)
+      .filter((value, index, array) => Boolean(value) && array.indexOf(value) === index);
+
+    return orgIds.length > 0 ? orgIds : [auth.userId];
+  } catch {
+    return [auth.userId];
+  }
 }
 
 export async function verifyClerkJWT(req: VercelRequest): Promise<ClerkAuth | null> {
@@ -71,13 +94,13 @@ export async function assertVesselOwnership(
   vesselId: string,
   auth: ClerkAuth,
 ): Promise<VesselRecord | null> {
-  const orgId = auth.orgId ?? auth.userId;
+  const orgIds = await listAccessibleOrgIds(auth);
 
   const { data, error } = await supabase
     .from('vessels')
     .select('id, org_id, name, last_synced_at')
     .eq('id', vesselId)
-    .eq('org_id', orgId)
+    .in('org_id', orgIds)
     .single();
 
   if (error || !data) return null;
