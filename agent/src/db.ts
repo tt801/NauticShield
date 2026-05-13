@@ -490,9 +490,19 @@ db.exec(`
     findingStatus TEXT NOT NULL DEFAULT 'open',
     remediatedAt  TEXT NOT NULL DEFAULT '',
     notes         TEXT NOT NULL DEFAULT '',
-    createdAt     TEXT NOT NULL
+    createdAt     TEXT NOT NULL,
+    assignee      TEXT NOT NULL DEFAULT '',
+    dueDate       TEXT NOT NULL DEFAULT ''
   );
 `);
+
+// Safe migration: add ownership fields to cyber findings
+for (const [col, def] of [
+  ['assignee', "TEXT NOT NULL DEFAULT ''"],
+  ['dueDate',  "TEXT NOT NULL DEFAULT ''"],
+] as [string, string][]) {
+  try { db.exec(`ALTER TABLE cyber_findings ADD COLUMN ${col} ${def}`); } catch { /* exists */ }
+}
 
 export interface CyberAssessment {
   id:      string;
@@ -516,6 +526,8 @@ export interface CyberFinding {
   remediatedAt:  string;
   notes:         string;
   createdAt:     string;
+  assignee:      string;
+  dueDate:       string;
 }
 
 export function listAssessments(): CyberAssessment[] {
@@ -537,14 +549,14 @@ export function listFindings(): CyberFinding[] {
 export function addFinding(f: CyberFinding): CyberFinding {
   db.prepare(`
     INSERT INTO cyber_findings
-      (id, assessmentId, category, check_name, status, detail, weight, findingStatus, remediatedAt, notes, createdAt)
+      (id, assessmentId, category, check_name, status, detail, weight, findingStatus, remediatedAt, notes, createdAt, assignee, dueDate)
     VALUES
-      (@id, @assessmentId, @category, @check_name, @status, @detail, @weight, @findingStatus, @remediatedAt, @notes, @createdAt)
+      (@id, @assessmentId, @category, @check_name, @status, @detail, @weight, @findingStatus, @remediatedAt, @notes, @createdAt, @assignee, @dueDate)
   `).run({ ...f });
   return f;
 }
 
-export function updateFinding(id: string, patch: Partial<Pick<CyberFinding, 'findingStatus' | 'remediatedAt' | 'notes'>>): CyberFinding | undefined {
+export function updateFinding(id: string, patch: Partial<Pick<CyberFinding, 'findingStatus' | 'remediatedAt' | 'notes' | 'assignee' | 'dueDate'>>): CyberFinding | undefined {
   const sets = Object.keys(patch).map(k => `${k} = @${k}`).join(', ');
   if (!sets) return undefined;
   db.prepare(`UPDATE cyber_findings SET ${sets} WHERE id = @id`).run({ ...patch, id });

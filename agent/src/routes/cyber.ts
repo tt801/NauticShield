@@ -51,6 +51,8 @@ router.post('/assessments', (req, res) => {
         remediatedAt: '',
         notes:        '',
         createdAt:    new Date().toISOString(),
+        assignee:     '',
+        dueDate:      '',
       });
       newFindings.push(finding);
     }
@@ -69,7 +71,7 @@ router.get('/findings', (_req, res) => {
 
 // PATCH /api/cyber/findings/:id  — mark remediated, add notes
 router.patch('/findings/:id', (req, res) => {
-  const patch: Partial<Pick<db.CyberFinding, 'findingStatus' | 'remediatedAt' | 'notes'>> = {};
+  const patch: Partial<Pick<db.CyberFinding, 'findingStatus' | 'remediatedAt' | 'notes' | 'assignee' | 'dueDate'>> = {};
   if (req.body.findingStatus) {
     const nextStatus = req.body.findingStatus as db.CyberFindingStatus;
     if (!allowedFindingStatuses.includes(nextStatus)) {
@@ -79,6 +81,8 @@ router.patch('/findings/:id', (req, res) => {
     patch.remediatedAt = nextStatus === 'remediated' ? new Date().toISOString() : '';
   }
   if (req.body.notes !== undefined) patch.notes = req.body.notes;
+  if (req.body.assignee !== undefined) patch.assignee = String(req.body.assignee ?? '').trim();
+  if (req.body.dueDate !== undefined) patch.dueDate = String(req.body.dueDate ?? '').trim();
   const updated = db.updateFinding(req.params.id, patch);
   if (!updated) return res.status(404).json({ error: 'Finding not found' });
   // Clear any open cyber:critical alert for this finding

@@ -1614,7 +1614,7 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
                           <span style={{ color: statusColor(c.status), fontWeight: 700, fontSize: 14, flexShrink: 0, marginTop: 1 }}>{statusIcon(c.status)}</span>
                           <div style={{ flex: 1 }}>
                             <div style={{ color: '#cbd5e1', fontSize: 12, fontWeight: 600 }}>{c.check}</div>
-                            <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 2 }}>{c.detail}</div>
+                            <div style={{ color: '#4a5a6a', fontSize: 11, lineHeight: 1.5 }}>{c.detail}</div>
                             <div style={{ display: 'flex', gap: 5, marginTop: 5 }}>
                               <span style={{ background: 'rgba(212,168,71,0.08)', color: '#d4a847', border: '1px solid rgba(212,168,71,0.2)', borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 600 }}>{c.bimcoRef}</span>
                               <span style={{ background: 'rgba(14,165,233,0.08)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)', borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 600 }}>{c.imoRef}</span>
@@ -1657,6 +1657,8 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
             {dbFindings.filter(f => activeFindingStatuses.includes(f.findingStatus)).map(f => {
               const statColor = f.status === 'fail' ? '#ef4444' : '#f59e0b';
               const workflowColor = findingStatusColor[f.findingStatus];
+              const dueTs = f.dueDate ? new Date(`${f.dueDate}T23:59:59`).getTime() : null;
+              const isOverdue = dueTs !== null && Date.now() > dueTs;
               return (
                 <div key={f.id} style={{ background: '#080b10', border: `1px solid ${statColor}25`, borderLeft: `3px solid ${statColor}`, borderRadius: 10, padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -1664,6 +1666,7 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
                       <span style={{ background: `${statColor}15`, color: statColor, border: `1px solid ${statColor}40`, borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const }}>{f.status}</span>
                       <span style={{ background: `${workflowColor}15`, color: workflowColor, border: `1px solid ${workflowColor}40`, borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const }}>{findingStatusLabel[f.findingStatus]}</span>
                       <span style={{ background: 'rgba(212,168,71,0.08)', color: '#d4a847', border: '1px solid rgba(212,168,71,0.2)', borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 600 }}>{f.category}</span>
+                      {isOverdue && <span style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const }}>Overdue</span>}
                       <span style={{ color: '#4a5a6a', fontSize: 10 }}>{new Date(f.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                     </div>
                     <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{f.check_name}</div>
@@ -1780,7 +1783,7 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ color: f.remediated ? '#6b7f92' : '#f0f4f8', fontSize: 12, fontWeight: 600, marginBottom: 3, textDecoration: f.remediated ? 'line-through' : 'none' }}>{f.title}</div>
-                              <div style={{ color: '#4a5a6a', fontSize: 11, lineHeight: 1.5 }}>{f.description}</div>
+                              <div style={{ color: '#4a5a6a', fontSize: 11, lineHeight: 1.5 }}>{f.detail}</div>
                               <div style={{ color: '#4a5a6a', fontSize: 10, marginTop: 4 }}>{f.category}</div>
                             </div>
                             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1927,55 +1930,62 @@ function DeviceRiskPanel({
     }}>
       {/* Header */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid #1a2535', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: `${riskColor}15`, border: `1px solid ${riskColor}40`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Cpu size={16} color={riskColor} />
-            </div>
-            <div>
-              <div style={{ color: '#f0f4f8', fontSize: 14, fontWeight: 700 }}>{device.name}</div>
-              <div style={{ color: '#4a5a6a', fontSize: 11, fontFamily: 'monospace' }}>{device.ip} · {device.mac}</div>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: `${riskColor}15`, border: `1px solid ${riskColor}40`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Cpu size={16} color={riskColor} />
           </div>
+          <div>
+            <div style={{ color: '#f0f4f8', fontSize: 14, fontWeight: 700 }}>{device.name}</div>
+            <div style={{ color: '#4a5a6a', fontSize: 11, fontFamily: 'monospace' }}>{device.ip} · {device.mac}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#4a5a6a', padding: 4 }}>
             <X size={18} />
           </button>
         </div>
-
-        {/* Risk badge row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ background: `${riskColor}18`, color: riskColor, border: `1px solid ${riskColor}40`, borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 800 }}>
-            {riskLabel} RISK
-          </span>
-          {maxCvss > 0 && (
-            <span style={{ color: '#6b7f92', fontSize: 12 }}>Max CVSS: <strong style={{ color: riskColor }}>{maxCvss.toFixed(1)}</strong></span>
-          )}
-          <span style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#6b7f92' }}>
-            {device.type} · {device.manufacturer || 'Unknown mfr'}
-          </span>
-          {isolated && (
-            <span style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 700 }}>
-              ⊘ ISOLATED
-            </span>
-          )}
-        </div>
       </div>
 
-      {/* Isolate button */}
-      <div style={{ padding: '14px 20px', borderBottom: '1px solid #1a2535', flexShrink: 0, background: isolated ? 'rgba(239,68,68,0.04)' : 'transparent' }}>
-        {isolated ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <WifiOff size={16} color="#ef4444" />
-            <span style={{ color: '#ef4444', fontSize: 13, fontWeight: 600 }}>Device blocked in firewall — rule added below</span>
-          </div>
-        ) : (
-          <button
-            onClick={() => onIsolate(device)}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-          >
-            <Ban size={15} /> Isolate Device — Block All Traffic
-          </button>
+      {/* Risk badge row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ background: `${riskColor}18`, color: riskColor, border: `1px solid ${riskColor}40`, borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 800 }}>
+          {riskLabel} RISK
+        </span>
+        {maxCvss > 0 && (
+          <span style={{ color: '#6b7f92', fontSize: 12 }}>Max CVSS: <strong style={{ color: riskColor }}>{maxCvss.toFixed(1)}</strong></span>
         )}
+        <span style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#6b7f92' }}>
+          {device.type} · {device.manufacturer || 'Unknown mfr'}
+        </span>
+        {isolated && (
+          <span style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 700 }}>
+            ⊘ ISOLATED
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button
+          onClick={onIsolate}
+          disabled={isolated}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            background: isolated ? 'rgba(239,68,68,0.04)' : 'rgba(239,68,68,0.1)',
+            color: isolated ? '#ef4444' : '#ef4444',
+            border: `1px solid ${isolated ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.35)'}`,
+            borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700, cursor: isolated ? 'default' : 'pointer',
+          }}
+        >
+          {isolated ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <WifiOff size={16} color="#ef4444" />
+              <span style={{ color: '#ef4444', fontSize: 13, fontWeight: 600 }}>Device blocked in firewall — rule added below</span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Ban size={15} /> Isolate Device — Block All Traffic
+            </div>
+          )}
+        </button>
       </div>
 
       {/* Tabs */}
@@ -2008,7 +2018,7 @@ function DeviceRiskPanel({
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
-                        <span style={{ background: `${sc}18`, color: sc, border: `1px solid ${sc}40`, borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 700 }}>{cve.severity.toUpperCase()}</span>
+                        <span style={{ background: `${sc}18`, color: sc, border: `1px solid ${sc}40`, borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const }}>{cve.severity.toUpperCase()}</span>
                         <span style={{ color: '#7dd3fc', fontSize: 10, fontFamily: 'monospace', fontWeight: 600 }}>{cve.id}</span>
                         <span style={{ color: '#4a5a6a', fontSize: 10 }}>CVSS {cve.cvss.toFixed(1)}</span>
                         <span style={{ background: GOLD_BG, color: GOLD, border: `1px solid ${GOLD_BORDER}`, borderRadius: 4, padding: '1px 6px', fontSize: 9 }}>{cve.bimcoRef}</span>

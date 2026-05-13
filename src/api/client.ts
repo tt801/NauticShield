@@ -76,6 +76,8 @@ export interface CyberFinding {
   notes:        string;
   createdAt:    string;
   recommendedActions?: string[];
+  assignee:     string;
+  dueDate:      string;
 }
 
 export interface PenTestReportMeta {
@@ -534,7 +536,7 @@ export const agentApi = {
     listFindings: () =>
       fetchJSON<CyberFinding[]>(`${AGENT_URL}/api/cyber/findings`),
 
-    updateFinding: (id: string, patch: { findingStatus?: CyberFindingStatus; notes?: string }) =>
+    updateFinding: (id: string, patch: { findingStatus?: CyberFindingStatus; notes?: string; assignee?: string; dueDate?: string }) =>
       fetchJSON<CyberFinding>(`${AGENT_URL}/api/cyber/findings/${id}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },

@@ -338,7 +338,7 @@ export default function Report() {
       if (list.length > 0) setLatestAssessment(list[0]);
     }).catch(() => {});
     agentApi.cyber.listFindings().then(list => {
-      setOpenFindings(list.filter(f => f.findingStatus !== 'remediated'));
+      setOpenFindings(list.filter(f => ['open', 'investigating', 'in_progress'].includes(f.findingStatus)));
     }).catch(() => {});
     agentApi.reports.delta(24).then(delta => {
       setReportDelta(delta);
@@ -365,6 +365,11 @@ export default function Report() {
 
   const activeAlerts   = alerts.filter(a => !a.resolved);
   const resolvedAlerts = alerts.filter(a => a.resolved);
+  const overdueFindings = openFindings.filter(f => {
+    if (!f.dueDate) return false;
+    const due = Date.parse(`${f.dueDate}T23:59:59`);
+    return !Number.isNaN(due) && due < Date.now();
+  });
   const criticalCount  = activeAlerts.filter(a => a.severity === 'critical').length;
   const warningCount   = activeAlerts.filter(a => a.severity === 'warning').length;
   const offlineDevices = devices.filter(d => d.status === 'offline');
@@ -395,6 +400,7 @@ export default function Report() {
     if (warningCount  > 0) parts.push(`${warningCount} warning${warningCount > 1 ? 's' : ''} noted`);
     if (offlineDevices.length > 0) parts.push(`${offlineDevices.length} device${offlineDevices.length > 1 ? 's' : ''} offline`);
     if (unknownDevices.length > 0) parts.push(`${unknownDevices.length} unrecognised device${unknownDevices.length > 1 ? 's' : ''} on the network`);
+    if (overdueFindings.length > 0) parts.push(`${overdueFindings.length} cyber finding${overdueFindings.length > 1 ? 's are' : ' is'} overdue`);
     if (parts.length === 0) return 'All monitored systems are operating normally. No issues detected.';
     return parts.join(', ') + '. ' + (criticalCount > 0 ? 'Immediate crew action is recommended.' : 'Crew awareness is advised.');
   })();
@@ -1448,7 +1454,7 @@ export default function Report() {
             { label: 'Uptime This Period',value: internetStatus.uptime,                 color: '#f59e0b', icon: Activity, sub: 'last 24 hours' },
           ].map(({ label, value, color, icon: Icon, sub }) => (
             <div key={label} style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ background: color + '18', border: `1px solid ${color}33`, borderRadius: 10, padding: 10 }}>
+              <div style={{ background: color + '18', borderRadius: 10, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px' }}>
                 <Icon size={18} color={color} />
               </div>
               <div>
@@ -1659,30 +1665,32 @@ export default function Report() {
 
             {/* Open findings */}
             {openFindings.length > 0 && (
-              <div>
-                <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 600, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 }}>
+              <div style={{ marginTop: 12, background: '#080b10', border: '1px solid #1a2535', borderRadius: 10, padding: 14 }}>
+                <div style={{ color: '#d4a847', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
                   {openFindings.length} Open Finding{openFindings.length !== 1 ? 's' : ''}
                 </div>
+                {overdueFindings.length > 0 && (
+                  <div style={{ color: '#ef4444', fontSize: 11, fontWeight: 700, marginBottom: 8 }}>
+                    {overdueFindings.length} overdue — escalate with owner/captain today.
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {openFindings.slice(0, 5).map(f => {
-                    const fc = f.status === 'flagged' ? '#ef4444' : '#f59e0b';
-                    return (
-                      <div key={f.id} style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        background: '#0a0f18', border: `1px solid ${fc}33`, borderLeft: `3px solid ${fc}`,
-                        borderRadius: 8, padding: '8px 12px',
-                      }}>
-                        <FileText size={12} color={fc} style={{ flexShrink: 0 }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.check_name}</div>
-                          <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 1 }}>{f.category}</div>
-                        </div>
-                        <span style={{ background: fc + '18', color: fc, borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 700, flexShrink: 0, textTransform: 'uppercase' }}>
-                          {f.status}
-                        </span>
+                  {openFindings.slice(0, 5).map(finding => (
+                    <div key={finding.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      background: '#0a0f18', border: `1px solid ${finding.status === 'flagged' ? '#ef4444' : '#f59e0b'}`, borderLeft: `3px solid ${finding.status === 'flagged' ? '#ef4444' : '#f59e0b'}`,
+                      borderRadius: 8, padding: '8px 12px',
+                    }}>
+                      <FileText size={12} color={finding.status === 'flagged' ? '#ef4444' : '#f59e0b' } style={{ flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{finding.check_name}</div>
+                        <div style={{ color: '#4a5a6a', fontSize: 11, marginTop: 1 }}>{finding.category}</div>
                       </div>
-                    );
-                  })}
+                      <span style={{ background: finding.status === 'flagged' ? '#ef4444' : '#f59e0b', color: finding.status === 'flagged' ? '#dce8f4' : '#dce8f4', borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 700, flexShrink: 0, textTransform: 'uppercase' }}>
+                        {finding.status}
+                      </span>
+                    </div>
+                  ))}
                   {openFindings.length > 5 && (
                     <div style={{ color: '#4a5a6a', fontSize: 12, textAlign: 'center', paddingTop: 4 }}>
                       + {openFindings.length - 5} more — see Cyber Management for full list
