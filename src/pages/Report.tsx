@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useVesselData } from '@/context/VesselDataProvider';
 import { agentApi } from '@/api/client';
-import type { CyberAssessment, CyberFinding, ReportCadence, ReportPeriod, ReportSchedule, ReportSection } from '@/api/client';
+import type { CyberAssessment, CyberFinding, ReportCadence, ReportDelta, ReportPeriod, ReportSchedule, ReportSection } from '@/api/client';
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -64,6 +64,7 @@ const REPORT_SECTION_OPTIONS: Array<{ id: ReportSection; label: string }> = [
   { id: 'security', label: 'Security posture' },
   { id: 'alerts', label: 'Active & resolved alerts' },
   { id: 'cyber', label: 'Cyber findings' },
+  { id: 'changes', label: 'What changed since yesterday' },
 ];
 const DEFAULT_REPORT_SECTIONS = REPORT_SECTION_OPTIONS.map(option => option.id);
 
@@ -320,6 +321,7 @@ export default function Report() {
   // ── Cyber DB data ─────────────────────────────────────────────
   const [latestAssessment, setLatestAssessment] = useState<CyberAssessment | null>(null);
   const [openFindings,     setOpenFindings]     = useState<CyberFinding[]>([]);
+  const [reportDelta,      setReportDelta]      = useState<ReportDelta | null>(null);
   const [schedules,        setSchedules]        = useState<ReportSchedule[]>([]);
   const [scheduleLoading,  setScheduleLoading]  = useState(true);
   const [scheduleSaving,   setScheduleSaving]   = useState(false);
@@ -337,6 +339,9 @@ export default function Report() {
     }).catch(() => {});
     agentApi.cyber.listFindings().then(list => {
       setOpenFindings(list.filter(f => f.findingStatus !== 'remediated'));
+    }).catch(() => {});
+    agentApi.reports.delta(24).then(delta => {
+      setReportDelta(delta);
     }).catch(() => {});
     agentApi.reports.listSchedules().then(list => {
       setSchedules(list);
@@ -485,6 +490,22 @@ export default function Report() {
           <td>${a.title}</td>
           <td>${new Date(a.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
         </tr>`).join('');
+
+    const changeHighlights = [
+      `${reportDelta?.newDevices?.length ?? 0} new devices detected`,
+      `${reportDelta?.newAlerts?.length ?? 0} new alerts opened`,
+      `${reportDelta?.resolvedAlerts?.length ?? 0} alerts resolved`,
+      `${reportDelta?.newFindings?.length ?? 0} new cyber findings`,
+      `${reportDelta?.remediatedFindings?.length ?? 0} findings remediated`,
+      `${reportDelta?.blockedDevices?.length ?? 0} devices blocked`,
+    ];
+
+    const changeRows = (reportDelta?.recentActions ?? []).slice(0, 8).map(entry => `
+      <tr>
+        <td>${new Date(entry.ts).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</td>
+        <td>${entry.action || `${entry.method || ''} ${entry.path || ''}`.trim() || 'System update'}</td>
+        <td>${entry.email || 'system'}</td>
+      </tr>`).join('');
 
     const zoneRows = zoneEntries.map(([zone, { online, offline, total }]) => {
       const pct   = total > 0 ? Math.round((online / total) * 100) : 0;
@@ -875,6 +896,20 @@ export default function Report() {
     </table>
   </div>
 
+  <!-- What Changed -->
+  <div class="section">
+    <div class="section-title">What Changed Since Yesterday</div>
+    <ul style="padding-left:20px;color:#2c3e50;margin:0 0 12px;line-height:1.8;">
+      ${changeHighlights.map(line => `<li>${line}</li>`).join('')}
+    </ul>
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Change</th><th>Actor</th></tr>
+      </thead>
+      <tbody>${changeRows || '<tr><td colspan="3" style="color:#888;text-align:center">No change events captured in this window</td></tr>'}</tbody>
+    </table>
+  </div>
+
   <!-- Footer -->
   <div class="report-footer">
     <span>NauticShield · Vessel Technology Management · M/Y Aurora</span>
@@ -1230,6 +1265,42 @@ export default function Report() {
         y += 10;
       }
     }
+
+    // ── What Changed Since Yesterday ──
+    chk(24);
+    sectionHeading('What Changed Since Yesterday');
+    autoTable(doc, {
+      startY: y, margin: { left: M, right: M },
+      head: [['Metric', 'Count']],
+      body: [
+        ['New devices detected', String(reportDelta?.newDevices?.length ?? 0)],
+        ['New alerts opened', String(reportDelta?.newAlerts?.length ?? 0)],
+        ['Alerts resolved', String(reportDelta?.resolvedAlerts?.length ?? 0)],
+        ['New cyber findings', String(reportDelta?.newFindings?.length ?? 0)],
+        ['Cyber findings remediated', String(reportDelta?.remediatedFindings?.length ?? 0)],
+        ['Devices blocked', String(reportDelta?.blockedDevices?.length ?? 0)],
+      ],
+      headStyles: { fillColor: [...HEADER] as [number,number,number], textColor: [255,255,255], fontSize: 7.5, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 8.5, textColor: [50, 60, 70] },
+      alternateRowStyles: { fillColor: [248,249,250] },
+      columnStyles: { 0: { cellWidth: 110, fontStyle: 'bold' }, 1: { cellWidth: 26, halign: 'right' } },
+    });
+    y = (doc as any).lastAutoTable.finalY + 6;
+
+    autoTable(doc, {
+      startY: y, margin: { left: M, right: M },
+      head: [['Time', 'Change', 'Actor']],
+      body: (reportDelta?.recentActions ?? []).slice(0, 8).map(entry => [
+        new Date(entry.ts).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
+        entry.action || `${entry.method || ''} ${entry.path || ''}`.trim() || 'System update',
+        entry.email || 'system',
+      ]),
+      headStyles: { fillColor: [...HEADER] as [number,number,number], textColor: [255,255,255], fontSize: 7.5, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 8, textColor: [50, 60, 70] },
+      alternateRowStyles: { fillColor: [248,249,250] },
+      columnStyles: { 0: { cellWidth: 32 }, 1: { cellWidth: 92 }, 2: { cellWidth: 44 } },
+    });
+    y = (doc as any).lastAutoTable.finalY + 8;
 
     // ── Scheduled Reports ──
     chk(20);

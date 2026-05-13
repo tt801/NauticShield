@@ -31,7 +31,7 @@ type ReportSchedule = {
   name: string;
   recipient: string;
   period: ReportPeriod;
-  sections: Array<'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber'>;
+  sections: Array<'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber' | 'changes'>;
   cadence: ReportCadence;
   sendTime: string;
   timeZone: string;
@@ -42,7 +42,7 @@ type ReportSchedule = {
   updatedAt: string;
 };
 
-const DEFAULT_REPORT_SECTIONS: ReportSchedule['sections'] = ['overview', 'connectivity', 'devices', 'zones', 'security', 'alerts', 'cyber'];
+const DEFAULT_REPORT_SECTIONS: ReportSchedule['sections'] = ['overview', 'connectivity', 'devices', 'zones', 'security', 'alerts', 'cyber', 'changes'];
 
 function normalizeReportSections(value: unknown): ReportSchedule['sections'] {
   if (!Array.isArray(value) || value.length === 0) return DEFAULT_REPORT_SECTIONS;
@@ -219,7 +219,7 @@ function getReportDeliveryConfig() {
   return { resendApiKey, fromEmail };
 }
 
-function renderScheduleEmailHtml(vesselName: string, schedule: ReportSchedule, snapshot: any, openFindings: any[]) {
+function renderScheduleEmailHtml(vesselName: string, schedule: ReportSchedule, snapshot: any, openFindings: any[], recentChanges: any[]) {
   const internet = snapshot?.internet_status ?? {};
   const devices = Array.isArray(snapshot?.devices) ? snapshot.devices : [];
   const alerts = Array.isArray(snapshot?.alerts) ? snapshot.alerts : [];
@@ -235,6 +235,10 @@ function renderScheduleEmailHtml(vesselName: string, schedule: ReportSchedule, s
   const zoneRows = Object.entries(zoneGroups as Record<string, { total: number; online: number }>).map(([zone, counts]) => `<li>${zone}: ${counts.online}/${counts.total} online</li>`).join('');
   const findingItems = openFindings.slice(0, 5).map((finding: any) => `<li>${finding.check_name} (${finding.status})</li>`).join('');
   const alertItems = activeAlerts.slice(0, 5).map((alert: any) => `<li>${alert.title}</li>`).join('');
+  const changeRows = recentChanges.slice(0, 8).map((entry: any) => {
+    const when = new Date(entry.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `<li>${when}: ${entry.action ?? 'system.update'} (${entry.actor ?? 'system'})</li>`;
+  }).join('');
 
   return `
     <div style="font-family:Arial,sans-serif;background:#080b10;color:#f0f4f8;padding:24px;line-height:1.6">
@@ -253,6 +257,7 @@ function renderScheduleEmailHtml(vesselName: string, schedule: ReportSchedule, s
       ${sections.has('security') ? `<h2 style="font-size:16px;margin:0 0 8px;">Security Posture</h2><ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;"><li>${activeAlerts.length} active alerts</li><li>${openFindings.length} open cyber findings</li></ul>` : ''}
       ${sections.has('alerts') ? `<h2 style="font-size:16px;margin:0 0 8px;">Active Alerts</h2><ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">${alertItems || '<li>No active alerts.</li>'}</ul>` : ''}
       ${sections.has('cyber') ? `<h2 style="font-size:16px;margin:0 0 8px;">Open Security Findings</h2><ul style="padding-left:20px;color:#dce8f4;">${findingItems || '<li>No open findings.</li>'}</ul>` : ''}
+      ${sections.has('changes') ? `<h2 style="font-size:16px;margin:0 0 8px;">What Changed Since Yesterday</h2><ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;"><li>${recentChanges.length} key updates logged in the last 24 hours</li>${changeRows || '<li>No change events captured in this window.</li>'}</ul>` : ''}
     </div>
   `;
 }
@@ -268,9 +273,11 @@ async function sendReportScheduleNow(orgId: string, vesselId: string, vesselName
   }
 
   const resend = new Resend(resendApiKey);
-  const [{ data: snapshot }, { data: findings }] = await Promise.all([
+  const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const [{ data: snapshot }, { data: findings }, { data: recentChanges }] = await Promise.all([
     supabase.from('vessel_snapshots').select('devices, alerts, internet_status').eq('vessel_id', vesselId).single(),
     supabase.from('cyber_findings').select('data').eq('vessel_id', vesselId).order('synced_at', { ascending: false }).limit(20),
+    supabase.from('audit_log').select('created_at, action, actor').eq('org_id', orgId).eq('resource', vesselId).gte('created_at', sinceIso).order('created_at', { ascending: false }).limit(20),
   ]);
 
   const openFindings = (findings ?? []).map((entry: any) => entry.data).filter((finding: any) => finding?.findingStatus !== 'remediated');
@@ -278,7 +285,7 @@ async function sendReportScheduleNow(orgId: string, vesselId: string, vesselName
     from: fromEmail,
     to: schedule.recipient,
     subject: `${vesselName ?? vesselId} · ${schedule.name}`,
-    html: renderScheduleEmailHtml(vesselName ?? vesselId, schedule, snapshot, openFindings),
+    html: renderScheduleEmailHtml(vesselName ?? vesselId, schedule, snapshot, openFindings, recentChanges ?? []),
   });
 
   if (result.error) {

@@ -6,7 +6,7 @@ import { createServer }         from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import { broadcast, initBroadcaster } from './broadcaster';
-import { scanNetwork, checkInternetConnectivity, updateInternetStatus } from './scanner';
+import { scanNetworkWithOptions, checkInternetConnectivity, updateInternetStatus } from './scanner';
 import { runAlertEngine } from './alertEngine';
 import * as db          from './db';
 import { requireAuth, makeRateLimiter } from './auth';
@@ -24,10 +24,22 @@ import { startCloudSync, getLastSyncAt } from './sync';
 import { startShellRelay } from './shellRelay';
 import { bootstrapAgent } from './bootstrap';
 import type { VesselSnapshot, WsClientMessage } from './types';
+import { getScannerDiagnostics, setScannerDiagnostics } from './scannerDiagnostics';
+import { getScannerRuntimeConfig } from './scannerRuntimeConfig';
 
 const PORT    = parseInt(process.env.PORT    ?? '3000', 10);
-const SUBNET  =           process.env.SUBNET ?? '192.168.1';
 const SCAN_MS = parseInt(process.env.SCAN_INTERVAL_MS ?? '30000', 10);
+let configuredSubnetMissStreak = 0;
+let scannerConfigSignature = '';
+
+const initialScannerConfig = getScannerRuntimeConfig();
+setScannerDiagnostics({
+  scanMode: initialScannerConfig.scanMode,
+  configuredSubnet: initialScannerConfig.subnet,
+  allowedSubnets: initialScannerConfig.allowedSubnets,
+  warnAfterCycles: initialScannerConfig.warnAfterCycles,
+  configuredSubnetMissStreak: 0,
+});
 
 // ── Express ───────────────────────────────────────────────────────
 
@@ -64,6 +76,24 @@ app.use((_req, res, next) => {
 // Rate limiter: 200 req / minute per IP on all API routes
 makeRateLimiter(60_000, 200).then(limiter => app.use('/api', limiter));
 
+// ── Semantic audit action labels ──────────────────────────────────
+function semanticAction(method: string, path: string): string {
+  if (method === 'POST'   && /^\/devices\/[^/]+\/block$/.test(path))    return 'Blocked device';
+  if (method === 'POST'   && /^\/devices\/[^/]+\/unblock$/.test(path))  return 'Unblocked device';
+  if (method === 'PATCH'  && /^\/devices\/[^/]+$/.test(path))           return 'Updated device';
+  if (method === 'DELETE' && /^\/devices\/[^/]+$/.test(path))           return 'Removed device';
+  if (method === 'POST'   && path === '/cyber/assessments')              return 'Ran cyber assessment';
+  if (method === 'PATCH'  && /^\/cyber\/findings\/[^/]+$/.test(path))   return 'Updated cyber finding';
+  if (method === 'POST'   && path === '/guest-network')                  return 'Created guest network';
+  if (method === 'PATCH'  && /^\/guest-network\/[^/]+$/.test(path))     return 'Updated guest network';
+  if (method === 'DELETE' && /^\/guest-network\/[^/]+$/.test(path))     return 'Deleted guest network';
+  if (method === 'POST'   && /^\/alerts\/[^/]+\/resolve$/.test(path))   return 'Resolved alert';
+  if (method === 'POST'   && path === '/status/scanner-config')          return 'Updated scanner config';
+  if (method === 'POST'   && /^\/voyage/.test(path))                     return 'Updated voyage log';
+  if (method === 'GET')                                                   return `Viewed ${path.split('/')[1] ?? 'resource'}`;
+  return `${method} ${path}`;
+}
+
 // Audit logging middleware — runs after auth so req.auth is populated
 app.use('/api', (req: AuthedRequest, res, next) => {
   res.on('finish', () => {
@@ -77,6 +107,7 @@ app.use('/api', (req: AuthedRequest, res, next) => {
       ip:     (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0].trim()
               ?? req.socket.remoteAddress
               ?? null,
+      action: semanticAction(req.method, req.path),
     });
   });
   next();
@@ -129,6 +160,23 @@ app.get('/api/audit', (req: AuthedRequest, res) => {
   res.json(db.getAuditLog(500));
 });
 
+// Delta report endpoint — returns what changed in the last N hours (default 24)
+app.get('/api/report/delta', (req: AuthedRequest, res) => {
+  const hours = Math.min(Math.max(parseInt((req.query.hours as string) ?? '24', 10), 1), 168);
+  const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
+  res.json({
+    windowHours:         hours,
+    since:               cutoff,
+    newDevices:          db.getDevicesFirstSeenSince(cutoff),
+    newAlerts:           db.getAlertsCreatedSince(cutoff),
+    resolvedAlerts:      db.getAlertsResolvedSince(cutoff),
+    newFindings:         db.getFindingsCreatedSince(cutoff),
+    remediatedFindings:  db.getFindingsRemediatedSince(cutoff),
+    blockedDevices:      db.getDevicesBlockedSince(cutoff),
+    recentActions:       db.getAuditLog(50),
+  });
+});
+
 // ── WebSocket ─────────────────────────────────────────────────────
 
 const wss = new WebSocketServer({ server });
@@ -165,6 +213,22 @@ wss.on('connection', ws => {
 
 async function runCycle(): Promise<void> {
   try {
+    const scannerConfig = getScannerRuntimeConfig();
+    const signature = JSON.stringify(scannerConfig);
+    if (signature !== scannerConfigSignature) {
+      scannerConfigSignature = signature;
+      configuredSubnetMissStreak = 0;
+      setScannerDiagnostics({
+        scanMode: scannerConfig.scanMode,
+        configuredSubnet: scannerConfig.subnet,
+        allowedSubnets: scannerConfig.allowedSubnets,
+        warnAfterCycles: scannerConfig.warnAfterCycles,
+        configuredSubnetMissStreak: 0,
+        lastWarning: undefined,
+      });
+      console.log('[Monitor] Scanner configuration updated at runtime.');
+    }
+
     // 1. Internet check
     const { reachable, latencyMs } = await checkInternetConnectivity();
     const internetStatus = updateInternetStatus(reachable, latencyMs);
@@ -178,10 +242,50 @@ async function runCycle(): Promise<void> {
     });
 
     // 2. Network scan — returns changed devices
-    const { newDevices, updatedDevices } = await scanNetwork(SUBNET);
+    const { newDevices, updatedDevices, activeSubnet, configuredSubnetSeen } = await scanNetworkWithOptions({
+      mode: scannerConfig.scanMode,
+      subnet: scannerConfig.subnet,
+      allowedSubnets: scannerConfig.allowedSubnets,
+    });
+
+    let warningMessage: string | undefined;
+    if (activeSubnet) {
+      console.log(`[Monitor] Subnet in use: ${activeSubnet}.0/24`);
+    }
+
+    if (scannerConfig.scanMode === 'fixed' && scannerConfig.subnet) {
+      if (configuredSubnetSeen) {
+        if (configuredSubnetMissStreak >= scannerConfig.warnAfterCycles) {
+          console.log(`[Monitor] Configured subnet ${scannerConfig.subnet}.0/24 is visible in ARP again after ${configuredSubnetMissStreak} missed cycle(s).`);
+        }
+        configuredSubnetMissStreak = 0;
+      } else {
+        configuredSubnetMissStreak += 1;
+        if (configuredSubnetMissStreak === scannerConfig.warnAfterCycles || configuredSubnetMissStreak % scannerConfig.warnAfterCycles === 0) {
+          warningMessage =
+            `Configured subnet ${scannerConfig.subnet}.0/24 has not appeared in ARP for ${configuredSubnetMissStreak} consecutive cycle(s). ` +
+            `Check vessel LAN segment or adjust SUBNET/SCAN_SUBNET_MODE.`;
+          console.warn(`[Monitor] ${warningMessage}`);
+        }
+      }
+    }
+
+    setScannerDiagnostics({
+      scanMode: scannerConfig.scanMode,
+      configuredSubnet: scannerConfig.subnet,
+      allowedSubnets: scannerConfig.allowedSubnets,
+      warnAfterCycles: scannerConfig.warnAfterCycles,
+      activeSubnet,
+      configuredSubnetSeen,
+      configuredSubnetMissStreak,
+      lastWarning: warningMessage,
+    });
 
     // 3. Run alert engine — fires / clears alerts based on current state
-    runAlertEngine(internetStatus);
+    runAlertEngine(internetStatus, {
+      mode: scannerConfig.scanMode,
+      activeSubnet,
+    });
 
     // 4. Broadcast changes over WebSocket
     for (const d of newDevices)     broadcast({ type: 'device:new',    data: d });
@@ -189,7 +293,14 @@ async function runCycle(): Promise<void> {
 
     const networkHealth = db.getNetworkHealth();
     if (networkHealth) {
-      broadcast({ type: 'status:update', data: { internetStatus, networkHealth } });
+      broadcast({
+        type: 'status:update',
+        data: {
+          internetStatus,
+          networkHealth,
+          scannerDiagnostics: getScannerDiagnostics(),
+        },
+      });
     }
   } catch (err) {
     console.error('[Monitor] Cycle error:', err);
@@ -199,10 +310,15 @@ async function runCycle(): Promise<void> {
 // ── Start ─────────────────────────────────────────────────────────
 
 server.listen(PORT, async () => {
+  const scannerConfig = getScannerRuntimeConfig();
   console.log('\n🚢  NauticShield Agent');
   console.log(`    REST  → http://localhost:${PORT}/api`);
   console.log(`    WS   → ws://localhost:${PORT}`);
-  console.log(`    Subnet: ${SUBNET}.0/24   Interval: ${SCAN_MS / 1000}s\n`);
+  console.log(`    Scan mode: ${scannerConfig.scanMode}${scannerConfig.subnet ? `   Subnet override: ${scannerConfig.subnet}.0/24` : ''}${scannerConfig.allowedSubnets.length ? `   Allowed: ${scannerConfig.allowedSubnets.join(', ')}` : ''}`);
+  if (scannerConfig.subnet) {
+    console.log(`    Subnet miss warning: ${scannerConfig.warnAfterCycles} cycle(s)`);
+  }
+  console.log(`    Interval: ${SCAN_MS / 1000}s\n`);
 
   await bootstrapAgent();
 

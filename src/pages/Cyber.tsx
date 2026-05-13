@@ -38,7 +38,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Device } from '@/data/mock';
 import { agentApi } from '@/api/client';
-import type { CyberFinding, PenTestReportMeta } from '@/api/client';
+import type { CyberFinding, CyberFindingStatus, PenTestReportMeta } from '@/api/client';
 
 // ── Design tokens ────────────────────────────────────────────────
 
@@ -1114,7 +1114,7 @@ function exportEngagementBrief(
   }
 
   // Open DB findings
-  const openFindings = dbFindings.filter(f => f.findingStatus === 'open');
+  const openFindings = dbFindings.filter(f => ['open', 'investigating', 'in_progress'].includes(f.findingStatus));
   if (openFindings.length > 0) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
@@ -1302,6 +1302,21 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
   const [pastScores,    setPastScores]    = useState<{ runAt: string; score: number }[]>([]);
   const [dbFindings,    setDbFindings]    = useState<CyberFinding[]>([]);
   const [remediatingId, setRemediatingId] = useState<string | null>(null);
+  const activeFindingStatuses: CyberFindingStatus[] = ['open', 'investigating', 'in_progress'];
+  const findingStatusLabel: Record<CyberFindingStatus, string> = {
+    open: 'Open',
+    investigating: 'Investigating',
+    in_progress: 'In Progress',
+    remediated: 'Remediated',
+    accepted_risk: 'Accepted Risk',
+  };
+  const findingStatusColor: Record<CyberFindingStatus, string> = {
+    open: '#ef4444',
+    investigating: '#f59e0b',
+    in_progress: '#0ea5e9',
+    remediated: '#22c55e',
+    accepted_risk: '#a78bfa',
+  };
 
   useEffect(() => {
     agentApi.cyber.listAssessments()
@@ -1312,11 +1327,11 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
       .catch(() => {});
   }, []);
 
-  async function markRemediated(id: string) {
+  async function updateFindingStatus(id: string, findingStatus: CyberFindingStatus) {
     setRemediatingId(id);
     try {
-      await agentApi.cyber.updateFinding(id, { findingStatus: 'remediated' });
-      setDbFindings(prev => prev.map(f => f.id === id ? { ...f, findingStatus: 'remediated', remediatedAt: new Date().toISOString() } : f));
+      const updated = await agentApi.cyber.updateFinding(id, { findingStatus });
+      setDbFindings(prev => prev.map(f => f.id === id ? updated : f));
     } catch { /* ignore */ } finally {
       setRemediatingId(null);
     }
@@ -1628,37 +1643,56 @@ function PenTestPanel({ tests, devices, scanResults, threats, fwRules, incidents
       )}
 
       {/* Open findings tracker */}
-      {dbFindings.filter(f => f.findingStatus === 'open').length > 0 && (
+      {dbFindings.filter(f => activeFindingStatuses.includes(f.findingStatus)).length > 0 && (
         <div style={{ marginTop: 20, borderTop: '1px solid #1a2535', paddingTop: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' as const }}>
               Open Findings Tracker
             </div>
             <span style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 20, padding: '2px 10px', fontSize: 10, fontWeight: 700 }}>
-              {dbFindings.filter(f => f.findingStatus === 'open').length} open
+              {dbFindings.filter(f => activeFindingStatuses.includes(f.findingStatus)).length} active
             </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {dbFindings.filter(f => f.findingStatus === 'open').map(f => {
+            {dbFindings.filter(f => activeFindingStatuses.includes(f.findingStatus)).map(f => {
               const statColor = f.status === 'fail' ? '#ef4444' : '#f59e0b';
+              const workflowColor = findingStatusColor[f.findingStatus];
               return (
                 <div key={f.id} style={{ background: '#080b10', border: `1px solid ${statColor}25`, borderLeft: `3px solid ${statColor}`, borderRadius: 10, padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' as const }}>
                       <span style={{ background: `${statColor}15`, color: statColor, border: `1px solid ${statColor}40`, borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const }}>{f.status}</span>
+                      <span style={{ background: `${workflowColor}15`, color: workflowColor, border: `1px solid ${workflowColor}40`, borderRadius: 4, padding: '1px 7px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const }}>{findingStatusLabel[f.findingStatus]}</span>
                       <span style={{ background: 'rgba(212,168,71,0.08)', color: '#d4a847', border: '1px solid rgba(212,168,71,0.2)', borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 600 }}>{f.category}</span>
                       <span style={{ color: '#4a5a6a', fontSize: 10 }}>{new Date(f.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                     </div>
                     <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{f.check_name}</div>
                     <div style={{ color: '#6b7f92', fontSize: 11, lineHeight: 1.5 }}>{f.detail}</div>
+                    {Array.isArray(f.recommendedActions) && f.recommendedActions.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ color: '#4a5a6a', fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                          Do This Now
+                        </div>
+                        <ol style={{ margin: 0, paddingLeft: 18, color: '#9fb0c0', fontSize: 11, lineHeight: 1.5 }}>
+                          {f.recommendedActions.slice(0, 3).map((step, index) => (
+                            <li key={`${f.id}-step-${index}`}>{step}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
                   </div>
-                  <button
-                    onClick={() => markRemediated(f.id)}
+                  <select
+                    value={f.findingStatus}
+                    onChange={event => { void updateFindingStatus(f.id, event.target.value as CyberFindingStatus); }}
                     disabled={remediatingId === f.id}
-                    style={{ flexShrink: 0, background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '6px 14px', fontSize: 11, fontWeight: 700, cursor: remediatingId === f.id ? 'default' : 'pointer', opacity: remediatingId === f.id ? 0.5 : 1 }}
+                    style={{ flexShrink: 0, background: '#0d1421', color: '#dce8f4', border: '1px solid #1a2535', borderRadius: 7, padding: '6px 8px', fontSize: 11, minWidth: 138, opacity: remediatingId === f.id ? 0.7 : 1 }}
                   >
-                    {remediatingId === f.id ? 'Saving…' : '✓ Remediated'}
-                  </button>
+                    <option value="open">Open</option>
+                    <option value="investigating">Investigating</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="accepted_risk">Accepted Risk</option>
+                    <option value="remediated">Remediated</option>
+                  </select>
                 </div>
               );
             })}

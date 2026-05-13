@@ -3,6 +3,25 @@ import type { Device, Alert, InternetStatus, NetworkHealth } from '@/data/mock';
 
 export type { Device, Alert, InternetStatus, NetworkHealth };
 
+export interface ScannerDiagnostics {
+  scanMode: 'auto' | 'fixed' | 'all';
+  configuredSubnet?: string;
+  allowedSubnets: string[];
+  activeSubnet?: string;
+  configuredSubnetSeen?: boolean;
+  configuredSubnetMissStreak: number;
+  warnAfterCycles: number;
+  lastWarning?: string;
+  lastUpdatedAt: string;
+}
+
+export interface ScannerConfig {
+  scanMode: 'auto' | 'fixed' | 'all';
+  subnet?: string;
+  allowedSubnets: string[];
+  warnAfterCycles: number;
+}
+
 // ── Voyage entry (mirrors agent db.VoyageEntry) ───────────────────
 
 export interface VoyageEntry {
@@ -42,6 +61,8 @@ export interface CyberAssessment {
   cadence: string;
 }
 
+export type CyberFindingStatus = 'open' | 'investigating' | 'in_progress' | 'remediated' | 'accepted_risk';
+
 export interface CyberFinding {
   id:           string;
   assessmentId: string;
@@ -50,10 +71,11 @@ export interface CyberFinding {
   status:       string;
   detail:       string;
   weight:       number;
-  findingStatus:string;
+  findingStatus:CyberFindingStatus;
   remediatedAt: string;
   notes:        string;
   createdAt:    string;
+  recommendedActions?: string[];
 }
 
 export interface PenTestReportMeta {
@@ -68,7 +90,7 @@ export interface PenTestReportMeta {
 
 export type ReportPeriod = 'live' | 'daily' | 'weekly' | 'monthly';
 export type ReportCadence = 'daily' | 'weekly' | 'monthly';
-export type ReportSection = 'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber';
+export type ReportSection = 'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber' | 'changes';
 
 export interface ReportSchedule {
   id: string;
@@ -84,6 +106,27 @@ export interface ReportSchedule {
   active: boolean;
   lastSentAt: string | null;
   updatedAt: string;
+}
+
+export interface ReportDeltaAction {
+  ts: string;
+  action?: string | null;
+  method?: string;
+  path?: string;
+  status?: number;
+  email?: string | null;
+}
+
+export interface ReportDelta {
+  windowHours: number;
+  since: string;
+  newDevices: Device[];
+  newAlerts: Alert[];
+  resolvedAlerts: Alert[];
+  newFindings: CyberFinding[];
+  remediatedFindings: CyberFinding[];
+  blockedDevices: Device[];
+  recentActions: ReportDeltaAction[];
 }
 
 export type GuestDeviceAccess = 'approved' | 'blocked' | 'pending';
@@ -132,9 +175,9 @@ export function setTokenProvider(fn: () => Promise<string | null>) {
 
 // ── Fetch with abort-based timeout + Bearer token ─────────────────
 
-export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
+export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs: number = API_TIMEOUT): Promise<T> {
   const controller = new AbortController();
-  const timer      = setTimeout(() => controller.abort(new DOMException('Request timed out', 'AbortError')), API_TIMEOUT);
+  const timer      = setTimeout(() => controller.abort(new DOMException('Request timed out', 'AbortError')), timeoutMs);
   try {
     const token = _getToken ? await _getToken() : null;
     const activeOrgId = typeof window === 'undefined' ? null : window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
@@ -290,7 +333,7 @@ export const agentApi = {
   snapshot: () =>
     fetchWithFallback<VesselSnapshot>('/api/snapshot'),
 
-  devices: () =>
+  listDevices: () =>
     fetchJSON<Device[]>(`${AGENT_URL}/api/devices`),
 
   alerts: () =>
@@ -306,10 +349,35 @@ export const agentApi = {
       body:    JSON.stringify(patch),
     }),
 
+  devices: {
+    blockDevice: (mac: string) =>
+      fetchWithFallback<{ success: boolean; device: Device; router: { status: string; message: string } }>(`/api/devices/${encodeURIComponent(mac)}/block`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ reason: 'Blocked via NauticShield' }),
+      }),
+
+    unblockDevice: (mac: string) =>
+      fetchWithFallback<{ success: boolean; device: Device; router: { status: string; message: string } }>(`/api/devices/${encodeURIComponent(mac)}/unblock`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }),
+  },
+
   status: () =>
-    fetchJSON<{ internetStatus: InternetStatus; networkHealth: NetworkHealth }>(
+    fetchJSON<{ internetStatus: InternetStatus; networkHealth: NetworkHealth; scannerDiagnostics?: ScannerDiagnostics }>(
       `${AGENT_URL}/api/status`
     ),
+
+  getScannerConfig: () =>
+    fetchJSON<ScannerConfig>(`${AGENT_URL}/api/status/scanner-config`, undefined, 10_000),
+
+  updateScannerConfig: (patch: Partial<ScannerConfig>) =>
+    fetchJSON<{ success: boolean; scannerConfig: ScannerConfig; scannerDiagnostics?: ScannerDiagnostics }>(`${AGENT_URL}/api/status/scanner-config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }, 12_000),
 
   runAction: (action: string, payload?: Record<string, unknown>) =>
     fetchJSON<{ success: boolean; message: string }>(`${AGENT_URL}/api/actions/${action}`, {
@@ -466,7 +534,7 @@ export const agentApi = {
     listFindings: () =>
       fetchJSON<CyberFinding[]>(`${AGENT_URL}/api/cyber/findings`),
 
-    updateFinding: (id: string, patch: { findingStatus?: string; notes?: string }) =>
+    updateFinding: (id: string, patch: { findingStatus?: CyberFindingStatus; notes?: string }) =>
       fetchJSON<CyberFinding>(`${AGENT_URL}/api/cyber/findings/${id}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -538,6 +606,9 @@ export const agentApi = {
         body: JSON.stringify({ action: 'send-now', scheduleId }),
       });
     },
+
+    delta: (hours = 24) =>
+      fetchWithFallback<ReportDelta>(`/api/report/delta?hours=${encodeURIComponent(String(hours))}`),
   },
 
   guestNetwork: {

@@ -17,6 +17,9 @@ import {
   Clock,
   Terminal,
   MapPin,
+  Lock,
+  Unlock,
+  Loader,
 } from 'lucide-react';
 import type { DeviceStatus, DeviceType } from '@/data/mock';
 import { useVesselData } from '@/context/VesselDataProvider';
@@ -77,6 +80,11 @@ const statusColors: Record<DeviceStatus, { color: string; label: string; glow: s
 
 type FilterStatus = DeviceStatus | 'all';
 type FilterType   = DeviceType   | 'all';
+
+function normalizeDeviceType(value: unknown): DeviceType {
+  if (typeof value !== 'string') return 'unknown';
+  return value in typeIcons ? (value as DeviceType) : 'unknown';
+}
 
 // ── Card shell ────────────────────────────────────────────────────
 
@@ -295,24 +303,34 @@ function DeviceDetailPanel({ device, onClose }: {
 
 // ── Device row ────────────────────────────────────────────────────
 
-function DeviceRow({ device, onSave }: {
-  device: { id: string; name: string; type: DeviceType; status: DeviceStatus; ip: string; mac: string; lastSeen: string; manufacturer?: string | null; location?: string | null };
+function DeviceRow({ device, onSave, onBlock, onUnblock, controlsEnabled, onNotify }: {
+  device: { id: string; name: string; type: DeviceType; status: DeviceStatus; ip: string; mac: string; lastSeen: string; manufacturer?: string | null; location?: string | null; blocked?: boolean; blockedAt?: string; blockedReason?: string };
   onSave: (id: string, patch: { name?: string; type?: string; location?: string }) => void;
+  onBlock?: (mac: string) => Promise<void>;
+  onUnblock?: (mac: string) => Promise<void>;
+  controlsEnabled?: boolean;
+  onNotify?: (type: 'success' | 'error' | 'block', message: string) => void;
 }) {
   const [editing, setEditing]   = useState(false);
   const [name, setName]         = useState(device.name);
-  const [type, setType]         = useState<DeviceType>(device.type);
+  const [type, setType]         = useState<DeviceType>(normalizeDeviceType(device.type));
   const [location, setLocation] = useState(device.location ?? '');
+  const [blocking, setBlocking] = useState(false);
+  const [localBlocked, setLocalBlocked] = useState(Boolean(device.blocked));
   const nameRef = useRef<HTMLInputElement>(null);
 
   // Keep local state in sync if WS updates arrive while not editing
   useEffect(() => {
     if (!editing) {
       setName(device.name);
-      setType(device.type);
+      setType(normalizeDeviceType(device.type));
       setLocation(device.location ?? '');
     }
   }, [device.name, device.type, device.location, editing]);
+
+  useEffect(() => {
+    setLocalBlocked(Boolean(device.blocked));
+  }, [device.blocked]);
 
   useEffect(() => {
     if (editing) nameRef.current?.focus();
@@ -323,16 +341,49 @@ function DeviceRow({ device, onSave }: {
     setEditing(false);
   }
 
+  async function handleBlock() {
+    if (!onBlock) return;
+    setBlocking(true);
+    onNotify?.('block', `Blocking ${device.name}...`);
+    try {
+      await onBlock(device.mac);
+      setLocalBlocked(true);
+      onNotify?.('block', `${device.name} blocked`);
+    } catch (err) {
+      console.error('Failed to block device:', err);
+      onNotify?.('error', `Failed to block ${device.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setBlocking(false);
+    }
+  }
+
+  async function handleUnblock() {
+    if (!onUnblock) return;
+    setBlocking(true);
+    onNotify?.('success', `Unblocking ${device.name}...`);
+    try {
+      await onUnblock(device.mac);
+      setLocalBlocked(false);
+      onNotify?.('success', `${device.name} unblocked`);
+    } catch (err) {
+      console.error('Failed to unblock device:', err);
+      onNotify?.('error', `Failed to unblock ${device.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setBlocking(false);
+    }
+  }
+
   function cancel() {
     setName(device.name);
-    setType(device.type);
+    setType(normalizeDeviceType(device.type));
     setLocation(device.location ?? '');
     setEditing(false);
   }
 
-  const Icon = typeIcons[type];
+  const normalizedType = normalizeDeviceType(type);
+  const Icon = typeIcons[normalizedType] ?? HelpCircle;
   const sc   = statusColors[device.status];
-  const isUnknown = type === 'unknown';
+  const isUnknown = normalizedType === 'unknown';
 
   return (
     <div style={{
@@ -410,13 +461,35 @@ function DeviceRow({ device, onSave }: {
               )}
             </div>
             <div style={{ color: '#6b7f92', fontSize: 11, marginTop: 3 }}>
-              {typeLabels[device.type]}
+              {typeLabels[normalizeDeviceType(device.type)]}
               {device.manufacturer ? ` · ${device.manufacturer}` : ''}
               {device.location     ? ` · ${device.location}`     : ''}
             </div>
           </>
         )}
       </div>
+
+      {/* Center state marker */}
+      {localBlocked && (
+        <div style={{ flexShrink: 0, width: 110, display: 'flex', justifyContent: 'center' }}>
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '4px 10px',
+            borderRadius: 999,
+            border: '1px solid rgba(239,68,68,0.45)',
+            background: 'rgba(239,68,68,0.16)',
+            color: '#ef4444',
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: 0.6,
+            lineHeight: 1,
+          }}>
+            BLOCKED
+          </span>
+        </div>
+      )}
 
       {/* IP + MAC */}
       <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -439,7 +512,10 @@ function DeviceRow({ device, onSave }: {
       </div>
 
       {/* Edit / Save / Cancel buttons */}
-      <div style={{ flexShrink: 0 }}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ flexShrink: 0, display: 'flex', gap: 6, alignItems: 'center' }}
+      >
         {editing ? (
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={commit} title="Save" style={{
@@ -457,6 +533,57 @@ function DeviceRow({ device, onSave }: {
             color: '#6b7f92', borderRadius: 7, padding: '5px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center',
           }}><Pencil size={13} /></button>
         )}
+
+        {/* Block/Unblock button */}
+        {!editing && (
+          <>
+            {localBlocked ? (
+              <button
+                onClick={handleUnblock}
+                disabled={blocking || controlsEnabled === false}
+                title={controlsEnabled === false ? 'Agent offline - controls disabled' : 'Unblock this device'}
+                style={{
+                  background: 'rgba(239,68,68,0.15)',
+                  border: '1px solid rgba(239,68,68,0.4)',
+                  color: '#ef4444',
+                  borderRadius: 7,
+                  padding: '5px 8px',
+                  cursor: (blocking || controlsEnabled === false) ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  opacity: (blocking || controlsEnabled === false) ? 0.5 : 1,
+                }}
+              >
+                {blocking ? <Loader size={13} /> : <Unlock size={13} />}
+              </button>
+            ) : (
+              <button
+                onClick={handleBlock}
+                disabled={blocking || controlsEnabled === false}
+                title={controlsEnabled === false ? 'Agent offline - controls disabled' : 'Block this device at the router'}
+                style={{
+                  background: 'rgba(249,115,22,0.12)',
+                  border: '1px solid rgba(249,115,22,0.3)',
+                  color: '#f97316',
+                  borderRadius: 7,
+                  padding: '5px 8px',
+                  cursor: (blocking || controlsEnabled === false) ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  opacity: (blocking || controlsEnabled === false) ? 0.5 : 1,
+                }}
+              >
+                {blocking ? <Loader size={13} /> : <Lock size={13} />}
+              </button>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
@@ -465,17 +592,114 @@ function DeviceRow({ device, onSave }: {
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function Devices() {
-  const { devices, renameDevice } = useVesselData();
+  const { devices, renameDevice, blockDevice, unblockDevice, isLive, agentStatus, scannerDiagnostics, updateScannerConfig } = useVesselData();
   const [search, setSearch]             = useState('');
   const [selectedDevice, setSelectedDevice] = useState<typeof devices[0] | null>(null);
+  const [toast, setToast] = useState<{ id: number; type: 'success' | 'error' | 'block'; message: string } | null>(null);
+  const [scannerModePreset, setScannerModePreset] = useState<'auto' | 'advanced'>('auto');
+  const [scanModeInput, setScanModeInput] = useState<'auto' | 'fixed' | 'all'>('auto');
+  const [subnetInput, setSubnetInput] = useState('');
+  const [allowedInput, setAllowedInput] = useState('');
+  const [warnCyclesInput, setWarnCyclesInput] = useState('3');
+  const [savingScannerConfig, setSavingScannerConfig] = useState(false);
+  const [showScannerAdvancedDetails, setShowScannerAdvancedDetails] = useState(false);
+  
   useEffect(() => {
     if (!selectedDevice) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedDevice(null); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [selectedDevice]);
+  
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [typeFilter, setTypeFilter]     = useState<FilterType>('all');
+
+  // Block/unblock handlers
+  const handleBlock = async (mac: string) => {
+    if (!isLive || agentStatus === 'offline') {
+      throw new Error('Agent is offline. Wait for reconnect before blocking devices.');
+    }
+    try {
+      await blockDevice(mac);
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  const handleUnblock = async (mac: string) => {
+    if (!isLive || agentStatus === 'offline') {
+      throw new Error('Agent is offline. Wait for reconnect before unblocking devices.');
+    }
+    try {
+      await unblockDevice(mac);
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  const notify = (type: 'success' | 'error' | 'block', message: string) => {
+    setToast({ id: Date.now(), type, message });
+  };
+
+  useEffect(() => {
+    if (!scannerDiagnostics) return;
+    setScanModeInput(scannerDiagnostics.scanMode);
+    setScannerModePreset(scannerDiagnostics.scanMode === 'auto' ? 'auto' : 'advanced');
+    setSubnetInput(scannerDiagnostics.configuredSubnet ?? '');
+    setAllowedInput((scannerDiagnostics.allowedSubnets ?? []).join(', '));
+    setWarnCyclesInput(String(scannerDiagnostics.warnAfterCycles ?? 3));
+  }, [scannerDiagnostics]);
+
+  useEffect(() => {
+    if (scannerModePreset === 'auto') {
+      setScanModeInput('auto');
+      return;
+    }
+
+    if (scanModeInput === 'auto') {
+      setScanModeInput('fixed');
+    }
+  }, [scannerModePreset, scanModeInput]);
+
+  const applyScannerConfig = async (targetPreset: 'auto' | 'advanced') => {
+    setSavingScannerConfig(true);
+    try {
+      if (targetPreset === 'auto') {
+        await updateScannerConfig({
+          scanMode: 'auto',
+          subnet: undefined,
+          allowedSubnets: [],
+          warnAfterCycles: Math.max(1, Number(warnCyclesInput) || 1),
+        });
+      } else {
+        await updateScannerConfig({
+          scanMode: scanModeInput === 'auto' ? 'fixed' : scanModeInput,
+          subnet: subnetInput.trim() || undefined,
+          allowedSubnets: allowedInput
+            .split(',')
+            .map(v => v.trim())
+            .filter(Boolean),
+          warnAfterCycles: Math.max(1, Number(warnCyclesInput) || 1),
+        });
+      }
+      notify('success', targetPreset === 'auto' ? 'Auto scanner mode enabled' : 'Scanner settings updated');
+    } catch (err) {
+      notify('error', `Failed to update scanner settings: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setSavingScannerConfig(false);
+    }
+  };
+
+  const handleSaveScannerConfig = async () => {
+    await applyScannerConfig(scannerModePreset);
+  };
+
+  const handleScannerModePresetChange = async (nextPreset: 'auto' | 'advanced') => {
+    setScannerModePreset(nextPreset);
+    if (nextPreset === 'auto') {
+      await applyScannerConfig('auto');
+    }
+  };
 
   const filtered = devices.filter(d => {
     const matchStatus = statusFilter === 'all' || d.status === statusFilter;
@@ -492,9 +716,90 @@ export default function Devices() {
   const unknownCount = devices.filter(d => d.type === 'unknown').length;
   const onlineCount  = devices.filter(d => d.status === 'online').length;
   const offlineCount = devices.filter(d => d.status === 'offline').length;
+  const wsChip = agentStatus === 'online'
+    ? { label: 'Agent Online', color: '#22c55e', bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.35)' }
+    : agentStatus === 'connecting'
+      ? { label: 'Connecting', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)' }
+      : agentStatus === 'cloud'
+        ? { label: 'Cloud Fallback', color: '#38bdf8', bg: 'rgba(56,189,248,0.12)', border: 'rgba(56,189,248,0.35)' }
+        : { label: 'Agent Offline', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.35)' };
+
+  const subnetHealth = (() => {
+    if (!scannerDiagnostics) {
+      return {
+        label: 'Diagnostics pending',
+        color: '#f59e0b',
+        bg: 'rgba(245,158,11,0.10)',
+        border: 'rgba(245,158,11,0.30)',
+        message: 'Waiting for scanner diagnostics from agent...',
+      };
+    }
+
+    const hasSubnetMismatchWarning =
+      scannerDiagnostics.scanMode !== 'auto' &&
+      (Boolean(scannerDiagnostics.lastWarning) ||
+        scannerDiagnostics.configuredSubnetMissStreak >= scannerDiagnostics.warnAfterCycles);
+
+    if (hasSubnetMismatchWarning) {
+      return {
+        label: 'Attention needed',
+        color: '#ef4444',
+        bg: 'rgba(239,68,68,0.10)',
+        border: 'rgba(239,68,68,0.30)',
+        message: scannerDiagnostics.lastWarning ?? 'Configured subnet may not match the active onboard LAN.',
+      };
+    }
+
+    return {
+      label: 'Scanner healthy',
+      color: '#22c55e',
+      bg: 'rgba(34,197,94,0.10)',
+      border: 'rgba(34,197,94,0.30)',
+      message: 'Scanner is targeting the expected network segment.',
+    };
+  })();
 
   return (
     <div style={{ padding: 28, maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          top: 18,
+          right: 18,
+          zIndex: 1200,
+          maxWidth: 360,
+          background: toast.type === 'success' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.16)',
+          border: toast.type === 'success' ? '1px solid rgba(34,197,94,0.45)' : '1px solid rgba(239,68,68,0.45)',
+          color: toast.type === 'success' ? '#86efac' : '#fca5a5',
+          borderRadius: 10,
+          padding: '10px 12px',
+          fontSize: 13,
+          fontWeight: 600,
+          boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}>
+          <span style={{ flex: 1 }}>{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: 14,
+              lineHeight: 1,
+              opacity: 0.9,
+            }}
+            title="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -504,18 +809,305 @@ export default function Devices() {
             {onlineCount} online · {offlineCount} offline · {devices.length} total
           </div>
         </div>
-        {unknownCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
-            background: 'rgba(245,158,11,0.1)', color: '#f59e0b',
-            border: '1px solid rgba(245,158,11,0.3)',
-            borderRadius: 20, padding: '6px 14px', fontSize: 12, fontWeight: 600,
+            background: wsChip.bg,
+            color: wsChip.color,
+            border: `1px solid ${wsChip.border}`,
+            borderRadius: 20,
+            padding: '6px 12px',
+            fontSize: 12,
+            fontWeight: 700,
           }}>
-            <AlertTriangle size={13} />
-            {unknownCount} unknown device{unknownCount > 1 ? 's' : ''}
+            <span style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: wsChip.color,
+              boxShadow: `0 0 8px ${wsChip.color}`,
+              display: 'inline-block',
+            }} />
+            {wsChip.label}
+          </div>
+          {unknownCount > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'rgba(245,158,11,0.1)', color: '#f59e0b',
+              border: '1px solid rgba(245,158,11,0.3)',
+              borderRadius: 20, padding: '6px 14px', fontSize: 12, fontWeight: 600,
+            }}>
+              <AlertTriangle size={13} />
+              {unknownCount} unknown device{unknownCount > 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {(!isLive || agentStatus === 'offline') && (
+        <div style={{
+          borderRadius: 10,
+          padding: '10px 12px',
+          fontSize: 13,
+          fontWeight: 700,
+          background: 'rgba(245,158,11,0.12)',
+          border: '1px solid rgba(245,158,11,0.35)',
+          color: '#fbbf24',
+        }}>
+          Live agent connection is offline. Device control buttons are temporarily disabled.
+        </div>
+      )}
+
+      <Card style={{ padding: 16 }}>
+        <CardLabel>Scanner Diagnostics</CardLabel>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ color: '#f0f4f8', fontSize: 13, fontWeight: 700 }}>
+              Scanner Mode
+            </div>
+            <select
+              value={scannerModePreset}
+              onChange={e => {
+                void handleScannerModePresetChange(e.target.value as 'auto' | 'advanced');
+              }}
+              disabled={!isLive || agentStatus === 'offline' || savingScannerConfig}
+              style={{
+                minWidth: 190,
+                background: '#0d1421',
+                border: '1px solid #1a2535',
+                borderRadius: 8,
+                color: '#f0f4f8',
+                fontSize: 12,
+                padding: '8px 10px',
+              }}
+            >
+              <option value="auto">Auto (recommended)</option>
+              <option value="advanced">Manual</option>
+            </select>
+          </div>
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            borderRadius: 20,
+            padding: '5px 10px',
+            fontSize: 12,
+            fontWeight: 700,
+            color: subnetHealth.color,
+            background: subnetHealth.bg,
+            border: `1px solid ${subnetHealth.border}`,
+          }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: subnetHealth.color }} />
+            {subnetHealth.label}
+          </div>
+        </div>
+
+        <div style={{ color: '#8899aa', fontSize: 12, marginBottom: 12 }}>
+          {subnetHealth.message}
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <button
+            type="button"
+            onClick={() => setShowScannerAdvancedDetails(prev => !prev)}
+            style={{
+              background: '#0a0f18',
+              border: '1px solid #1a2535',
+              borderRadius: 8,
+              color: '#9fb0c1',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '7px 10px',
+              cursor: 'pointer',
+            }}
+          >
+            {showScannerAdvancedDetails ? 'Hide technical data' : 'Show technical data'}
+          </button>
+        </div>
+
+        {showScannerAdvancedDetails && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 12 }}>
+            <div style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 10, padding: '8px 10px' }}>
+              <div style={{ color: '#6b7f92', fontSize: 11 }}>Active subnet</div>
+              <div style={{ color: '#f0f4f8', fontSize: 12, fontFamily: 'monospace', marginTop: 2 }}>
+                {scannerDiagnostics?.activeSubnet ? `${scannerDiagnostics.activeSubnet}.0/24` : 'Scanning all available'}
+              </div>
+            </div>
+            <div style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 10, padding: '8px 10px' }}>
+              <div style={{ color: '#6b7f92', fontSize: 11 }}>Configured subnet</div>
+              <div style={{ color: '#f0f4f8', fontSize: 12, fontFamily: 'monospace', marginTop: 2 }}>
+                {scannerDiagnostics?.configuredSubnet ? `${scannerDiagnostics.configuredSubnet}.0/24` : 'Not set'}
+              </div>
+            </div>
+            <div style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 10, padding: '8px 10px' }}>
+              <div style={{ color: '#6b7f92', fontSize: 11 }}>Miss streak</div>
+              <div style={{ color: '#f0f4f8', fontSize: 12, marginTop: 2 }}>
+                {scannerDiagnostics?.configuredSubnetMissStreak ?? 0} cycle(s)
+              </div>
+            </div>
+            <div style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 10, padding: '8px 10px' }}>
+              <div style={{ color: '#6b7f92', fontSize: 11 }}>Recommended action</div>
+              <div style={{ color: '#f0f4f8', fontSize: 12, marginTop: 2 }}>
+                {scannerDiagnostics?.scanMode !== 'auto' && scannerDiagnostics?.lastWarning
+                  ? 'Switch to Auto mode or correct SUBNET setting.'
+                  : 'No action required.'}
+              </div>
+            </div>
           </div>
         )}
-      </div>
+
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1a2535' }}>
+          <div style={{ color: '#6b7f92', fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
+            Scanner Settings
+          </div>
+
+          <div style={{ color: '#6b7f92', fontSize: 11, marginBottom: 10 }}>
+            Auto applies immediately. Manual changes apply when you click Save.
+          </div>
+
+          {scannerModePreset === 'advanced' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+            <div>
+              <div style={{ color: '#6b7f92', fontSize: 11, marginBottom: 4 }}>Advanced Strategy</div>
+              <select
+                value={scanModeInput}
+                onChange={e => setScanModeInput(e.target.value as 'auto' | 'fixed' | 'all')}
+                disabled={!isLive || agentStatus === 'offline' || savingScannerConfig}
+                style={{
+                  width: '100%',
+                  background: '#0d1421',
+                  border: '1px solid #1a2535',
+                  borderRadius: 8,
+                  color: '#f0f4f8',
+                  fontSize: 12,
+                  padding: '8px 10px',
+                }}
+              >
+                <option value="fixed">Fixed</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+
+            <div>
+              <div style={{ color: '#6b7f92', fontSize: 11, marginBottom: 4 }}>Preferred/Fixed Subnet</div>
+              <input
+                value={subnetInput}
+                onChange={e => setSubnetInput(e.target.value)}
+                placeholder="e.g. 192.168.0"
+                disabled={!isLive || agentStatus === 'offline' || savingScannerConfig}
+                style={{
+                  width: '100%',
+                  background: '#0d1421',
+                  border: '1px solid #1a2535',
+                  borderRadius: 8,
+                  color: '#f0f4f8',
+                  fontSize: 12,
+                  padding: '8px 10px',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div>
+              <div style={{ color: '#6b7f92', fontSize: 11, marginBottom: 4 }}>Allowed Subnets (comma-separated)</div>
+              <input
+                value={allowedInput}
+                onChange={e => setAllowedInput(e.target.value)}
+                placeholder="192.168.0, 192.168.1"
+                disabled={!isLive || agentStatus === 'offline' || savingScannerConfig}
+                style={{
+                  width: '100%',
+                  background: '#0d1421',
+                  border: '1px solid #1a2535',
+                  borderRadius: 8,
+                  color: '#f0f4f8',
+                  fontSize: 12,
+                  padding: '8px 10px',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div>
+              <div style={{ color: '#6b7f92', fontSize: 11, marginBottom: 4 }}>Miss Warning Cycles</div>
+              <input
+                type="number"
+                min={1}
+                value={warnCyclesInput}
+                onChange={e => setWarnCyclesInput(e.target.value)}
+                disabled={!isLive || agentStatus === 'offline' || savingScannerConfig}
+                style={{
+                  width: '100%',
+                  background: '#0d1421',
+                  border: '1px solid #1a2535',
+                  borderRadius: 8,
+                  color: '#f0f4f8',
+                  fontSize: 12,
+                  padding: '8px 10px',
+                  outline: 'none',
+                }}
+              />
+            </div>
+          </div>
+          )}
+
+          {scannerModePreset === 'advanced' && (
+            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleSaveScannerConfig}
+                disabled={!isLive || agentStatus === 'offline' || savingScannerConfig}
+                style={{
+                  background: 'rgba(14,165,233,0.15)',
+                  border: '1px solid rgba(14,165,233,0.4)',
+                  color: '#7dd3fc',
+                  borderRadius: 8,
+                  padding: '7px 12px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: (!isLive || agentStatus === 'offline' || savingScannerConfig) ? 'not-allowed' : 'pointer',
+                  opacity: (!isLive || agentStatus === 'offline' || savingScannerConfig) ? 0.5 : 1,
+                }}
+              >
+                {savingScannerConfig ? 'Saving...' : 'Save Scanner Settings'}
+              </button>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {toast && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          borderRadius: 10,
+          padding: '10px 12px',
+          fontSize: 13,
+          fontWeight: 700,
+          background: toast.type === 'success' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.14)',
+          border: toast.type === 'success' ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(239,68,68,0.38)',
+          color: toast.type === 'success' ? '#86efac' : '#fca5a5',
+          justifyContent: 'space-between',
+        }}>
+          <span>{toast.type === 'error' ? 'Action failed:' : 'Action status:'} {toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: 14,
+              lineHeight: 1,
+              opacity: 0.9,
+              marginLeft: 10,
+            }}
+            title="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Search + filters */}
       <Card style={{ padding: 16 }}>
@@ -577,7 +1169,14 @@ export default function Devices() {
           ) : (
             filtered.map(d => (
               <div key={d.id} onClick={() => setSelectedDevice(d)} style={{ cursor: 'pointer' }}>
-                <DeviceRow device={d} onSave={renameDevice} />
+                <DeviceRow
+                  device={d}
+                  onSave={renameDevice}
+                  onBlock={handleBlock}
+                  onUnblock={handleUnblock}
+                  controlsEnabled={isLive && agentStatus !== 'offline'}
+                  onNotify={notify}
+                />
               </div>
             ))
           )}

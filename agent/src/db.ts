@@ -28,6 +28,9 @@ db.exec(`
     lastSeen     TEXT NOT NULL,
     manufacturer TEXT,
     location     TEXT,
+    blocked      INTEGER NOT NULL DEFAULT 0,
+    blockedAt    TEXT,
+    blockedReason TEXT,
     updatedAt    TEXT NOT NULL
   );
 
@@ -113,6 +116,15 @@ for (const [col, def] of [
   try { db.exec(`ALTER TABLE voyage_log ADD COLUMN ${col} ${def}`); } catch { /* exists */ }
 }
 
+// Safe migration: add device blocking columns
+for (const [col, def] of [
+  ['blocked',       'INTEGER NOT NULL DEFAULT 0'],
+  ['blockedAt',     'TEXT'],
+  ['blockedReason', 'TEXT'],
+] as [string, string][]) {
+  try { db.exec(`ALTER TABLE devices ADD COLUMN ${col} ${def}`); } catch { /* exists */ }
+}
+
 // Keep perf_samples lean — drop anything older than 90 days on startup
 try {
   const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -142,17 +154,24 @@ export function upsertDevice(device: Device): void {
   const now = new Date().toISOString();
   // node:sqlite doesn't accept undefined — coerce optional fields to null
   db.prepare(`
-    INSERT INTO devices (id, name, type, status, ip, mac, lastSeen, manufacturer, location, updatedAt)
-    VALUES (@id, @name, @type, @status, @ip, @mac, @lastSeen, @manufacturer, @location, @updatedAt)
+    INSERT INTO devices (id, name, type, status, ip, mac, lastSeen, manufacturer, location, firstSeen, updatedAt)
+    VALUES (@id, @name, @type, @status, @ip, @mac, @lastSeen, @manufacturer, @location, @firstSeen, @updatedAt)
     ON CONFLICT(mac) DO UPDATE SET
       ip        = excluded.ip,
       status    = excluded.status,
       lastSeen  = excluded.lastSeen,
       updatedAt = excluded.updatedAt
   `).run({
-    ...device,
+    id:           device.id,
+    name:         device.name,
+    type:         device.type,
+    status:       device.status,
+    ip:           device.ip,
+    mac:          device.mac,
+    lastSeen:     device.lastSeen,
     manufacturer: device.manufacturer ?? null,
     location:     device.location     ?? null,
+    firstSeen:    now,
     updatedAt:    now,
   });
 }
@@ -177,6 +196,30 @@ export function renameDevice(id: string, name: string, type?: string, location?:
     db.prepare(`UPDATE devices SET name = ?, updatedAt = ? WHERE id = ?`).run(name, now, id);
   }
   return getDeviceById(id);
+}
+
+export function setDeviceBlocked(mac: string, blocked: boolean, reason?: string): Device | undefined {
+  const now = new Date().toISOString();
+  if (blocked) {
+    db.prepare(`
+      UPDATE devices SET blocked = 1, blockedAt = ?, blockedReason = ?, updatedAt = ? WHERE mac = ?
+    `).run(now, reason ?? null, now, mac);
+  } else {
+    db.prepare(`
+      UPDATE devices SET blocked = 0, blockedAt = null, blockedReason = null, updatedAt = ? WHERE mac = ?
+    `).run(now, mac);
+  }
+  return getDeviceByMac(mac);
+}
+
+export function getDeviceBlockState(mac: string): { blocked: boolean; blockedAt?: string; reason?: string } | null {
+  const device = getDeviceByMac(mac);
+  if (!device) return null;
+  return {
+    blocked: device.blocked ?? false,
+    blockedAt: device.blockedAt,
+    reason: device.blockedReason,
+  };
 }
 
 type DeviceStatus = Device['status'];
@@ -204,6 +247,14 @@ export function getOpenAlertByFingerprint(fingerprint: string): Alert | undefine
   ).get(fingerprint) as unknown as (Alert & { fingerprint: string }) | undefined;
   if (!row) return undefined;
   return { ...row, resolved: Boolean((row as any).resolved) };
+}
+
+/** Returns the latest alert timestamp for a fingerprint, open or resolved. */
+export function getLatestAlertTimestampByFingerprint(fingerprint: string): string | undefined {
+  const row = db.prepare(
+    `SELECT timestamp FROM alerts WHERE fingerprint = ? ORDER BY timestamp DESC LIMIT 1`
+  ).get(fingerprint) as { timestamp?: string } | undefined;
+  return row?.timestamp;
 }
 
 /** Auto-resolve all open alerts matching a fingerprint. */
@@ -451,6 +502,8 @@ export interface CyberAssessment {
   cadence: string;
 }
 
+export type CyberFindingStatus = 'open' | 'investigating' | 'in_progress' | 'remediated' | 'accepted_risk';
+
 export interface CyberFinding {
   id:            string;
   assessmentId:  string;
@@ -459,7 +512,7 @@ export interface CyberFinding {
   status:        string;
   detail:        string;
   weight:        number;
-  findingStatus: string;
+  findingStatus: CyberFindingStatus;
   remediatedAt:  string;
   notes:         string;
   createdAt:     string;
@@ -516,6 +569,12 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log (ts);
 `);
 
+// ── Schema migrations ─────────────────────────────────────────────
+// These run after CREATE TABLE so they are safe on existing databases.
+try { db.exec('ALTER TABLE devices ADD COLUMN firstSeen TEXT'); } catch { /* already exists */ }
+db.exec(`UPDATE devices SET firstSeen = updatedAt WHERE firstSeen IS NULL`);
+try { db.exec('ALTER TABLE audit_log ADD COLUMN action TEXT'); } catch { /* already exists */ }
+
 export interface AuditEntry {
   userId: string;
   role:   string;
@@ -524,23 +583,53 @@ export interface AuditEntry {
   path:   string;
   status: number;
   ip:     string | null;
+  action?: string;
 }
 
 export function writeAuditLog(entry: AuditEntry): void {
   try {
     db.prepare(`
-      INSERT INTO audit_log (id, ts, userId, role, email, method, path, status, ip)
-      VALUES (@id, @ts, @userId, @role, @email, @method, @path, @status, @ip)
+      INSERT INTO audit_log (id, ts, userId, role, email, method, path, status, ip, action)
+      VALUES (@id, @ts, @userId, @role, @email, @method, @path, @status, @ip, @action)
     `).run({
       id:     uuidv4(),
       ts:     new Date().toISOString(),
       ...entry,
+      action: entry.action ?? null,
     });
   } catch { /* non-fatal */ }
 }
 
 export function getAuditLog(limit = 200): unknown[] {
   return db.prepare('SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?').all(limit);
+}
+
+// ── Delta / report queries ────────────────────────────────────────
+
+export function getDevicesFirstSeenSince(iso: string): Device[] {
+  return db.prepare('SELECT * FROM devices WHERE firstSeen >= ? ORDER BY firstSeen DESC').all(iso) as unknown as Device[];
+}
+
+export function getAlertsCreatedSince(iso: string): Alert[] {
+  return db.prepare('SELECT * FROM alerts WHERE timestamp >= ? ORDER BY timestamp DESC').all(iso) as unknown as Alert[];
+}
+
+export function getAlertsResolvedSince(iso: string): Alert[] {
+  return db.prepare(`SELECT * FROM alerts WHERE resolvedAt IS NOT NULL AND resolvedAt >= ?
+    ORDER BY resolvedAt DESC`).all(iso) as unknown as Alert[];
+}
+
+export function getFindingsCreatedSince(iso: string): CyberFinding[] {
+  return db.prepare('SELECT * FROM cyber_findings WHERE createdAt >= ? ORDER BY createdAt DESC').all(iso) as unknown as CyberFinding[];
+}
+
+export function getFindingsRemediatedSince(iso: string): CyberFinding[] {
+  return db.prepare(`SELECT * FROM cyber_findings WHERE remediatedAt != '' AND remediatedAt >= ?
+    ORDER BY remediatedAt DESC`).all(iso) as unknown as CyberFinding[];
+}
+
+export function getDevicesBlockedSince(iso: string): Device[] {
+  return db.prepare('SELECT * FROM devices WHERE blocked = 1 AND blockedAt >= ? ORDER BY blockedAt DESC').all(iso) as unknown as Device[];
 }
 
 // ── Notification Preferences ──────────────────────────────────────

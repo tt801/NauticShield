@@ -10,7 +10,7 @@ type ReportSchedule = {
   name: string;
   recipient: string;
   period: ReportPeriod;
-  sections: Array<'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber'>;
+  sections: Array<'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber' | 'changes'>;
   cadence: ReportCadence;
   sendTime: string;
   timeZone: string;
@@ -21,7 +21,7 @@ type ReportSchedule = {
   updatedAt: string;
 };
 
-const DEFAULT_REPORT_SECTIONS: ReportSchedule['sections'] = ['overview', 'connectivity', 'devices', 'zones', 'security', 'alerts', 'cyber'];
+const DEFAULT_REPORT_SECTIONS: ReportSchedule['sections'] = ['overview', 'connectivity', 'devices', 'zones', 'security', 'alerts', 'cyber', 'changes'];
 
 function normalizeReportSections(value: unknown): ReportSchedule['sections'] {
   if (!Array.isArray(value) || value.length === 0) return DEFAULT_REPORT_SECTIONS;
@@ -103,7 +103,7 @@ function isDue(schedule: ReportSchedule, now: Date) {
   return true;
 }
 
-function renderHtml(vesselName: string, schedule: ReportSchedule, snapshot: any, openFindings: any[]) {
+function renderHtml(vesselName: string, schedule: ReportSchedule, snapshot: any, openFindings: any[], recentChanges: any[]) {
   const internet = snapshot?.internet_status ?? {};
   const devices = Array.isArray(snapshot?.devices) ? snapshot.devices : [];
   const alerts = Array.isArray(snapshot?.alerts) ? snapshot.alerts : [];
@@ -121,6 +121,10 @@ function renderHtml(vesselName: string, schedule: ReportSchedule, snapshot: any,
   const zoneRows = Object.entries(zoneGroups as Record<string, { total: number; online: number; offline: number }>).map(([zone, counts]) => `<li>${zone}: ${counts.online}/${counts.total} online</li>`).join('');
   const findingItems = openFindings.slice(0, 5).map((finding: any) => `<li>${finding.check_name} (${finding.status})</li>`).join('');
   const alertItems = activeAlerts.slice(0, 5).map((alert: any) => `<li>${alert.title}</li>`).join('');
+  const changeRows = recentChanges.slice(0, 8).map((entry: any) => {
+    const when = new Date(entry.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `<li>${when}: ${entry.action ?? 'system.update'} (${entry.actor ?? 'system'})</li>`;
+  }).join('');
   return `
     <div style="font-family:Arial,sans-serif;background:#080b10;color:#f0f4f8;padding:24px;line-height:1.6">
       <h1 style="margin:0 0 12px;font-size:22px;">${schedule.name}</h1>
@@ -187,6 +191,13 @@ function renderHtml(vesselName: string, schedule: ReportSchedule, snapshot: any,
         ${findingItems || '<li>No open findings.</li>'}
       </ul>
       ` : ''}
+      ${sections.has('changes') ? `
+      <h2 style="font-size:16px;margin:0 0 8px;">What Changed Since Yesterday</h2>
+      <ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">
+        <li>${recentChanges.length} key updates logged in the last 24 hours</li>
+        ${changeRows || '<li>No change events captured in this window.</li>'}
+      </ul>
+      ` : ''}
     </div>
   `;
 }
@@ -238,11 +249,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   for (const [vesselId, value] of latestPerVessel) {
     const dueSchedules = value.schedules.filter(schedule => isDue(schedule, now));
     if (dueSchedules.length === 0) continue;
+    const sinceIso = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
 
-    const [{ data: vessel }, { data: snapshot }, { data: findings }] = await Promise.all([
+    const [{ data: vessel }, { data: snapshot }, { data: findings }, { data: recentChanges }] = await Promise.all([
       supabase.from('vessels').select('name').eq('id', vesselId).single(),
       supabase.from('vessel_snapshots').select('devices, alerts, internet_status').eq('vessel_id', vesselId).single(),
       supabase.from('cyber_findings').select('data').eq('vessel_id', vesselId).order('synced_at', { ascending: false }).limit(20),
+      supabase.from('audit_log').select('created_at, action, actor').eq('org_id', value.orgId).eq('resource', vesselId).gte('created_at', sinceIso).order('created_at', { ascending: false }).limit(20),
     ]);
 
     const openFindings = (findings ?? [])
@@ -254,7 +267,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         from: fromEmail,
         to: schedule.recipient,
         subject: `${vessel?.name ?? vesselId} · ${schedule.name}`,
-        html: renderHtml(vessel?.name ?? vesselId, schedule, snapshot, openFindings),
+        html: renderHtml(vessel?.name ?? vesselId, schedule, snapshot, openFindings, recentChanges ?? []),
       });
 
       if (result.error) {

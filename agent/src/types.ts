@@ -1,9 +1,45 @@
+import type { ScannerDiagnostics } from './scannerDiagnostics';
 // Shared types — mirrored structurally with the frontend @/data/mock types
 // so the REST API response is drop-in compatible.
 
 export type ConnectionStatus = 'good' | 'slow' | 'down';
 export type DeviceStatus     = 'online' | 'offline' | 'unknown';
-export type DeviceType       = 'phone' | 'laptop' | 'tv' | 'camera' | 'router' | 'unknown';
+export type DeviceType       = 
+  // Network gear
+  | 'router' 
+  | 'access-point' 
+  | 'switch'
+  | 'firewall'
+  
+  // Cameras & CCTV
+  | 'camera'           // IP camera
+  | 'nvr'              // Network video recorder
+  
+  // Navigation/OT
+  | 'chart-plotter'    // ECDIS or similar
+  | 'radar'
+  | 'ais-receiver'
+  | 'engine-monitor'
+  | 'autopilot'
+  
+  // AV / Control
+  | 'av-control'       // Crestron, Savant, Control4
+  | 'av-receiver'      // Denon, Yamaha
+  | 'tv'
+  | 'projector'
+  | 'speaker'
+  
+  // Crew/Guest IT
+  | 'phone'
+  | 'tablet'
+  | 'laptop'
+  | 'desktop'
+  
+  // Other
+  | 'printer'
+  | 'nas'              // Network-attached storage
+  | 'server'
+  | 'unknown';
 export type AlertSeverity    = 'critical' | 'warning' | 'info';
 
 export interface Device {
@@ -16,7 +52,11 @@ export interface Device {
   lastSeen:     string;
   manufacturer?: string;
   location?:    string;
+  blocked?:     boolean;           // If true, device is blocked at router
+  blockedAt?:   string;            // Timestamp when block was applied
+  blockedReason?: string;          // Why this device was blocked
   updatedAt?:   string;
+  firstSeen?:   string;
 }
 
 export interface Alert {
@@ -62,7 +102,7 @@ export type WsServerMessage =
   | { type: 'device:new';    data: Device }
   | { type: 'alert:new';     data: Alert }
   | { type: 'alert:resolve'; data: { id: string } }
-  | { type: 'status:update'; data: { internetStatus: InternetStatus; networkHealth: NetworkHealth } }
+  | { type: 'status:update'; data: { internetStatus: InternetStatus; networkHealth: NetworkHealth; scannerDiagnostics?: ScannerDiagnostics } }
   | { type: 'voyage:add';    data: unknown }
   | { type: 'voyage:update'; data: unknown }
   | { type: 'voyage:delete'; data: unknown }
