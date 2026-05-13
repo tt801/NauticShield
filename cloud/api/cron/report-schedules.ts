@@ -10,7 +10,7 @@ type ReportSchedule = {
   name: string;
   recipient: string;
   period: ReportPeriod;
-  sections: Array<'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber' | 'changes'>;
+  sections: Array<'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber' | 'changes' | 'maritime'>;
   cadence: ReportCadence;
   sendTime: string;
   timeZone: string;
@@ -21,7 +21,7 @@ type ReportSchedule = {
   updatedAt: string;
 };
 
-const DEFAULT_REPORT_SECTIONS: ReportSchedule['sections'] = ['overview', 'connectivity', 'devices', 'zones', 'security', 'alerts', 'cyber', 'changes'];
+const DEFAULT_REPORT_SECTIONS: ReportSchedule['sections'] = ['overview', 'connectivity', 'devices', 'zones', 'security', 'alerts', 'cyber', 'changes', 'maritime'];
 
 function normalizeReportSections(value: unknown): ReportSchedule['sections'] {
   if (!Array.isArray(value) || value.length === 0) return DEFAULT_REPORT_SECTIONS;
@@ -121,6 +121,8 @@ function renderHtml(vesselName: string, schedule: ReportSchedule, snapshot: any,
   const zoneRows = Object.entries(zoneGroups as Record<string, { total: number; online: number; offline: number }>).map(([zone, counts]) => `<li>${zone}: ${counts.online}/${counts.total} online</li>`).join('');
   const findingItems = openFindings.slice(0, 5).map((finding: any) => `<li>${finding.check_name} (${finding.status})</li>`).join('');
   const alertItems = activeAlerts.slice(0, 5).map((alert: any) => `<li>${alert.title}</li>`).join('');
+  const maritimeAlerts = alerts.filter((alert: any) => /GNSS|edge exposure|maritime/i.test(`${alert?.title ?? ''} ${alert?.description ?? ''}`));
+  const maritimeAlertItems = maritimeAlerts.slice(0, 5).map((alert: any) => `<li>${alert.title}</li>`).join('');
   const changeRows = recentChanges.slice(0, 8).map((entry: any) => {
     const when = new Date(entry.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     return `<li>${when}: ${entry.action ?? 'system.update'} (${entry.actor ?? 'system'})</li>`;
@@ -196,6 +198,14 @@ function renderHtml(vesselName: string, schedule: ReportSchedule, snapshot: any,
       <ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">
         <li>${recentChanges.length} key updates logged in the last 24 hours</li>
         ${changeRows || '<li>No change events captured in this window.</li>'}
+      </ul>
+      ` : ''}
+      ${sections.has('maritime') ? `
+      <h2 style="font-size:16px;margin:0 0 8px;">Maritime Signal Integrity</h2>
+      <ul style="padding-left:20px;color:#dce8f4;margin:0 0 16px;">
+        <li>${maritimeAlerts.filter((alert: any) => !alert?.resolved).length} active maritime-related alerts</li>
+        <li>${maritimeAlerts.length} maritime alerts captured in this snapshot</li>
+        ${maritimeAlertItems || '<li>No GNSS/edge exposure alerts in the latest snapshot.</li>'}
       </ul>
       ` : ''}
     </div>

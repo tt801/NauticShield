@@ -20,12 +20,14 @@ import cyberRouter         from './routes/cyber';
 import notificationsRouter from './routes/notifications';
 import guestNetworkRouter  from './routes/guestNetwork';
 import vesselsRouter       from './routes/vessels';
+import maritimeRouter      from './routes/maritime';
 import { startCloudSync, getLastSyncAt } from './sync';
 import { startShellRelay } from './shellRelay';
 import { bootstrapAgent } from './bootstrap';
 import type { VesselSnapshot, WsClientMessage } from './types';
 import { getScannerDiagnostics, setScannerDiagnostics } from './scannerDiagnostics';
 import { getScannerRuntimeConfig } from './scannerRuntimeConfig';
+import { evaluateMaritimeRisk } from './maritimeRisk';
 
 const PORT    = parseInt(process.env.PORT    ?? '3000', 10);
 const SCAN_MS = parseInt(process.env.SCAN_INTERVAL_MS ?? '30000', 10);
@@ -137,6 +139,7 @@ app.use('/api/cyber',         cyberRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/guest-network', guestNetworkRouter);
 app.use('/api/vessels',       vesselsRouter);
+app.use('/api/maritime',      maritimeRouter);
 
 // Snapshot endpoint
 app.get('/api/snapshot', (_req, res) => {
@@ -161,9 +164,10 @@ app.get('/api/audit', (req: AuthedRequest, res) => {
 });
 
 // Delta report endpoint — returns what changed in the last N hours (default 24)
-app.get('/api/report/delta', (req: AuthedRequest, res) => {
+app.get('/api/report/delta', async (req: AuthedRequest, res) => {
   const hours = Math.min(Math.max(parseInt((req.query.hours as string) ?? '24', 10), 1), 168);
   const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
+  const maritimeRisk = await evaluateMaritimeRisk(db.getDevices());
   res.json({
     windowHours:         hours,
     since:               cutoff,
@@ -174,6 +178,7 @@ app.get('/api/report/delta', (req: AuthedRequest, res) => {
     remediatedFindings:  db.getFindingsRemediatedSince(cutoff),
     blockedDevices:      db.getDevicesBlockedSince(cutoff),
     recentActions:       db.getAuditLog(50),
+    maritimeRisk,
   });
 });
 
@@ -282,10 +287,11 @@ async function runCycle(): Promise<void> {
     });
 
     // 3. Run alert engine — fires / clears alerts based on current state
+    const maritimeRisk = await evaluateMaritimeRisk(db.getDevices());
     runAlertEngine(internetStatus, {
       mode: scannerConfig.scanMode,
       activeSubnet,
-    });
+    }, maritimeRisk);
 
     // 4. Broadcast changes over WebSocket
     for (const d of newDevices)     broadcast({ type: 'device:new',    data: d });
@@ -299,6 +305,7 @@ async function runCycle(): Promise<void> {
           internetStatus,
           networkHealth,
           scannerDiagnostics: getScannerDiagnostics(),
+          maritimeRisk,
         },
       });
     }

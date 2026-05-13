@@ -38,7 +38,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Device } from '@/data/mock';
 import { agentApi } from '@/api/client';
-import type { CyberFinding, CyberFindingStatus, PenTestReportMeta } from '@/api/client';
+import type { CyberFinding, CyberFindingStatus, MaritimeRiskSnapshot, PenTestReportMeta } from '@/api/client';
 
 // ── Design tokens ────────────────────────────────────────────────
 
@@ -2314,6 +2314,7 @@ export default function Cyber() {
   const [selectedDev,  setSelectedDev]  = useState<Device | null>(null);
   const [isolatedIps,  setIsolatedIps]  = useState<Set<string>>(new Set());
   const [riskAlerts,   setRiskAlerts]   = useState<{id: string; device: Device; cve: MaritimeCVE}[]>([]);
+  const [maritimeRisk, setMaritimeRisk] = useState<MaritimeRiskSnapshot | null>(null);
 
   // Fire risk alerts on mount for all Critical/High CVSS devices
   useEffect(() => {
@@ -2325,6 +2326,26 @@ export default function Cyber() {
       .map(x => ({ id: `${x.device.id}-${x.cve!.id}`, device: x.device, cve: x.cve! }));
     if (alerts.length > 0) setRiskAlerts(alerts);
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    const load = async (refresh = false) => {
+      try {
+        const snapshot = await agentApi.maritime.risk(refresh);
+        if (alive) setMaritimeRisk(snapshot);
+      } catch {
+        // Keep the rest of the page functional even if maritime endpoint is unavailable.
+      }
+    };
+
+    load(false);
+    const iv = setInterval(() => load(false), 45_000);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
   }, []);
 
   const dismissAlert = (id: string) => setRiskAlerts(prev => prev.filter(a => a.id !== id));
@@ -2407,6 +2428,61 @@ export default function Cyber() {
           </Card>
         ))}
       </div>
+
+      {maritimeRisk && (
+        <Card style={{ border: `1px solid ${maritimeRisk.riskScore < 70 ? 'rgba(239,68,68,0.35)' : GOLD_BORDER}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Radar size={15} color={maritimeRisk.riskScore < 70 ? '#ef4444' : '#7dd3fc'} />
+              <CardLabel>Maritime Signal Integrity</CardLabel>
+              <span style={{ color: maritimeRisk.riskScore >= 80 ? '#22c55e' : maritimeRisk.riskScore >= 65 ? '#f59e0b' : '#ef4444', fontSize: 20, fontWeight: 800 }}>
+                {maritimeRisk.riskScore}
+              </span>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  const snapshot = await agentApi.maritime.risk(true);
+                  setMaritimeRisk(snapshot);
+                } catch {
+                  // no-op
+                }
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#080b10', color: '#6b7f92', border: '1px solid #1a2535', borderRadius: 8, padding: '7px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+            >
+              <RefreshCw size={12} /> Refresh edge scan
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 9, padding: '10px 12px' }}>
+              <div style={{ color: '#7dd3fc', fontSize: 11, fontWeight: 700, marginBottom: 6 }}>GNSS ANOMALIES</div>
+              <div style={{ color: '#4a5a6a', fontSize: 11, marginBottom: 6 }}>
+                {maritimeRisk.gnss.sampleCount} samples processed{maritimeRisk.gnss.latestSampleAt ? ` · latest ${new Date(maritimeRisk.gnss.latestSampleAt).toLocaleTimeString()}` : ''}
+              </div>
+              {maritimeRisk.gnss.anomalies.length === 0 && <div style={{ color: '#22c55e', fontSize: 12 }}>No active GNSS anomalies</div>}
+              {maritimeRisk.gnss.anomalies.slice(0, 3).map((a, idx) => (
+                <div key={`${a.at}-${idx}`} style={{ color: a.severity === 'critical' ? '#ef4444' : '#f59e0b', fontSize: 12, marginBottom: 4 }}>
+                  {a.detail}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 9, padding: '10px 12px' }}>
+              <div style={{ color: '#7dd3fc', fontSize: 11, fontWeight: 700, marginBottom: 6 }}>EDGE EXPOSURE</div>
+              <div style={{ color: '#4a5a6a', fontSize: 11, marginBottom: 6 }}>
+                {maritimeRisk.edgeExposure.scannedDevices} edge devices scanned{maritimeRisk.edgeExposure.lastScannedAt ? ` · ${new Date(maritimeRisk.edgeExposure.lastScannedAt).toLocaleTimeString()}` : ''}
+              </div>
+              {maritimeRisk.edgeExposure.findings.length === 0 && <div style={{ color: '#22c55e', fontSize: 12 }}>No exposed management ports detected</div>}
+              {maritimeRisk.edgeExposure.findings.slice(0, 4).map(f => (
+                <div key={`${f.deviceId}-${f.port}`} style={{ color: f.severity === 'critical' ? '#ef4444' : '#f59e0b', fontSize: 12, marginBottom: 4 }}>
+                  {f.deviceName} ({f.ip}:{f.port}) — {f.reason}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Live CVE Monitor */}
       <LiveThreatPulse

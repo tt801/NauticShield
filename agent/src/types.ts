@@ -102,7 +102,7 @@ export type WsServerMessage =
   | { type: 'device:new';    data: Device }
   | { type: 'alert:new';     data: Alert }
   | { type: 'alert:resolve'; data: { id: string } }
-  | { type: 'status:update'; data: { internetStatus: InternetStatus; networkHealth: NetworkHealth; scannerDiagnostics?: ScannerDiagnostics } }
+  | { type: 'status:update'; data: { internetStatus: InternetStatus; networkHealth: NetworkHealth; scannerDiagnostics?: ScannerDiagnostics; maritimeRisk?: unknown } }
   | { type: 'voyage:add';    data: unknown }
   | { type: 'voyage:update'; data: unknown }
   | { type: 'voyage:delete'; data: unknown }

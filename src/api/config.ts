@@ -22,7 +22,16 @@ function canUseDirectAgent(url: string) {
 	return url.startsWith('https://');
 }
 
-const configuredAgentUrl = readEnvString('VITE_AGENT_URL') ?? 'http://vessel-agent.local:3000';
+function isLocalBrowserHost() {
+	if (typeof window === 'undefined') return false;
+	return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+}
+
+const defaultAgentUrl = isLocalBrowserHost()
+	? 'http://127.0.0.1:3000'
+	: 'http://vessel-agent.local:3000';
+
+const configuredAgentUrl = readEnvString('VITE_AGENT_URL') ?? defaultAgentUrl;
 
 // Never attempt insecure local HTTP/WS from the public HTTPS app.
 // The browser blocks it as active mixed content and marks the page insecure.

@@ -9,6 +9,8 @@ import React, {
 
 import { AGENT_WS_URL } from '@/api/config';
 import { agentApi, getConnectionMode }     from '@/api/client';
+import type { ScannerDiagnostics } from '@/api/client';
+import type { ScannerConfig } from '@/api/client';
 
 import {
   devices        as mockDevices,
@@ -27,12 +29,16 @@ export interface VesselContextValue {
   alerts:         Alert[];
   internetStatus: InternetStatus;
   networkHealth:  NetworkHealth;
+  scannerDiagnostics: ScannerDiagnostics | null;
   agentStatus:    AgentStatus;
   lastSync:       Date | null;
   isLive:         boolean;
   resolveAlert:   (id: string) => Promise<void>;
   renameDevice:   (id: string, patch: { name?: string; type?: string; location?: string }) => Promise<void>;
+  blockDevice:    (mac: string) => Promise<void>;
+  unblockDevice:  (mac: string) => Promise<void>;
   runAction:      (action: string, payload?: Record<string, unknown>) => Promise<{ success: boolean; message?: string }>;
+  updateScannerConfig: (patch: Partial<ScannerConfig>) => Promise<void>;
 }
 
 // ── Context ───────────────────────────────────────────────────────
@@ -53,8 +59,13 @@ type WsMsg =
   | { type: 'device:new';    data: Device }
   | { type: 'alert:new';     data: Alert }
   | { type: 'alert:resolve'; data: { id: string } }
-  | { type: 'status:update'; data: { internetStatus: InternetStatus; networkHealth: NetworkHealth } }
+  | { type: 'status:update'; data: { internetStatus: InternetStatus; networkHealth: NetworkHealth; scannerDiagnostics?: ScannerDiagnostics } }
   | { type: 'pong' };
+
+const WS_RECONNECT_BASE_MS = 1000;
+const WS_RECONNECT_MAX_MS = 20000;
+const WS_RECONNECT_JITTER_MS = 400;
+const WS_OFFLINE_DEBOUNCE_MS = 3000;
 
 // ── Provider ──────────────────────────────────────────────────────
 
@@ -64,17 +75,24 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
   const [alerts,         setAlerts]         = useState<Alert[]>(mockAlerts);
   const [internetStatus, setInternetStatus] = useState<InternetStatus>(mockInternetStatus);
   const [networkHealth,  setNetworkHealth]  = useState<NetworkHealth>(mockNetworkHealth);
+  const [scannerDiagnostics, setScannerDiagnostics] = useState<ScannerDiagnostics | null>(null);
   const [agentStatus,    setAgentStatus]    = useState<AgentStatus>('connecting');
   const [lastSync,       setLastSync]       = useState<Date | null>(null);
   const [isLive,         setIsLive]         = useState(false);
 
   const wsRef        = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const offlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const unmountingRef = useRef(false);
+  const reconnectPausedRef = useRef(false);
 
   // ── WebSocket ────────────────────────────────────────────────
 
   const connectWebSocket = useCallback(() => {
+    if (unmountingRef.current) return;
+
     if (!AGENT_WS_URL) {
       setAgentStatus(getConnectionMode() === 'cloud' ? 'cloud' : 'offline');
       return;
@@ -86,6 +104,7 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
 
     let ws: WebSocket;
     try {
+      setAgentStatus('connecting');
       ws = new WebSocket(AGENT_WS_URL);
     } catch {
       setAgentStatus(getConnectionMode() === 'cloud' ? 'cloud' : 'offline');
@@ -93,12 +112,38 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
     }
     wsRef.current = ws;
 
+    const scheduleReconnect = () => {
+      if (unmountingRef.current) return;
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
+
+      // Avoid noisy reconnect loops while the browser tab is backgrounded.
+      if (typeof document !== 'undefined' && document.hidden) {
+        reconnectPausedRef.current = true;
+        return;
+      }
+
+      const attempt = reconnectAttemptRef.current + 1;
+      reconnectAttemptRef.current = attempt;
+      const expDelay = Math.min(WS_RECONNECT_MAX_MS, WS_RECONNECT_BASE_MS * (2 ** (attempt - 1)));
+      const jitter = Math.floor(Math.random() * WS_RECONNECT_JITTER_MS);
+      const delayMs = expDelay + jitter;
+
+      console.log(`[VesselData] WS closed — reconnect attempt ${attempt} in ${delayMs}ms`);
+      reconnectRef.current = setTimeout(connectWebSocket, delayMs);
+    };
+
     ws.onopen = () => {
       console.log('[VesselData] WS connected');
+      reconnectPausedRef.current = false;
       setAgentStatus('online');
+      reconnectAttemptRef.current = 0;
       if (reconnectRef.current) {
         clearTimeout(reconnectRef.current);
         reconnectRef.current = null;
+      }
+      if (offlineRef.current) {
+        clearTimeout(offlineRef.current);
+        offlineRef.current = null;
       }
     };
 
@@ -147,6 +192,9 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
           case 'status:update':
             setInternetStatus(msg.data.internetStatus);
             setNetworkHealth(msg.data.networkHealth);
+            if (msg.data.scannerDiagnostics) {
+              setScannerDiagnostics(msg.data.scannerDiagnostics);
+            }
             setLastSync(new Date());
             break;
         }
@@ -156,14 +204,24 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
     };
 
     ws.onclose = () => {
-      console.log('[VesselData] WS closed — retrying in 5 s');
-      const mode = getConnectionMode();
-      setAgentStatus(mode === 'cloud' ? 'cloud' : 'offline');
-      setIsLive(mode !== 'offline');
-      reconnectRef.current = setTimeout(connectWebSocket, 5_000);
+      if (unmountingRef.current) return;
+      wsRef.current = null;
+
+      // Keep UI in connecting state briefly to avoid fast online/offline flicker.
+      setAgentStatus('connecting');
+      if (offlineRef.current) clearTimeout(offlineRef.current);
+      offlineRef.current = setTimeout(() => {
+        const mode = getConnectionMode();
+        setAgentStatus(mode === 'cloud' ? 'cloud' : 'offline');
+        setIsLive(mode !== 'offline');
+      }, WS_OFFLINE_DEBOUNCE_MS);
+
+      scheduleReconnect();
     };
 
-    ws.onerror = () => ws.close();
+    ws.onerror = () => {
+      // Let the browser/socket lifecycle emit onclose naturally.
+    };
   }, []);
 
   // ── Initial REST snapshot ───────────────────────────────────
@@ -179,6 +237,16 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
       setIsLive(mode !== 'offline');
       setAgentStatus(mode === 'cloud' ? 'cloud' : 'online');
       setLastSync(new Date());
+
+      // Scanner diagnostics live behind /api/status and are optional in cloud mode.
+      try {
+        const status = await agentApi.status();
+        if (status?.scannerDiagnostics) {
+          setScannerDiagnostics(status.scannerDiagnostics);
+        }
+      } catch {
+        // status endpoint can be unavailable in offline/cloud fallback scenarios
+      }
     } catch {
       setIsLive(false);
       setAgentStatus(getConnectionMode() === 'cloud' ? 'cloud' : 'offline');
@@ -188,20 +256,49 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
   // ── Mount / unmount ──────────────────────────────────────────
 
   useEffect(() => {
+    unmountingRef.current = false;
     fetchSnapshot();
     connectWebSocket();
+
+    const onVisibilityChange = () => {
+      if (typeof document === 'undefined') return;
+      if (!document.hidden && reconnectPausedRef.current) {
+        reconnectPausedRef.current = false;
+        connectWebSocket();
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange);
+    }
 
     // WS keepalive ping every 30 s
     pingRef.current = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'ping' }));
+        try {
+          wsRef.current.send(JSON.stringify({ type: 'ping' }));
+        } catch {
+          // ignore transient send failures while socket is closing
+        }
       }
     }, 30_000);
 
     return () => {
+      unmountingRef.current = true;
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+      }
       if (pingRef.current)      clearInterval(pingRef.current);
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      wsRef.current?.close();
+      if (offlineRef.current)   clearTimeout(offlineRef.current);
+      if (wsRef.current) {
+        wsRef.current.onopen = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, [fetchSnapshot, connectWebSocket]);
 
@@ -219,6 +316,20 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
     try { await agentApi.renameDevice(id, patch); } catch { /* agent offline — update stays locally until next sync */ }
   }, []);
 
+  const blockDevice = useCallback(async (mac: string) => {
+    const result = await agentApi.devices.blockDevice(mac);
+    if (result?.device) {
+      setDevices(prev => prev.map(d => d.mac === mac ? { ...d, ...result.device } : d));
+    }
+  }, []);
+
+  const unblockDevice = useCallback(async (mac: string) => {
+    const result = await agentApi.devices.unblockDevice(mac);
+    if (result?.device) {
+      setDevices(prev => prev.map(d => d.mac === mac ? { ...d, ...result.device } : d));
+    }
+  }, []);
+
   const runAction = useCallback(async (action: string, payload?: Record<string, unknown>) => {
     try {
       return await agentApi.runAction(action, payload);
@@ -227,11 +338,24 @@ export function VesselDataProvider({ children }: { children: React.ReactNode }) 
     }
   }, []);
 
+  const updateScannerConfig = useCallback(async (patch: Partial<ScannerConfig>) => {
+    const result = await agentApi.updateScannerConfig(patch);
+    if (result.scannerDiagnostics) {
+      setScannerDiagnostics(result.scannerDiagnostics);
+    } else {
+      const status = await agentApi.status();
+      if (status.scannerDiagnostics) {
+        setScannerDiagnostics(status.scannerDiagnostics);
+      }
+    }
+  }, []);
+
   return (
     <VesselContext.Provider value={{
       devices, alerts, internetStatus, networkHealth,
+      scannerDiagnostics,
       agentStatus, lastSync, isLive,
-      resolveAlert, renameDevice, runAction,
+      resolveAlert, renameDevice, blockDevice, unblockDevice, runAction, updateScannerConfig,
     }}>
       {children}
     </VesselContext.Provider>

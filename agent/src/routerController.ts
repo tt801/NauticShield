@@ -106,3 +106,127 @@ export async function applyGuestNetworkSettings(settings: GuestNetworkSettings, 
     appliedAt: new Date().toISOString(),
   };
 }
+
+// ── Device blocking (general, not just guest network) ────────────────
+
+/**
+ * Block a device at the router level by MAC address.
+ * Adds iptables rule to drop all traffic from that MAC.
+ */
+export async function blockDevice(mac: string): Promise<RouterApplyResult> {
+  const platform = routerPlatform();
+  const host = process.env.ROUTER_HOST?.trim();
+  const user = process.env.ROUTER_SSH_USER?.trim() ?? 'root';
+  const keyPath = process.env.ROUTER_SSH_KEY_PATH?.trim();
+
+  if (platform === 'none') {
+    return {
+      platform: 'none',
+      status: 'disabled',
+      message: 'Router sync is disabled. Block rule was not applied.',
+      appliedAt: new Date().toISOString(),
+    };
+  }
+
+  if (!host) {
+    return {
+      platform,
+      status: 'error',
+      message: 'ROUTER_HOST not configured.',
+      appliedAt: new Date().toISOString(),
+    };
+  }
+
+  if (platform === 'openwrt') {
+    const cleanMac = mac.toUpperCase();
+    const command = `iptables -I FORWARD -m mac --mac-source ${shellEscape(cleanMac)} -j DROP`;
+    const args = ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no'];
+    if (keyPath) args.push('-i', keyPath);
+    args.push(`${user}@${host}`, command);
+
+    try {
+      await execFileAsync('ssh', args, { timeout: 10_000 });
+      return {
+        platform: 'openwrt',
+        status: 'applied',
+        message: `Blocked device ${mac} at router.`,
+        appliedAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      return {
+        platform: 'openwrt',
+        status: 'error',
+        message: `Failed to block device: ${String(err)}`,
+        appliedAt: new Date().toISOString(),
+      };
+    }
+  }
+
+  return {
+    platform,
+    status: 'error',
+    message: `Unsupported platform for device blocking: ${platform}`,
+    appliedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Unblock a device at the router level by MAC address.
+ * Removes iptables rule that drops traffic from that MAC.
+ */
+export async function unblockDevice(mac: string): Promise<RouterApplyResult> {
+  const platform = routerPlatform();
+  const host = process.env.ROUTER_HOST?.trim();
+  const user = process.env.ROUTER_SSH_USER?.trim() ?? 'root';
+  const keyPath = process.env.ROUTER_SSH_KEY_PATH?.trim();
+
+  if (platform === 'none') {
+    return {
+      platform: 'none',
+      status: 'disabled',
+      message: 'Router sync is disabled. Unblock rule was not applied.',
+      appliedAt: new Date().toISOString(),
+    };
+  }
+
+  if (!host) {
+    return {
+      platform,
+      status: 'error',
+      message: 'ROUTER_HOST not configured.',
+      appliedAt: new Date().toISOString(),
+    };
+  }
+
+  if (platform === 'openwrt') {
+    const cleanMac = mac.toUpperCase();
+    const command = `iptables -D FORWARD -m mac --mac-source ${shellEscape(cleanMac)} -j DROP`;
+    const args = ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no'];
+    if (keyPath) args.push('-i', keyPath);
+    args.push(`${user}@${host}`, command);
+
+    try {
+      await execFileAsync('ssh', args, { timeout: 10_000 });
+      return {
+        platform: 'openwrt',
+        status: 'applied',
+        message: `Unblocked device ${mac} at router.`,
+        appliedAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      return {
+        platform: 'openwrt',
+        status: 'error',
+        message: `Failed to unblock device: ${String(err)}`,
+        appliedAt: new Date().toISOString(),
+      };
+    }
+  }
+
+  return {
+    platform,
+    status: 'error',
+    message: `Unsupported platform for device unblocking: ${platform}`,
+    appliedAt: new Date().toISOString(),
+  };
+}

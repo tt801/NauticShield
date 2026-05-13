@@ -18,6 +18,7 @@ import { broadcast } from './broadcaster';
 import { notify } from './notifier';
 import type { NotificationCategory } from './db';
 import { formatPlaybookForAlert, recommendedActionsForFinding } from './cyberPlaybooks';
+import type { MaritimeRiskSnapshot } from './maritimeRisk';
 
 const HIGH_LATENCY_MS = parseInt(process.env.HIGH_LATENCY_THRESHOLD_MS ?? '200', 10);
 const OFFLINE_GRACE_S = parseInt(process.env.OFFLINE_GRACE_SECONDS      ?? '90',  10);
@@ -48,6 +49,8 @@ function categoryFromFingerprint(fp: string): NotificationCategory | null {
   if (fp.startsWith('device:unknown'))        return 'new_device';
   if (fp.startsWith('network:port-scan'))     return 'port_scan';
   if (fp.startsWith('cyber:critical'))        return 'cyber_critical';
+  if (fp.startsWith('maritime:gnss'))         return 'cyber_critical';
+  if (fp.startsWith('network:edge-exposure')) return 'cyber_critical';
   if (fp.startsWith('network:device-spike'))  return 'device_spike';
   if (fp.startsWith('network:unknown-spike')) return 'device_spike';
   return null;
@@ -260,10 +263,44 @@ export function checkNetworkHealthAlert(): void {
 export function runAlertEngine(
   internetStatus: InternetStatus,
   scope?: { mode?: 'auto' | 'fixed' | 'all'; activeSubnet?: string },
+  maritimeRisk?: MaritimeRiskSnapshot,
 ): void {
   checkInternetAlerts(internetStatus);
   checkDeviceAlerts(scope);
   checkNetworkHealthAlert();
+  if (maritimeRisk) checkMaritimeRiskAlerts(maritimeRisk);
+}
+
+export function checkMaritimeRiskAlerts(snapshot: MaritimeRiskSnapshot): void {
+  const gnssFp = 'maritime:gnss-anomaly';
+  if (snapshot.gnss.anomalies.length > 0) {
+    const critical = snapshot.gnss.anomalies.filter(a => a.severity === 'critical').length;
+    fire(
+      gnssFp,
+      critical > 0 ? 'critical' : 'warning',
+      `GNSS anomaly detected — ${snapshot.gnss.anomalies.length} signal(s)`,
+      snapshot.gnss.anomalies.map(a => a.detail).slice(0, 3).join(' | '),
+    );
+  } else {
+    clearWithOptions(gnssFp, 'GNSS telemetry stable', { minOpenMs: 0 });
+  }
+
+  const edgeFp = 'network:edge-exposure';
+  if (snapshot.edgeExposure.findings.length > 0) {
+    const critical = snapshot.edgeExposure.findings.some(f => f.severity === 'critical');
+    const preview = snapshot.edgeExposure.findings
+      .slice(0, 3)
+      .map(f => `${f.deviceName} ${f.ip}:${f.port}`)
+      .join(' | ');
+    fire(
+      edgeFp,
+      critical ? 'critical' : 'warning',
+      `Edge exposure detected — ${snapshot.edgeExposure.findings.length} open management port(s)`,
+      `${preview}. Close remote management ports or restrict to maintenance VLAN before next watch.`,
+    );
+  } else {
+    clearWithOptions(edgeFp, 'No exposed edge-management ports detected', { minOpenMs: 0 });
+  }
 }
 
 // ── Cyber findings alerts ─────────────────────────────────────────

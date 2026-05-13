@@ -20,36 +20,6 @@ import Voyage       from '@/pages/Voyage'
 import Cyber        from '@/pages/Cyber'
 import Settings     from '@/pages/Settings'
 
-function LocalDevHome() {
-  const currentPath = typeof window === 'undefined' ? '/' : window.location.pathname;
-
-  return (
-    <div style={{ padding: 32, color: '#e5edf5' }}>
-      <div style={{ maxWidth: 760, background: '#0d1421', border: '1px solid #1a2535', borderRadius: 16, padding: 28 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#7dd3fc', marginBottom: 10 }}>
-          Local Development
-        </div>
-        <h1 style={{ margin: '0 0 12px', fontSize: 32, lineHeight: 1.1 }}>Vessel app auth is bypassed on localhost</h1>
-        <p style={{ margin: '0 0 12px', color: '#9fb0c3', lineHeight: 1.6 }}>
-          This local shell is running without Clerk because the configured publishable key does not allow localhost as a valid origin.
-          Marketing and admin can now be tested locally, but the authenticated vessel pages still require a Clerk-enabled domain.
-        </p>
-        <p style={{ margin: '0 0 20px', color: '#9fb0c3', lineHeight: 1.6 }}>
-          Current path: <span style={{ color: '#f0f4f8', fontWeight: 600 }}>{currentPath}</span>
-        </p>
-        <div style={{ display: 'grid', gap: 12 }}>
-          <div style={{ padding: 14, borderRadius: 12, background: 'rgba(125,211,252,0.08)', border: '1px solid rgba(125,211,252,0.16)' }}>
-            Use the marketing site to verify sign-up and plan flows.
-          </div>
-          <div style={{ padding: 14, borderRadius: 12, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.16)' }}>
-            Use the admin site locally to verify the admin portal routes and UI.
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Error Boundary ────────────────────────────────────────────────
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
@@ -162,9 +132,22 @@ function AppRoutes({ devMode }: { devMode: boolean }) {
         {/* Protected — wrapped in Layout */}
         <Route path="/*" element={
           devMode ? (
-            <Layout>
-              <LocalDevHome />
-            </Layout>
+            <VesselDataProvider>
+              <Layout>
+                <Routes>
+                  <Route path="/"              element={<Protect><Dashboard /></Protect>} />
+                  <Route path="/devices"       element={<Protect require="view:devices"><Devices /></Protect>} />
+                  <Route path="/alerts"        element={<Protect require="view:alerts"><Alerts /></Protect>} />
+                  <Route path="/zones"         element={<Protect require="view:zones"><Zones /></Protect>} />
+                  <Route path="/report"        element={<Protect require="view:report"><Report /></Protect>} />
+                  <Route path="/guest-network" element={<Protect require="view:guest_network"><GuestNetwork /></Protect>} />
+                  <Route path="/voyage"        element={<Protect require="view:voyage"><Voyage /></Protect>} />
+                  <Route path="/cyber"         element={<Protect require="view:cyber"><Cyber /></Protect>} />
+                  <Route path="/settings"      element={<Protect require="view:settings"><Settings /></Protect>} />
+                  <Route path="*"              element={<Protect><Dashboard /></Protect>} />
+                </Routes>
+              </Layout>
+            </VesselDataProvider>
           ) : (
             <>
             <SignedIn>

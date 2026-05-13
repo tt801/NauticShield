@@ -65,6 +65,7 @@ const REPORT_SECTION_OPTIONS: Array<{ id: ReportSection; label: string }> = [
   { id: 'alerts', label: 'Active & resolved alerts' },
   { id: 'cyber', label: 'Cyber findings' },
   { id: 'changes', label: 'What changed since yesterday' },
+  { id: 'maritime', label: 'Maritime signal integrity' },
 ];
 const DEFAULT_REPORT_SECTIONS = REPORT_SECTION_OPTIONS.map(option => option.id);
 
@@ -315,7 +316,24 @@ function ScoreRing({ score }: { score: number }) {
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function Report() {
-  const { alerts, devices, internetStatus, networkHealth } = useVesselData();
+  const vesselData = useVesselData();
+  const alerts = vesselData.alerts ?? [];
+  const devices = vesselData.devices ?? [];
+  const internetStatus = vesselData.internetStatus ?? {
+    status: 'down',
+    provider: 'None',
+    downloadMbps: 0,
+    uploadMbps: 0,
+    latencyMs: 0,
+    uptime: '0%',
+  };
+  const networkHealth = vesselData.networkHealth ?? {
+    score: 0,
+    activeDevices: 0,
+    totalDevices: 0,
+    unknownDevices: 0,
+    offlineDevices: 0,
+  };
   const [period, setPeriod] = useState<'live' | 'daily' | 'weekly' | 'monthly'>('live');
 
   // ── Cyber DB data ─────────────────────────────────────────────
@@ -404,6 +422,9 @@ export default function Report() {
     if (parts.length === 0) return 'All monitored systems are operating normally. No issues detected.';
     return parts.join(', ') + '. ' + (criticalCount > 0 ? 'Immediate crew action is recommended.' : 'Crew awareness is advised.');
   })();
+  const maritimeRisk = reportDelta?.maritimeRisk;
+  const maritimeAnomalies = maritimeRisk?.gnss.anomalies ?? [];
+  const maritimeEdgeFindings = maritimeRisk?.edgeExposure.findings ?? [];
 
   async function persistSchedules(next: ReportSchedule[]) {
     setScheduleSaving(true);
@@ -504,6 +525,8 @@ export default function Report() {
       `${reportDelta?.newFindings?.length ?? 0} new cyber findings`,
       `${reportDelta?.remediatedFindings?.length ?? 0} findings remediated`,
       `${reportDelta?.blockedDevices?.length ?? 0} devices blocked`,
+      `${reportDelta?.maritimeRisk?.gnss.anomalies.length ?? 0} GNSS anomalies detected`,
+      `${reportDelta?.maritimeRisk?.edgeExposure.findings.length ?? 0} exposed edge management ports`,
     ];
 
     const changeRows = (reportDelta?.recentActions ?? []).slice(0, 8).map(entry => `
@@ -916,6 +939,31 @@ export default function Report() {
     </table>
   </div>
 
+  <!-- Maritime Signal Integrity -->
+  <div class="section">
+    <div class="section-title">Maritime Signal Integrity</div>
+    <ul style="padding-left:20px;color:#2c3e50;margin:0 0 12px;line-height:1.8;">
+      <li>Maritime risk score: ${reportDelta?.maritimeRisk?.riskScore ?? 100}/100</li>
+      <li>GNSS anomaly count: ${reportDelta?.maritimeRisk?.gnss.anomalies.length ?? 0}</li>
+      <li>Edge exposure findings: ${reportDelta?.maritimeRisk?.edgeExposure.findings.length ?? 0}</li>
+      <li>GNSS profile mode: ${reportDelta?.maritimeRisk?.gnss.profileMode ?? 'auto'}</li>
+    </ul>
+    <table>
+      <thead>
+        <tr><th>Type</th><th>Detail</th><th>Timestamp</th></tr>
+      </thead>
+      <tbody>
+        ${(reportDelta?.maritimeRisk?.gnss.anomalies ?? []).slice(0, 6).map(a => `
+          <tr>
+            <td>${a.kind}</td>
+            <td>${a.detail}</td>
+            <td>${new Date(a.at).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="3" style="color:#888;text-align:center">No GNSS anomalies in this window</td></tr>'}
+      </tbody>
+    </table>
+  </div>
+
   <!-- Footer -->
   <div class="report-footer">
     <span>NauticShield · Vessel Technology Management · M/Y Aurora</span>
@@ -1285,6 +1333,8 @@ export default function Report() {
         ['New cyber findings', String(reportDelta?.newFindings?.length ?? 0)],
         ['Cyber findings remediated', String(reportDelta?.remediatedFindings?.length ?? 0)],
         ['Devices blocked', String(reportDelta?.blockedDevices?.length ?? 0)],
+        ['GNSS anomalies', String(reportDelta?.maritimeRisk?.gnss.anomalies.length ?? 0)],
+        ['Edge exposure findings', String(reportDelta?.maritimeRisk?.edgeExposure.findings.length ?? 0)],
       ],
       headStyles: { fillColor: [...HEADER] as [number,number,number], textColor: [255,255,255], fontSize: 7.5, fontStyle: 'bold' },
       bodyStyles: { fontSize: 8.5, textColor: [50, 60, 70] },
@@ -1305,6 +1355,42 @@ export default function Report() {
       bodyStyles: { fontSize: 8, textColor: [50, 60, 70] },
       alternateRowStyles: { fillColor: [248,249,250] },
       columnStyles: { 0: { cellWidth: 32 }, 1: { cellWidth: 92 }, 2: { cellWidth: 44 } },
+    });
+    y = (doc as any).lastAutoTable.finalY + 8;
+
+    // ── Maritime Signal Integrity ──
+    chk(24);
+    sectionHeading('Maritime Signal Integrity');
+    autoTable(doc, {
+      startY: y, margin: { left: M, right: M },
+      head: [['Metric', 'Value']],
+      body: [
+        ['Risk score', String(maritimeRisk?.riskScore ?? 100)],
+        ['GNSS profile mode', maritimeRisk?.gnss.profileMode ?? 'auto'],
+        ['GNSS anomalies', String(maritimeAnomalies.length)],
+        ['Edge exposure findings', String(maritimeEdgeFindings.length)],
+      ],
+      headStyles: { fillColor: [...HEADER] as [number,number,number], textColor: [255,255,255], fontSize: 7.5, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 8.5, textColor: [50, 60, 70] },
+      alternateRowStyles: { fillColor: [248,249,250] },
+      columnStyles: { 0: { cellWidth: 80, fontStyle: 'bold' }, 1: { cellWidth: 56 } },
+    });
+    y = (doc as any).lastAutoTable.finalY + 6;
+
+    autoTable(doc, {
+      startY: y, margin: { left: M, right: M },
+      head: [['Type', 'Detail', 'At']],
+      body: maritimeAnomalies.length > 0
+        ? maritimeAnomalies.slice(0, 6).map(a => [
+            a.kind,
+            a.detail,
+            new Date(a.at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
+          ])
+        : [['none', 'No GNSS anomalies in this reporting window', '—']],
+      headStyles: { fillColor: [...HEADER] as [number,number,number], textColor: [255,255,255], fontSize: 7.5, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 8, textColor: [50, 60, 70] },
+      alternateRowStyles: { fillColor: [248,249,250] },
+      columnStyles: { 0: { cellWidth: 32 }, 1: { cellWidth: 96 }, 2: { cellWidth: 40 } },
     });
     y = (doc as any).lastAutoTable.finalY + 8;
 
@@ -1711,6 +1797,58 @@ export default function Report() {
             No cyber assessment on record. Run a Quick Security Scan from the Cyber Management page.
           </div>
         )}
+      </Card>
+
+      {/* Maritime Signal Integrity */}
+      <Card>
+        <SectionTitle>Maritime Signal Integrity</SectionTitle>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
+          {[
+            { label: 'Risk Score', value: `${maritimeRisk?.riskScore ?? 100}/100`, color: (maritimeRisk?.riskScore ?? 100) >= 80 ? '#22c55e' : (maritimeRisk?.riskScore ?? 100) >= 60 ? '#f59e0b' : '#ef4444' },
+            { label: 'GNSS Profile', value: (maritimeRisk?.gnss.profileMode ?? 'auto').toUpperCase(), color: '#7dd3fc' },
+            { label: 'GNSS Anomalies', value: String(maritimeAnomalies.length), color: maritimeAnomalies.length > 0 ? '#f59e0b' : '#22c55e' },
+            { label: 'Edge Findings', value: String(maritimeEdgeFindings.length), color: maritimeEdgeFindings.length > 0 ? '#ef4444' : '#22c55e' },
+          ].map(item => (
+            <div key={item.label} style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 10, padding: '10px 12px' }}>
+              <div style={{ color: '#6b7f92', fontSize: 11, marginBottom: 4 }}>{item.label}</div>
+              <div style={{ color: item.color, fontSize: 18, fontWeight: 800 }}>{item.value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ color: '#7dd3fc', fontSize: 11, fontWeight: 700, marginBottom: 6 }}>GNSS ANOMALIES</div>
+            {maritimeAnomalies.length === 0 ? (
+              <div style={{ color: '#22c55e', fontSize: 12 }}>No GNSS anomalies in this reporting window.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {maritimeAnomalies.slice(0, 5).map((anomaly, index) => (
+                  <div key={`${anomaly.at}-${index}`} style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 10px' }}>
+                    <div style={{ color: anomaly.severity === 'critical' ? '#ef4444' : '#f59e0b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>{anomaly.kind.replace(/_/g, ' ')}</div>
+                    <div style={{ color: '#dce8f4', fontSize: 12, marginTop: 2, lineHeight: 1.45 }}>{anomaly.detail}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ background: '#080b10', border: '1px solid #1a2535', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ color: '#7dd3fc', fontSize: 11, fontWeight: 700, marginBottom: 6 }}>EDGE EXPOSURE</div>
+            {maritimeEdgeFindings.length === 0 ? (
+              <div style={{ color: '#22c55e', fontSize: 12 }}>No exposed edge management ports detected.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {maritimeEdgeFindings.slice(0, 5).map((finding, index) => (
+                  <div key={`${finding.deviceId}-${finding.port}-${index}`} style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 10px' }}>
+                    <div style={{ color: finding.severity === 'critical' ? '#ef4444' : '#f59e0b', fontSize: 11, fontWeight: 700 }}>{finding.deviceName} · {finding.ip}:{finding.port}</div>
+                    <div style={{ color: '#dce8f4', fontSize: 12, marginTop: 2 }}>{finding.reason}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </Card>
 
       {/* Scheduled Reports */}

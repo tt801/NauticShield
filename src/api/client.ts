@@ -92,7 +92,7 @@ export interface PenTestReportMeta {
 
 export type ReportPeriod = 'live' | 'daily' | 'weekly' | 'monthly';
 export type ReportCadence = 'daily' | 'weekly' | 'monthly';
-export type ReportSection = 'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber' | 'changes';
+export type ReportSection = 'overview' | 'connectivity' | 'devices' | 'zones' | 'security' | 'alerts' | 'cyber' | 'changes' | 'maritime';
 
 export interface ReportSchedule {
   id: string;
@@ -129,6 +129,51 @@ export interface ReportDelta {
   remediatedFindings: CyberFinding[];
   blockedDevices: Device[];
   recentActions: ReportDeltaAction[];
+  maritimeRisk?: MaritimeRiskSnapshot;
+}
+
+export interface GnssSample {
+  id: string;
+  timestamp: string;
+  lat: number;
+  lon: number;
+  sogKnots: number;
+  cogDeg: number;
+  satelliteCount: number;
+  source: string;
+}
+
+export interface GnssAnomaly {
+  kind: 'improbable_jump' | 'satellite_drop' | 'heading_speed_mismatch';
+  severity: 'critical' | 'warning';
+  detail: string;
+  at: string;
+}
+
+export interface EdgeExposureFinding {
+  deviceId: string;
+  deviceName: string;
+  ip: string;
+  port: number;
+  protocol: 'tcp';
+  severity: 'critical' | 'warning';
+  reason: string;
+}
+
+export interface MaritimeRiskSnapshot {
+  generatedAt: string;
+  riskScore: number;
+  gnss: {
+    sampleCount: number;
+    anomalies: GnssAnomaly[];
+    latestSampleAt?: string;
+    profileMode?: 'auto' | 'anchor' | 'underway';
+  };
+  edgeExposure: {
+    scannedDevices: number;
+    findings: EdgeExposureFinding[];
+    lastScannedAt?: string;
+  };
 }
 
 export type GuestDeviceAccess = 'approved' | 'blocked' | 'pending';
@@ -567,6 +612,21 @@ export const agentApi = {
         body: JSON.stringify(payload),
       });
     },
+  },
+
+  maritime: {
+    risk: (refresh = false) =>
+      fetchWithFallback<MaritimeRiskSnapshot>(`/api/maritime/risk${refresh ? '?refresh=1' : ''}`),
+
+    listGnssSamples: (limit = 60) =>
+      fetchWithFallback<GnssSample[]>(`/api/maritime/gnss-samples?limit=${encodeURIComponent(String(limit))}`),
+
+    addGnssSample: (sample: { lat: number; lon: number; sogKnots?: number; cogDeg?: number; satelliteCount?: number; source?: string; timestamp?: string }) =>
+      fetchWithFallback<GnssSample>('/api/maritime/gnss-sample', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sample),
+      }),
   },
 
   reports: {

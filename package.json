@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "stability:start": "bash scripts/stability/start-local-stack.sh",
+    "stability:monitor": "bash scripts/stability/monitor.sh",
+    "stability:smoke": "DURATION_SECONDS=300 INTERVAL_SECONDS=15 bash scripts/stability/monitor.sh"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.4",

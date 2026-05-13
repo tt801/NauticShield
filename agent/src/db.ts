@@ -92,7 +92,19 @@ db.exec(`
     latencyMs   REAL NOT NULL DEFAULT 0
   );
 
+  CREATE TABLE IF NOT EXISTS gnss_samples (
+    id             TEXT PRIMARY KEY,
+    timestamp      TEXT NOT NULL,
+    lat            REAL NOT NULL,
+    lon            REAL NOT NULL,
+    sogKnots       REAL NOT NULL DEFAULT 0,
+    cogDeg         REAL NOT NULL DEFAULT 0,
+    satelliteCount INTEGER NOT NULL DEFAULT 0,
+    source         TEXT NOT NULL DEFAULT 'manual'
+  );
+
   CREATE INDEX IF NOT EXISTS idx_perf_date ON perf_samples (date);
+  CREATE INDEX IF NOT EXISTS idx_gnss_timestamp ON gnss_samples (timestamp);
 `);
 
 // Safe migration: add fingerprint column to existing DBs that predate this schema version
@@ -129,6 +141,12 @@ for (const [col, def] of [
 try {
   const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   db.exec(`DELETE FROM perf_samples WHERE date < '${cutoff}'`);
+} catch { /* ignore */ }
+
+// Keep GNSS samples lean — trim anything older than 14 days on startup
+try {
+  const cutoffIso = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  db.exec(`DELETE FROM gnss_samples WHERE timestamp < '${cutoffIso}'`);
 } catch { /* ignore */ }
 
 // Close DB cleanly on process exit so the lock is always released
@@ -408,6 +426,55 @@ export interface AutofillResult {
   incidents:    number;
   blocks:       string; // JSON ConnStatus[]
   hasData:      boolean;
+}
+
+export interface GnssSample {
+  id: string;
+  timestamp: string;
+  lat: number;
+  lon: number;
+  sogKnots: number;
+  cogDeg: number;
+  satelliteCount: number;
+  source: string;
+}
+
+export function addGnssSample(sample: Omit<GnssSample, 'id'>): GnssSample {
+  const row: GnssSample = {
+    id: uuidv4(),
+    timestamp: sample.timestamp,
+    lat: sample.lat,
+    lon: sample.lon,
+    sogKnots: sample.sogKnots,
+    cogDeg: sample.cogDeg,
+    satelliteCount: sample.satelliteCount,
+    source: sample.source,
+  };
+  db.prepare(`
+    INSERT INTO gnss_samples (id, timestamp, lat, lon, sogKnots, cogDeg, satelliteCount, source)
+    VALUES (@id, @timestamp, @lat, @lon, @sogKnots, @cogDeg, @satelliteCount, @source)
+  `).run({
+    id: row.id,
+    timestamp: row.timestamp,
+    lat: row.lat,
+    lon: row.lon,
+    sogKnots: row.sogKnots,
+    cogDeg: row.cogDeg,
+    satelliteCount: row.satelliteCount,
+    source: row.source,
+  });
+  return row;
+}
+
+export function getRecentGnssSamples(limit = 60): GnssSample[] {
+  const safeLimit = Math.min(Math.max(limit, 1), 500);
+  return db.prepare('SELECT * FROM gnss_samples ORDER BY timestamp DESC LIMIT ?').all(safeLimit) as unknown as GnssSample[];
+}
+
+export function trimOldGnssSamples(hours = 48): void {
+  const safeHours = Math.min(Math.max(hours, 1), 24 * 30);
+  const cutoffIso = new Date(Date.now() - safeHours * 3_600_000).toISOString();
+  db.prepare('DELETE FROM gnss_samples WHERE timestamp < ?').run(cutoffIso);
 }
 
 export function getAutofillForDate(date: string): AutofillResult {
