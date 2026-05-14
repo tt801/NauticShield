@@ -182,6 +182,55 @@ app.get('/api/report/delta', async (req: AuthedRequest, res) => {
   });
 });
 
+function summarizeWindow(hours: number) {
+  const since = new Date(Date.now() - hours * 3_600_000).toISOString();
+  const newDevices = db.getDevicesFirstSeenSince(since);
+  const newAlerts = db.getAlertsCreatedSince(since);
+  const resolvedAlerts = db.getAlertsResolvedSince(since);
+  const newFindings = db.getFindingsCreatedSince(since);
+  const remediatedFindings = db.getFindingsRemediatedSince(since);
+  const blockedDevices = db.getDevicesBlockedSince(since);
+  const recentActions = (db.getAuditLog(200) as Array<{ ts?: string }>).filter(a => (a.ts ?? '') >= since);
+
+  return {
+    since,
+    counts: {
+      newDevices: newDevices.length,
+      newAlerts: newAlerts.length,
+      resolvedAlerts: resolvedAlerts.length,
+      newFindings: newFindings.length,
+      remediatedFindings: remediatedFindings.length,
+      blockedDevices: blockedDevices.length,
+      recentActions: recentActions.length,
+    },
+    newAlerts: newAlerts.slice(0, 5),
+    newFindings: newFindings.slice(0, 5),
+    blockedDevices: blockedDevices.slice(0, 5),
+  };
+}
+
+// Pilot report summary endpoint — concise daily/weekly digest plus "changed since yesterday"
+app.get('/api/report/summary', (_req: AuthedRequest, res) => {
+  const daily = summarizeWindow(24);
+  const weekly = summarizeWindow(24 * 7);
+  const changedSinceYesterday: string[] = [];
+
+  if (daily.counts.newDevices > 0) changedSinceYesterday.push(`${daily.counts.newDevices} new device(s) detected`);
+  if (daily.counts.newAlerts > 0) changedSinceYesterday.push(`${daily.counts.newAlerts} new alert(s) triggered`);
+  if (daily.counts.resolvedAlerts > 0) changedSinceYesterday.push(`${daily.counts.resolvedAlerts} alert(s) resolved`);
+  if (daily.counts.newFindings > 0) changedSinceYesterday.push(`${daily.counts.newFindings} cyber finding(s) opened`);
+  if (daily.counts.remediatedFindings > 0) changedSinceYesterday.push(`${daily.counts.remediatedFindings} cyber finding(s) remediated`);
+  if (daily.counts.blockedDevices > 0) changedSinceYesterday.push(`${daily.counts.blockedDevices} device(s) blocked`);
+  if (changedSinceYesterday.length === 0) changedSinceYesterday.push('No major changes since yesterday.');
+
+  res.json({
+    generatedAt: new Date().toISOString(),
+    daily,
+    weekly,
+    changedSinceYesterday,
+  });
+});
+
 // ── WebSocket ─────────────────────────────────────────────────────
 
 const wss = new WebSocketServer({ server });

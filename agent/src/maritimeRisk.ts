@@ -31,6 +31,14 @@ export interface EdgeExposureFinding {
   reason: string;
 }
 
+export interface RogueDeviceFinding {
+  deviceId: string;
+  deviceName: string;
+  ip: string;
+  severity: 'critical' | 'warning';
+  reason: string;
+}
+
 export interface MaritimeRiskSnapshot {
   generatedAt: string;
   riskScore: number;
@@ -44,6 +52,10 @@ export interface MaritimeRiskSnapshot {
     scannedDevices: number;
     findings: EdgeExposureFinding[];
     lastScannedAt?: string;
+  };
+  rogueActivity: {
+    monitoredDevices: number;
+    findings: RogueDeviceFinding[];
   };
 }
 
@@ -135,6 +147,56 @@ function isTcpPortOpen(host: string, port: number, timeoutMs = EDGE_TIMEOUT_MS):
     socket.once('error', () => finish(false));
     socket.connect(port, host);
   });
+}
+
+function isPrivateIpv4(ip: string): boolean {
+  const parts = ip.split('.').map(p => parseInt(p, 10));
+  if (parts.length !== 4 || parts.some(n => Number.isNaN(n) || n < 0 || n > 255)) return false;
+  if (parts[0] === 10) return true;
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+  if (parts[0] === 192 && parts[1] === 168) return true;
+  return false;
+}
+
+function evaluateRogueDeviceActivity(devices: Device[]): RogueDeviceFinding[] {
+  const findings: RogueDeviceFinding[] = [];
+
+  for (const device of devices) {
+    if (device.status !== 'online') continue;
+    const normalizedType = (device.type ?? 'unknown').toLowerCase();
+
+    if (normalizedType === 'unknown' && !device.blocked) {
+      findings.push({
+        deviceId: device.id,
+        deviceName: device.name,
+        ip: device.ip,
+        severity: 'warning',
+        reason: 'Unclassified device is active on the network and not isolated.',
+      });
+    }
+
+    if (!isPrivateIpv4(device.ip)) {
+      findings.push({
+        deviceId: device.id,
+        deviceName: device.name,
+        ip: device.ip,
+        severity: 'critical',
+        reason: 'Device reports a non-private IP; possible rogue bridge, NAT bypass, or scan artifact.',
+      });
+    }
+
+    if ((device.blocked ?? false) && device.status === 'online') {
+      findings.push({
+        deviceId: device.id,
+        deviceName: device.name,
+        ip: device.ip,
+        severity: 'warning',
+        reason: 'Device is marked blocked but still appears online; verify enforcement at the edge.',
+      });
+    }
+  }
+
+  return findings.slice(0, 10);
 }
 
 function evaluateGnssAnomalies(samplesNewestFirst: db.GnssSample[]): GnssAnomaly[] {
@@ -282,6 +344,7 @@ export function listRecentGnssSamples(limit = 60): db.GnssSample[] {
 export async function evaluateMaritimeRisk(devices: Device[], forceEdgeScan = false): Promise<MaritimeRiskSnapshot> {
   const samples = db.getRecentGnssSamples(80);
   const anomalies = evaluateGnssAnomalies(samples);
+  const rogueFindings = evaluateRogueDeviceActivity(devices);
 
   const now = Date.now();
   const shouldRunEdge = forceEdgeScan || !edgeCache.lastScannedAt || (now - Date.parse(edgeCache.lastScannedAt)) > EDGE_SCAN_INTERVAL_MS;
@@ -289,8 +352,14 @@ export async function evaluateMaritimeRisk(devices: Device[], forceEdgeScan = fa
     await runEdgeScan(devices);
   }
 
-  const criticalCount = anomalies.filter(a => a.severity === 'critical').length + edgeCache.findings.filter(f => f.severity === 'critical').length;
-  const warningCount = anomalies.filter(a => a.severity === 'warning').length + edgeCache.findings.filter(f => f.severity === 'warning').length;
+  const criticalCount =
+    anomalies.filter(a => a.severity === 'critical').length +
+    edgeCache.findings.filter(f => f.severity === 'critical').length +
+    rogueFindings.filter(f => f.severity === 'critical').length;
+  const warningCount =
+    anomalies.filter(a => a.severity === 'warning').length +
+    edgeCache.findings.filter(f => f.severity === 'warning').length +
+    rogueFindings.filter(f => f.severity === 'warning').length;
   const riskScore = Math.max(0, Math.min(100, 100 - criticalCount * 22 - warningCount * 8));
 
   return {
@@ -306,6 +375,10 @@ export async function evaluateMaritimeRisk(devices: Device[], forceEdgeScan = fa
       scannedDevices: edgeCache.scannedDevices,
       findings: edgeCache.findings,
       lastScannedAt: edgeCache.lastScannedAt,
+    },
+    rogueActivity: {
+      monitoredDevices: devices.length,
+      findings: rogueFindings,
     },
   };
 }

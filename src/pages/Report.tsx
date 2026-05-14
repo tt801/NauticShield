@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useVesselData } from '@/context/VesselDataProvider';
 import { agentApi } from '@/api/client';
-import type { CyberAssessment, CyberFinding, ReportCadence, ReportDelta, ReportPeriod, ReportSchedule, ReportSection } from '@/api/client';
+import type { CyberAssessment, CyberFinding, ReportCadence, ReportDelta, ReportPeriod, ReportSchedule, ReportSection, ReportSummary } from '@/api/client';
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -340,6 +340,7 @@ export default function Report() {
   const [latestAssessment, setLatestAssessment] = useState<CyberAssessment | null>(null);
   const [openFindings,     setOpenFindings]     = useState<CyberFinding[]>([]);
   const [reportDelta,      setReportDelta]      = useState<ReportDelta | null>(null);
+  const [reportSummary,    setReportSummary]    = useState<ReportSummary | null>(null);
   const [schedules,        setSchedules]        = useState<ReportSchedule[]>([]);
   const [scheduleLoading,  setScheduleLoading]  = useState(true);
   const [scheduleSaving,   setScheduleSaving]   = useState(false);
@@ -360,6 +361,9 @@ export default function Report() {
     }).catch(() => {});
     agentApi.reports.delta(24).then(delta => {
       setReportDelta(delta);
+    }).catch(() => {});
+    agentApi.reports.summary().then(summary => {
+      setReportSummary(summary);
     }).catch(() => {});
     agentApi.reports.listSchedules().then(list => {
       setSchedules(list);
@@ -425,6 +429,7 @@ export default function Report() {
   const maritimeRisk = reportDelta?.maritimeRisk;
   const maritimeAnomalies = maritimeRisk?.gnss.anomalies ?? [];
   const maritimeEdgeFindings = maritimeRisk?.edgeExposure.findings ?? [];
+  const maritimeRogueFindings = maritimeRisk?.rogueActivity?.findings ?? [];
 
   async function persistSchedules(next: ReportSchedule[]) {
     setScheduleSaving(true);
@@ -1529,6 +1534,39 @@ export default function Report() {
         </div>
       </Card>
 
+      {/* Pilot digest */}
+      <Card>
+        <SectionTitle>Pilot Digest</SectionTitle>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(220px, 1fr))', gap: 12 }}>
+          {[
+            { label: 'Last 24h', data: reportSummary?.daily },
+            { label: 'Last 7 days', data: reportSummary?.weekly },
+          ].map(({ label, data }) => (
+            <div key={label} style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 12, padding: '12px 14px' }}>
+              <div style={{ color: '#dce8f4', fontSize: 13, fontWeight: 700 }}>{label}</div>
+              <div style={{ color: '#6b7f92', fontSize: 11, marginTop: 2 }}>
+                {data ? `since ${new Date(data.since).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}` : 'loading...'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 10 }}>
+                <div style={{ color: '#f0f4f8', fontSize: 12 }}><span style={{ color: '#6b7f92' }}>Alerts:</span> {data?.counts.newAlerts ?? '-'}</div>
+                <div style={{ color: '#f0f4f8', fontSize: 12 }}><span style={{ color: '#6b7f92' }}>Resolved:</span> {data?.counts.resolvedAlerts ?? '-'}</div>
+                <div style={{ color: '#f0f4f8', fontSize: 12 }}><span style={{ color: '#6b7f92' }}>Findings:</span> {data?.counts.newFindings ?? '-'}</div>
+                <div style={{ color: '#f0f4f8', fontSize: 12 }}><span style={{ color: '#6b7f92' }}>Remediated:</span> {data?.counts.remediatedFindings ?? '-'}</div>
+                <div style={{ color: '#f0f4f8', fontSize: 12 }}><span style={{ color: '#6b7f92' }}>New devices:</span> {data?.counts.newDevices ?? '-'}</div>
+                <div style={{ color: '#f0f4f8', fontSize: 12 }}><span style={{ color: '#6b7f92' }}>Blocked:</span> {data?.counts.blockedDevices ?? '-'}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {(reportSummary?.changedSinceYesterday ?? ['No major changes since yesterday.']).slice(0, 5).map((item, idx) => (
+            <div key={`${item}-${idx}`} style={{ color: '#a9b8c8', fontSize: 12, background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 10px' }}>
+              {item}
+            </div>
+          ))}
+        </div>
+      </Card>
+
       {/* Connectivity */}
       <Card>
         <SectionTitle>Internet &amp; Connectivity</SectionTitle>
@@ -1808,6 +1846,7 @@ export default function Report() {
             { label: 'GNSS Profile', value: (maritimeRisk?.gnss.profileMode ?? 'auto').toUpperCase(), color: '#7dd3fc' },
             { label: 'GNSS Anomalies', value: String(maritimeAnomalies.length), color: maritimeAnomalies.length > 0 ? '#f59e0b' : '#22c55e' },
             { label: 'Edge Findings', value: String(maritimeEdgeFindings.length), color: maritimeEdgeFindings.length > 0 ? '#ef4444' : '#22c55e' },
+            { label: 'Rogue Signals', value: String(maritimeRogueFindings.length), color: maritimeRogueFindings.length > 0 ? '#f97316' : '#22c55e' },
           ].map(item => (
             <div key={item.label} style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 10, padding: '10px 12px' }}>
               <div style={{ color: '#6b7f92', fontSize: 11, marginBottom: 4 }}>{item.label}</div>
@@ -1848,6 +1887,22 @@ export default function Report() {
               </div>
             )}
           </div>
+        </div>
+
+        <div style={{ marginTop: 10, background: '#080b10', border: '1px solid #1a2535', borderRadius: 10, padding: '10px 12px' }}>
+          <div style={{ color: '#7dd3fc', fontSize: 11, fontWeight: 700, marginBottom: 6 }}>ROGUE DEVICE ACTIVITY</div>
+          {maritimeRogueFindings.length === 0 ? (
+            <div style={{ color: '#22c55e', fontSize: 12 }}>No rogue or suspicious device behavior detected.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {maritimeRogueFindings.slice(0, 5).map((finding, index) => (
+                <div key={`${finding.deviceId}-${index}`} style={{ background: '#0a0f18', border: '1px solid #1a2535', borderRadius: 8, padding: '8px 10px' }}>
+                  <div style={{ color: finding.severity === 'critical' ? '#ef4444' : '#f59e0b', fontSize: 11, fontWeight: 700 }}>{finding.deviceName} · {finding.ip}</div>
+                  <div style={{ color: '#dce8f4', fontSize: 12, marginTop: 2 }}>{finding.reason}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </Card>
 

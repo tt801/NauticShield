@@ -132,6 +132,29 @@ export interface ReportDelta {
   maritimeRisk?: MaritimeRiskSnapshot;
 }
 
+export interface ReportWindowSummary {
+  since: string;
+  counts: {
+    newDevices: number;
+    newAlerts: number;
+    resolvedAlerts: number;
+    newFindings: number;
+    remediatedFindings: number;
+    blockedDevices: number;
+    recentActions: number;
+  };
+  newAlerts: Alert[];
+  newFindings: CyberFinding[];
+  blockedDevices: Device[];
+}
+
+export interface ReportSummary {
+  generatedAt: string;
+  daily: ReportWindowSummary;
+  weekly: ReportWindowSummary;
+  changedSinceYesterday: string[];
+}
+
 export interface GnssSample {
   id: string;
   timestamp: string;
@@ -160,6 +183,14 @@ export interface EdgeExposureFinding {
   reason: string;
 }
 
+export interface RogueDeviceFinding {
+  deviceId: string;
+  deviceName: string;
+  ip: string;
+  severity: 'critical' | 'warning';
+  reason: string;
+}
+
 export interface MaritimeRiskSnapshot {
   generatedAt: string;
   riskScore: number;
@@ -173,6 +204,10 @@ export interface MaritimeRiskSnapshot {
     scannedDevices: number;
     findings: EdgeExposureFinding[];
     lastScannedAt?: string;
+  };
+  rogueActivity?: {
+    monitoredDevices: number;
+    findings: RogueDeviceFinding[];
   };
 }
 
@@ -671,6 +706,9 @@ export const agentApi = {
 
     delta: (hours = 24) =>
       fetchWithFallback<ReportDelta>(`/api/report/delta?hours=${encodeURIComponent(String(hours))}`),
+
+    summary: () =>
+      fetchWithFallback<ReportSummary>('/api/report/summary'),
   },
 
   guestNetwork: {
