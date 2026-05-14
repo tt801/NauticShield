@@ -8,6 +8,14 @@ mkdir -p "${LOG_DIR}"
 FRONTEND_LOG="${LOG_DIR}/frontend.log"
 AGENT_LOG="${LOG_DIR}/agent.log"
 PID_FILE="${LOG_DIR}/pids.env"
+AGENT_PORT="3000"
+
+if [[ -f "${ROOT_DIR}/.env.local" ]]; then
+  configured_port="$(grep -E '^VITE_AGENT_URL=' "${ROOT_DIR}/.env.local" | sed -E 's#.*:([0-9]+)/?$#\1#' | tail -n 1)"
+  if [[ "${configured_port}" =~ ^[0-9]+$ ]]; then
+    AGENT_PORT="${configured_port}"
+  fi
+fi
 
 if [[ -f "${PID_FILE}" ]]; then
   # shellcheck disable=SC1090
@@ -26,7 +34,7 @@ FRONTEND_PID=$!
 popd >/dev/null
 
 pushd "${ROOT_DIR}/agent" >/dev/null
-npm run dev >"${AGENT_LOG}" 2>&1 &
+PORT="${AGENT_PORT}" npm run dev >"${AGENT_LOG}" 2>&1 &
 AGENT_PID=$!
 popd >/dev/null
 
@@ -37,5 +45,5 @@ EOF
 
 echo "Started frontend PID ${FRONTEND_PID} and agent PID ${AGENT_PID}"
 echo "Frontend URL: http://127.0.0.1:5173"
-echo "Agent URL:    http://127.0.0.1:3000/api/health"
+echo "Agent URL:    http://127.0.0.1:${AGENT_PORT}/api/health"
 echo "Logs: ${LOG_DIR}"

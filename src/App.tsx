@@ -47,6 +47,10 @@ const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 const ADMIN_HOSTNAME = 'admin.nauticshield.io';
 const ADMIN_FALLBACK_URL = 'https://nautic-shield-admin.vercel.app';
 
+function hasValidClerkKey(key: string | undefined) {
+  return !!key && key !== 'pk_test_REPLACE_ME';
+}
+
 function isLocalDevHost() {
   if (typeof window === 'undefined') {
     return false;
@@ -69,7 +73,7 @@ function redirectIfWrongHost() {
   return true;
 }
 
-if (!CLERK_KEY || CLERK_KEY === 'pk_test_REPLACE_ME') {
+if (!hasValidClerkKey(CLERK_KEY) && !isLocalDevHost()) {
   console.warn(
     '[NauticShield] VITE_CLERK_PUBLISHABLE_KEY not set — auth is disabled. ' +
     'Set it in .env.local to enable login.'
@@ -81,7 +85,7 @@ export default function App() {
     return null;
   }
 
-  const useDevMode = !CLERK_KEY || CLERK_KEY === 'pk_test_REPLACE_ME' || isLocalDevHost();
+  const useDevMode = !hasValidClerkKey(CLERK_KEY) || isLocalDevHost();
 
   // If no Clerk key is configured, run in dev mode (no auth wall)
   if (useDevMode) {

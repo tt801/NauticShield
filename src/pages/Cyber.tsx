@@ -599,8 +599,8 @@ function TrafficMonitor() {
         {[
           { name: masked ? '192.168.0.██' : '192.168.0.138', label: 'High outbound to 104.21.x', spike: '74 Mbps', color: '#ef4444' },
           { name: masked ? '192.168.0.██' : '192.168.0.77',  label: 'Repeated DNS queries (>200/min)', spike: '71 Mbps', color: '#f97316' },
-        ].map(r => (
-          <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#080b10', borderRadius: 10, padding: '9px 13px', borderLeft: `3px solid ${r.color}` }}>
+        ].map((r, index) => (
+          <div key={`${r.name}-${r.spike}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#080b10', borderRadius: 10, padding: '9px 13px', borderLeft: `3px solid ${r.color}` }}>
             <Flame size={13} color={r.color} style={{ flexShrink: 0 }} />
             <div style={{ flex: 1 }}>
               <div style={{ color: '#f0f4f8', fontSize: 12, fontWeight: 500 }}>{r.name} — {r.label}</div>
