@@ -9,6 +9,7 @@ FRONTEND_LOG="${LOG_DIR}/frontend.log"
 AGENT_LOG="${LOG_DIR}/agent.log"
 PID_FILE="${LOG_DIR}/pids.env"
 AGENT_PORT="3000"
+FRONTEND_PORT="5173"
 
 if [[ -f "${ROOT_DIR}/.env.local" ]]; then
   configured_port="$(grep -E '^VITE_AGENT_URL=' "${ROOT_DIR}/.env.local" | sed -E 's#.*:([0-9]+)/?$#\1#' | tail -n 1)"
@@ -16,6 +17,14 @@ if [[ -f "${ROOT_DIR}/.env.local" ]]; then
     AGENT_PORT="${configured_port}"
   fi
 fi
+
+listener_pid() {
+  local port="$1"
+  lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | head -n 1 || true
+}
+
+FRONTEND_PID="${FRONTEND_PID:-}"
+AGENT_PID="${AGENT_PID:-}"
 
 if [[ -f "${PID_FILE}" ]]; then
   # shellcheck disable=SC1090
@@ -28,15 +37,31 @@ if [[ -f "${PID_FILE}" ]]; then
   fi
 fi
 
-pushd "${ROOT_DIR}" >/dev/null
-npm run dev -- --host 127.0.0.1 --port 5173 --strictPort >"${FRONTEND_LOG}" 2>&1 &
-FRONTEND_PID=$!
-popd >/dev/null
+if [[ -z "${FRONTEND_PID}" ]] || ! ps -p "${FRONTEND_PID}" >/dev/null 2>&1; then
+  FRONTEND_PID="$(listener_pid "${FRONTEND_PORT}")"
+fi
 
-pushd "${ROOT_DIR}/agent" >/dev/null
-PORT="${AGENT_PORT}" npm run dev >"${AGENT_LOG}" 2>&1 &
-AGENT_PID=$!
-popd >/dev/null
+if [[ -n "${FRONTEND_PID}" ]] && ps -p "${FRONTEND_PID}" >/dev/null 2>&1; then
+  echo "Reusing frontend listener on port ${FRONTEND_PORT} (PID ${FRONTEND_PID})"
+else
+  pushd "${ROOT_DIR}" >/dev/null
+  npm run dev -- --host 127.0.0.1 --port "${FRONTEND_PORT}" --strictPort >"${FRONTEND_LOG}" 2>&1 &
+  FRONTEND_PID=$!
+  popd >/dev/null
+fi
+
+if [[ -z "${AGENT_PID}" ]] || ! ps -p "${AGENT_PID}" >/dev/null 2>&1; then
+  AGENT_PID="$(listener_pid "${AGENT_PORT}")"
+fi
+
+if [[ -n "${AGENT_PID}" ]] && ps -p "${AGENT_PID}" >/dev/null 2>&1; then
+  echo "Reusing agent listener on port ${AGENT_PORT} (PID ${AGENT_PID})"
+else
+  pushd "${ROOT_DIR}/agent" >/dev/null
+  PORT="${AGENT_PORT}" npm run dev >"${AGENT_LOG}" 2>&1 &
+  AGENT_PID=$!
+  popd >/dev/null
+fi
 
 cat > "${PID_FILE}" <<EOF
 FRONTEND_PID=${FRONTEND_PID}
